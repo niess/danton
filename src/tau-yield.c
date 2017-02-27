@@ -10,7 +10,10 @@
 #include "tauola-c.h"
 
 /* The spherical Earth radius, in m. */
-#define EARTH_RADIUS 6.4E+06
+#define EARTH_RADIUS 6371.E+03
+
+/* The radius of the geostationary orbit, in m. */
+#define GEO_ORBIT 42164E+03
 
 /* The lower energy bound. */
 #define ENERGY_MIN 1E+03
@@ -57,52 +60,291 @@ static void handle_pumas(enum pumas_return rc, pumas_function_t * caller,
         gracefully_exit(EXIT_FAILURE);
 }
 
-/* Density callback for ENT, with a uniform density. */
-static double density(
-    struct ent_medium * medium, struct ent_state * state, double * density)
+/* Density according to the Preliminary Earth Model (PEM). */
+static double pem_model0(double r, double * density)
 {
-        *density = 2.65E+03;
-        return 0.;
+	*density = 1.02E+03;
+	return 0.;
 }
 
-/* Locals callback for PUMAs. */
-static double locals(const struct pumas_state * state,
-    struct pumas_locals * locals)
+static double pem_model1(double r, double * density)
 {
-        static struct pumas_locals locals_ = {2.65E+03, {0., 0., 0.}};
-        memcpy(locals, &locals_, sizeof(locals));
-        return 0.;
+	*density = 2.6E+03;
+	return 0.;
 }
 
-/* Generic medium callback, with a single medium. */
-static double medium(const double * r, int * index)
+static double pem_model2(double r, double * density)
 {
-        const double r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
-        if (r2 <= EARTH_RADIUS * EARTH_RADIUS) *index = 0;
-	else *index = -1;
-        return EARTH_RADIUS;
+	*density = 2.9E+03;
+	return 0.;
+}
+
+static double pem_model3(double r, double * density)
+{
+	const double x = r / EARTH_RADIUS;
+	const double a = 0.6924E+03;
+	*density = 2.691E+03 + a * x;
+	return 0.01 * EARTH_RADIUS / a;
+}
+
+static double pem_model4(double r, double * density)
+{
+	const double x = r / EARTH_RADIUS;
+	const double a = 3.8045E+03;
+	*density = 7.1089E+03 - a * x;
+	return 0.01 * EARTH_RADIUS / a;
+}
+
+static double pem_model5(double r, double * density)
+{
+	const double x = r / EARTH_RADIUS;
+	const double a = 8.0298E+03;
+	*density = 11.2494E+03 - a * x;
+	return 0.01 * EARTH_RADIUS / a;
+}
+
+static double pem_model6(double r, double * density)
+{
+	const double x = r / EARTH_RADIUS;
+	const double a = 1.4836E+03;
+	*density = 5.3197E+03 - a * x;
+	return 0.01 * EARTH_RADIUS / a;
+}
+
+static double pem_model7(double r, double * density)
+{
+	const double x = r / EARTH_RADIUS;
+	const double a = 6.4761E+03;
+	*density = 7.9565E+03 + x * (-a + x * (2.5283E+03 - x * 3.0807E+03));
+	return 0.01 * EARTH_RADIUS / a;
+}
+
+static double pem_model8(double r, double * density)
+{
+	const double x = r / EARTH_RADIUS;
+	const double a = 1.2638E+03;
+	*density = 12.58155E+03 + x * (-a + x * (-3.6426E+03 - x * 5.5281E+03));
+	return 0.01 * EARTH_RADIUS / a;
+}
+
+static double pem_model9(double r, double * density)
+{
+	const double x = r / EARTH_RADIUS;
+	const double a2 = -8.8381E+03;
+	*density = 13.0885E+03 + a2 * x * x;
+	const double xg = (x <= 5E-02) ? 5E-02 : x;
+	return 0.01 * EARTH_RADIUS / fabs(2. * a2 * xg);
+}
+
+/* The U.S. standard atmosphere model. */
+#define USS_MODEL(INDEX, B, C)\
+static double uss_model ## INDEX (double r, double * density)\
+{\
+	*density = B / C * exp(-r / C);\
+	return 0.01 * C;\
+}
+
+USS_MODEL(0, 12226.562, 9941.8638)
+USS_MODEL(1, 11449.069, 8781.5355)
+USS_MODEL(2, 13055.948, 6361.4304)
+USS_MODEL(3, 5401.778, 7721.7016)
+
+/* Outer space density model. */
+static double space_model0(double r, double * density)
+{
+	*density = 1.E-21; /* ~10^6 H per m^-3. */
+	return 0.;
+}
+
+/* Generic Monte-Carlo state with stepping data. */
+struct generic_state {
+	union {
+		struct ent_state ent;
+		struct pumas_state pumas;
+	} base;
+	double r;
+};
+
+/* Density callbacks for ENT. */
+#define DENSITY(MODEL, INDEX)\
+static double density_ ## MODEL ## INDEX (\
+    struct ent_medium * medium, struct ent_state * state, double * density)\
+{\
+        struct generic_state * s = (struct generic_state *)state;\
+        return MODEL ## _model ## INDEX (s->r, density);\
+}
+
+DENSITY(pem, 0)
+DENSITY(pem, 1)
+DENSITY(pem, 2)
+DENSITY(pem, 3)
+DENSITY(pem, 4)
+DENSITY(pem, 5)
+DENSITY(pem, 6)
+DENSITY(pem, 7)
+DENSITY(pem, 8)
+DENSITY(pem, 9)
+DENSITY(uss, 0)
+DENSITY(uss, 1)
+DENSITY(uss, 2)
+DENSITY(uss, 3)
+DENSITY(space, 0)
+
+/* Local callbacks for PUMAS. */
+#define LOCALS(MODEL, INDEX)\
+static double locals_ ## MODEL ## INDEX (const struct pumas_state * state,\
+    struct pumas_locals * locals)\
+{\
+        struct generic_state * s = (struct generic_state *)state;\
+        const double step = MODEL ## _model ## INDEX (s->r, &locals->density);\
+        memset(locals->magnet, 0x0, sizeof(locals->magnet));\
+        return step;\
+}
+
+LOCALS(pem, 0)
+LOCALS(pem, 1)
+LOCALS(pem, 2)
+LOCALS(pem, 3)
+LOCALS(pem, 4)
+LOCALS(pem, 5)
+LOCALS(pem, 6)
+LOCALS(pem, 7)
+LOCALS(pem, 8)
+LOCALS(pem, 9)
+LOCALS(uss, 0)
+LOCALS(uss, 1)
+LOCALS(uss, 2)
+LOCALS(uss, 3)
+LOCALS(space, 0)
+
+/* Generic medium callback. */
+static double medium(const double * position, const double * direction,
+    int * index, struct generic_state * state)
+{
+        *index = -1;
+        double step = 0.;
+
+        const double r2 = position[0] * position[0] + position[1] * position[1]
+            + position[2] * position[2];
+        if (r2 > GEO_ORBIT * GEO_ORBIT) return step;
+	const double r = sqrt(r2);
+	state->r = r;
+
+	const double ri[] = {1221.5E+03, 3480.E+03, 5701.E+03,
+	    5771.E+03, 5971.E+03, 6151.E+03, 6346.6E+03, 6356.E+03, 6368.E+03,
+	    EARTH_RADIUS, EARTH_RADIUS + 4.E+03, EARTH_RADIUS + 1.E+04,
+	    EARTH_RADIUS + 4.E+04, EARTH_RADIUS + 1.E+05, GEO_ORBIT,
+	    2*GEO_ORBIT};
+	int i;
+	for (i = 0; i < sizeof(ri) / sizeof(*ri) - 1; i++) {
+		if (r <= ri[i]) {
+			*index = i;
+
+			/* Outgoing intersection. */
+			const double b = position[0] * direction[0] +
+			    position[1] * direction[1] +
+			    position[2] * direction[2];
+			const double r1 = ri[i + 1];
+			const double d2 = b * b + r1 * r1 - r * r;
+			const double d = (d2 <= 0.) ? 0. : sqrt(d2);
+			step = d - b - 1.;
+
+			if ((i > 0) && (b < 0.)) {
+				/* This is a downgoing trajectory. First, let
+				 * us compute the intersection with the lower
+				 * radius.
+				 */
+				const double r1 = ri[i - 1];
+				const double d2 = b * b + r1 * r1 - r * r;
+				if (d2 > 0.) {
+					const double d = sqrt(d2);
+					const double s = d - b - 1.;
+					if (s < step) step = s;
+				}
+
+				if (i > 1) {
+					/* Let us check for an intersection with
+					 * the below lower radius.
+					 */
+					const double r1 = ri[i - 2];
+					const double d2 =
+					    b * b + r1 * r1 - r * r;
+					if (d2 > 0.) {
+						const double d = sqrt(d2);
+						const double s = d - b - 1.;
+						if (s < step) step = s;
+					}
+				}
+			}
+			if (step < 1.) step = 1.;
+			break;
+		}
+	}
+	return step;
 }
 
 /* Medium callback encapsulation for ENT. */
 static double medium_ent(struct ent_context * context, struct ent_state * state,
     struct ent_medium ** medium_ptr)
 {
-        static struct ent_medium medium_ = { 13., 26., &density };
+#define ZR 13.
+#define AR 26.
+#define ZA 7.26199
+#define AA 14.5477
+
+        static struct ent_medium media[] = {
+		{ ZR, AR, &density_pem0 },
+		{ ZR, AR, &density_pem1 },
+		{ ZR, AR, &density_pem2 },
+		{ ZR, AR, &density_pem3 },
+		{ ZR, AR, &density_pem4 },
+		{ ZR, AR, &density_pem5 },
+		{ ZR, AR, &density_pem6 },
+		{ ZR, AR, &density_pem7 },
+		{ ZR, AR, &density_pem8 },
+		{ ZR, AR, &density_pem9 },
+		{ ZA, AA, &density_uss0 },
+		{ ZA, AA, &density_uss1 },
+		{ ZA, AA, &density_uss2 },
+		{ ZA, AA, &density_uss3 },
+		{ ZA, AA, &density_space0 }};
         int index;
-        const double step = medium(state->position, &index);
-        if (index >= 0) *medium_ptr = &medium_;
+        const double step = medium(state->position, state->direction, &index,
+            (struct generic_state *)state);
+        if (index >= 0) *medium_ptr = media + index;
         else *medium_ptr = NULL;
         return step;
+
+#undef  ZR
+#undef  AR
+#undef  ZA
+#undef  AA
 }
 
 /* Medium callback encapsulation for PUMAS. */
 double medium_pumas(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr)
 {
-        static struct pumas_medium medium_ = { 0, &locals };
+        static struct pumas_medium media[] = {
+		{ 0, &locals_pem0 },
+		{ 0, &locals_pem1 },
+		{ 0, &locals_pem2 },
+		{ 0, &locals_pem3 },
+		{ 0, &locals_pem4 },
+		{ 0, &locals_pem5 },
+		{ 0, &locals_pem6 },
+		{ 0, &locals_pem7 },
+		{ 0, &locals_pem8 },
+		{ 0, &locals_pem9 },
+		{ 1, &locals_uss0 },
+		{ 1, &locals_uss1 },
+		{ 1, &locals_uss2 },
+		{ 1, &locals_uss3 },
+		{ 1, &locals_space0 }};
         int index;
-        const double step = medium(state->position, &index);
-        if (index >= 0) *medium_ptr = &medium_;
+        const double step = medium(state->position, state->direction, &index,
+            (struct generic_state *)state);
+        if (index >= 0) *medium_ptr = media + index;
         else *medium_ptr = NULL;
         return step;
 }
@@ -118,7 +360,7 @@ void load_pumas()
 {
 	const enum pumas_particle particle = PUMAS_PARTICLE_TAU;
 	const char * dump = "materials.b";
-	
+
 	/* First, attempt to load any binary dump. */
 	FILE * stream = fopen(dump, "rb");
         if (stream != NULL) {
@@ -129,7 +371,7 @@ void load_pumas()
 		pumas_particle(NULL, NULL, &tau_mass);
                 return;
         }
-        
+
         /* If no binary dump, initialise from the MDF and dump. */
         pumas_initialise(particle, NULL, NULL, NULL);
         pumas_particle(NULL, NULL, &tau_mass);
@@ -162,7 +404,7 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
 {
 	if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
 	    (abs(neutrino->pid) != ENT_PID_NU_TAU)) return;
-	
+
 	struct ent_state product;
 	enum ent_event event;
 	for (;;) {
@@ -175,43 +417,46 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
 			/* Tau transport with PUMAS. */
 			const double charge = (product.pid > 0) ? -1. : 1.;
 			const double kinetic = product.energy - tau_mass;
-			struct pumas_state tau = {charge, kinetic,
-			    product.distance, product.grammage, 0.,
-			        product.weight};
-			memcpy(&tau.position, &product.position,
-			    sizeof(tau.position));
-			memcpy(&tau.direction, &product.direction,
-			    sizeof(tau.direction)); 
-			pumas_transport(ctx_pumas, &tau);
-			if (tau.decayed) {
+			struct generic_state tau_data = {.base.pumas = {charge,
+			    kinetic, product.distance, product.grammage, 0.,
+			    product.weight}, .r = 0.};
+			struct pumas_state * tau = &tau_data.base.pumas;
+			memcpy(&tau->position, &product.position,
+			    sizeof(tau->position));
+			memcpy(&tau->direction, &product.direction,
+			    sizeof(tau->direction));
+			pumas_transport(ctx_pumas, tau);
+			if (tau->decayed) {
 				/* Tau decay with TAUOLA. */
-				const double p = sqrt(tau.kinetic * (
-				    tau.kinetic + 2. * tau_mass));
-				double momentum[3] = {p * tau.direction[0],
-				    p * tau.direction[1], p * tau.direction[2]};
+				const double p = sqrt(tau->kinetic * (
+				    tau->kinetic + 2. * tau_mass));
+				double momentum[3] = {p * tau->direction[0],
+				    p * tau->direction[1],
+				    p * tau->direction[2]};
 				 tauola_decay(product.pid, momentum,
-				    tau.direction);
-				int pid, is_nue = 0, is_nut = 0, nprod = 0;
-				struct ent_state nu_e, nu_t;
+				    tau->direction);
+				int pid, nprod = 0;
+				struct generic_state nu_e_data, nu_t_data;
+				struct ent_state * nu_e = NULL, * nu_t = NULL;
 				while (tauola_product(&pid, momentum)) {
 				    if (abs(pid) == 16) {
 					    /* Update the neutrino state with
 					     * the nu_tau daughter.
 					     */
 					    if (neutrino->pid == ENT_PID_HADRON)
-					            copy_neutrino(&tau, pid,
+					            copy_neutrino(tau, pid,
 					                momentum, neutrino);
 					    else {
-					            copy_neutrino(&tau, pid,
-					                momentum, &nu_t);
-					            is_nut = 1;
+						    nu_t = &nu_t_data.base.ent;
+					            copy_neutrino(tau, pid,
+					                momentum, nu_t);
 				            }
 					    continue;
 				    }
 				    else if (pid == -12) {
-					    is_nue = 1;
-					    copy_neutrino(&tau, pid, momentum,
-					        &nu_e);
+					    nu_e = &nu_e_data.base.ent;
+					    copy_neutrino(tau, pid, momentum,
+					        nu_e);
 					    continue;
 				    }
 				    else if ((pid == 12) || (abs(pid) == 13) ||
@@ -219,20 +464,20 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
 				    if (nprod == 0) fprintf(stream,
 				        "%5d %2d %4d %12.5lE %12.3lf %12.3lf "
 				        "%12.3lf\n", eventid, generation,
-				        product.pid, tau.kinetic,
-				        tau.position[0], tau.position[1],
-				        tau.position[2]);
+				        product.pid, tau->kinetic,
+				        tau->position[0], tau->position[1],
+				        tau->position[2]);
 				    fprintf(stream, "    %4d %12.5lE %12.5lE "
 				    "%12.5lE\n", pid, momentum[0], momentum[1],
 				    momentum[2]);
 				    nprod++;
 				}
 				generation++;
-				
+
 				/* Process any additional nu_e~ or nu_tau. */
-				if (is_nue) transport(ctx_ent, &nu_e,
+				if (nu_e != NULL) transport(ctx_ent, nu_e,
 				    eventid, generation, stream);
-				if (is_nut) transport(ctx_ent, &nu_t,
+				if (nu_t != NULL) transport(ctx_ent, nu_t,
 				    eventid, generation, stream);
 			}
 		}
@@ -254,10 +499,10 @@ int main(int nargc, char * argv[])
 
         /* Create a new neutrino Physics environment. */
         ent_physics_create(&physics, "ent/data/pdf/CT14nnlo_0000.dat");
-        
+
         /* Initialise the PUMAS transport engine. */
         load_pumas();
-        
+
         /* Initialise TAUOLA. */
         tauola_initialise(1, NULL);
 
@@ -273,10 +518,11 @@ int main(int nargc, char * argv[])
         FILE * stream = fopen("transport.dat", "w+");
         int i;
         for (i = 0; i < events; i++) {
-                struct ent_state neutrino = { projectile, energy, 0., 0., 1.,
-                        { 0., 0., -EARTH_RADIUS }, { 0., 0., 1. } };
-                transport(&ctx_ent, &neutrino, i, 1, stream);
-               
+                struct generic_state state = {.base.ent = { projectile,
+		    energy, 0., 0., 1., { 0., 0., -EARTH_RADIUS - 1E+05 },
+		    { 0., 0., 1. }}, .r = 0.};
+                transport(&ctx_ent, (struct ent_state *)&state, i, 1, stream);
+
         }
         fclose(stream);
 
