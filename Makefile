@@ -1,10 +1,10 @@
 CFLAGS := -O2 -std=c99 -pedantic -Wall
 INCLUDE := -Ient/include -Ipumas/include -Itauola-c/include
-LIBS := -Lent/lib -lent -Lpumas/lib -lpumas -Ltauola-c/lib -ltauola-c
+LIBS := -Lent/lib -lent -Lpumas/lib -lpumas -Ltauola-c/lib -ltauola-c -lm
 
 .PHONY: bin clean
 
-bin: bin/tau-yield
+bin: bin/danton
 
 clean:
 	@rm -rf bin

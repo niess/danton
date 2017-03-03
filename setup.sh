@@ -3,7 +3,6 @@
 # Set the environment for the submodules.
 . ent/setup.sh
 . pumas/setup.sh
-. $THRONG_DIR/soft/hep/tauola++/1.1.6/setup.sh
 . tauola-c/setup.sh
 
 # Script base directory.
