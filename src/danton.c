@@ -64,8 +64,9 @@ static void exit_with_help(int code)
 "                               total grammage along the path.\n"
 "  -h, --help                 show this help and exit\n"
 "  -o, --output-file=FILE     set the output FILE for the computed flux\n"
-"      --pdf-file=FILE        specify a pdf FILE for partons distributions.\n"
-"                               The format must be `lhagrid1` [BUILTIN]\n"
+"      --pdf-file=FILE        specify a pdf FILE for partons distributions\n"
+"                               [(builtin)/CT14nnlo_0000.dat]. The format\n"
+"                               must be `lhagrid1` complient.\n"
 "\n"
 "The default behaviour is to randomise the incoming neutrinos uniformly over\n"
 "a solid angle specified by the min an max value of the cosine of the angle\n"
@@ -360,6 +361,8 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
 {
 #define ZR 13.
 #define AR 26.
+#define ZW 3.33334
+#define AW 6.00557
 #define ZA 7.26199
 #define AA 14.5477
 
@@ -368,7 +371,7 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
                 { ZR, AR, &density_pem3 }, { ZR, AR, &density_pem4 },
                 { ZR, AR, &density_pem5 }, { ZR, AR, &density_pem6 },
                 { ZR, AR, &density_pem7 }, { ZR, AR, &density_pem8 },
-                { ZR, AR, &density_pem9 }, { ZA, AA, &density_uss0 },
+                { ZW, AW, &density_pem9 }, { ZA, AA, &density_uss0 },
                 { ZA, AA, &density_uss1 }, { ZA, AA, &density_uss2 },
                 { ZA, AA, &density_uss3 }, { ZA, AA, &density_space0 } };
         int index;
@@ -393,9 +396,9 @@ double medium_pumas(struct pumas_context * context, struct pumas_state * state,
         static struct pumas_medium media[] = { { 0, &locals_pem0 },
                 { 0, &locals_pem1 }, { 0, &locals_pem2 }, { 0, &locals_pem3 },
                 { 0, &locals_pem4 }, { 0, &locals_pem5 }, { 0, &locals_pem6 },
-                { 0, &locals_pem7 }, { 0, &locals_pem8 }, { 0, &locals_pem9 },
-                { 1, &locals_uss0 }, { 1, &locals_uss1 }, { 1, &locals_uss2 },
-                { 1, &locals_uss3 }, { 1, &locals_space0 } };
+                { 0, &locals_pem7 }, { 0, &locals_pem8 }, { 1, &locals_pem9 },
+                { 2, &locals_uss0 }, { 2, &locals_uss1 }, { 2, &locals_uss2 },
+                { 2, &locals_uss3 }, { 2, &locals_space0 } };
         int index;
         const double step = medium(state->position, state->direction, &index,
             (struct generic_state *)state);
