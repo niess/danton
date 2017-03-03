@@ -1,8 +1,12 @@
 /* Standard library includes. */
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Linux / POSIX includes. */
+#include <getopt.h>
 
 /* The Physics APIs. */
 #include "ent.h"
@@ -25,9 +29,6 @@ static struct pumas_context * ctx_pumas = NULL;
 /* The tau lepton mass, in GeV / c^2. */
 static double tau_mass;
 
-/* Output stream file descriptor. */
-static FILE * strout = NULL;
-
 /* Finalise and exit to the OS. */
 static void gracefully_exit(int rc)
 {
@@ -36,8 +37,73 @@ static void gracefully_exit(int rc)
         pumas_context_destroy(&ctx_pumas);
         pumas_finalise();
         tauola_finalise();
-        if ((strout != stdout) && (strout != NULL)) fclose(strout);
         exit(rc);
+}
+
+/* Show help and exit. */
+static void exit_with_help(int code)
+{
+        // clang-format off
+        fprintf(stderr,
+"Usage: danton [OPTION]... [PID] [EN]\n"
+"Simulate taus decaying in the Earth atmosphere, originating from neutrinos\n"
+"with the given flavour (PID) and with the given initial ENergy, in GeV.\n"
+"\n"
+"Configuration options:\n"
+"  -c, --cos-theta=C          switch to a point estimate with cos(theta)=C\n"
+"      --cos-theta-max=C      set the maximum value of cos(theta) to C [0.25]\n"
+"      --cos-theta-min=C      set the minimum value of cos(theta) to C [0.15]\n"
+"  -n                         set the number of incoming neutrinos [10000] or\n"
+"                               the number of bins for the grammage sampling\n"
+"                               [1001]\n"
+"  -t, --taus=M               request at most M > 0 tau decays\n"
+"\n"
+"Control options:\n"
+"      --append               append to the output file if it already exists\n"
+"      --grammage             disable neutrino interactions but compute the\n"
+"                               total grammage along the path.\n"
+"  -h, --help                 show this help and exit\n"
+"  -o, --output-file=FILE     set the output FILE for the computed flux\n"
+"      --pdf-file=FILE        specify a pdf FILE for partons distributions.\n"
+"                               The format must be `lhagrid1` [BUILTIN]\n"
+"\n"
+"The default behaviour is to randomise the incoming neutrinos uniformly over\n"
+"a solid angle specified by the min an max value of the cosine of the angle\n"
+"theta with the local vertical at the atmosphere entrance. Use the -c,\n"
+"--cos-theta option in order to perform a point estimate instead.\n");
+        exit(code);
+        // clang-format on
+}
+
+/* Prototype for ;ong options setters. */
+typedef void opt_setter_t(char * optarg, void * argument, void * variable);
+
+/* Container for setting a long option. */
+struct opt_setter {
+        void * variable;
+        opt_setter_t * set;
+        void * argument;
+};
+
+/* String copy setter. */
+static void opt_copy(char * optarg, void * argument, void * variable)
+{
+        char ** s = variable;
+        *s = optarg;
+}
+
+/* Setter for a double variable. */
+static void opt_strtod(char * optarg, void * argument, void * variable)
+{
+        double * d = variable;
+        *d = strtod(optarg, argument);
+}
+
+/* Setter for an int variable. */
+static void opt_strtoi(char * optarg, void * argument, void * variable)
+{
+        int * v = variable;
+        *v = (int)strtol(optarg, argument, 0);
 }
 
 /* Error handler for ENT. */
@@ -386,41 +452,63 @@ static void copy_neutrino(const struct pumas_state * tau, int pid,
         neutrino->weight = tau->weight;
 }
 
-/* Utility functions for formating the results to the ouytput stream. */
-static void format_ancester(
-    FILE * stream, int eventid, const struct ent_state * ancester)
+/* Output file name for the results. */
+static char * output_file = NULL;
+
+/* Open the output stream. */
+static FILE * output_open(void)
 {
+        if (output_file == NULL) return stdout;
+        return fopen(output_file, "a");
+}
+
+/* Close the output stream. */
+static void output_close(FILE * stream)
+{
+        if (output_file != NULL) fclose(stream);
+}
+
+/* Utility functions for formating the results to the ouytput stream. */
+static void format_ancester(int eventid, const struct ent_state * ancester)
+{
+        FILE * stream = output_open();
         fprintf(stream, "%8d %4d %12.5lE %12.5lE %12.5lE %12.5lE\n", eventid,
             ancester->pid, ancester->energy, ancester->direction[0],
             ancester->direction[1], ancester->direction[2]);
+        output_close(stream);
 }
 
-static void format_tau(FILE * stream, int generation, int pid,
+static void format_tau(int generation, int pid,
     const struct pumas_state * production, const struct pumas_state * decay)
 {
-        fprintf(stream, "%8d %4d %12.5lE %12.5lE %12.5lE %12.5lE "
-                        "%12.3lf %12.3lf %12.3lf\n",
+        FILE * stream = output_open();
+        fprintf(stream,
+            "%8d %4d %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf %12.3lf %12.3lf\n",
             generation, pid, production->kinetic, production->direction[0],
             production->direction[1], production->direction[2],
             production->position[0], production->position[1],
             production->position[2]);
-        fprintf(stream, "%8c %4c %12.5lE %12.5lE %12.5lE %12.5lE "
-                        "%12.3lf %12.3lf %12.3lf\n",
+        fprintf(stream,
+            "%8c %4c %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf %12.3lf %12.3lf\n",
             ' ', ' ', decay->kinetic, decay->direction[0], decay->direction[1],
             decay->direction[2], decay->position[0], decay->position[1],
             decay->position[2]);
+        output_close(stream);
 }
 
-static void format_decay_product(
-    FILE * stream, int pid, const double momentum[3])
+static void format_decay_product(int pid, const double momentum[3])
 {
+        FILE * stream = output_open();
         fprintf(stream, "%8c %4d %12c %12.5lE %12.5lE %12.5lE\n", ' ', pid, ' ',
             momentum[0], momentum[1], momentum[2]);
+        output_close(stream);
 }
 
-static void format_grammage(FILE * stream, double cos_theta, double grammage)
+static void format_grammage(double cos_theta, double grammage)
 {
-        fprintf(strout, "%12.5lE %12.5lE\n", cos_theta, grammage);
+        FILE * stream = output_open();
+        fprintf(stream, "%12.5lE %12.5lE\n", cos_theta, grammage);
+        output_close(stream);
 }
 
 /* Print the header of the output file. */
@@ -441,8 +529,7 @@ static void print_header_grammage(FILE * stream)
 
 /* Transport routine, recursive. */
 static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
-    int eventid, int generation, const struct ent_state * ancester,
-    FILE * stream)
+    int eventid, int generation, const struct ent_state * ancester)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU))
@@ -521,14 +608,13 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                                         if (medium_index < 10) continue;
                                         if (nprod == 0) {
                                                 if (generation == 1)
-                                                        format_ancester(stream,
+                                                        format_ancester(
                                                             eventid, ancester);
-                                                format_tau(stream, generation,
+                                                format_tau(generation,
                                                     product.pid, &tau_prod,
                                                     tau);
                                         }
-                                        format_decay_product(
-                                            stream, pid, momentum);
+                                        format_decay_product(pid, momentum);
                                         nprod++;
                                 }
                                 generation++;
@@ -536,10 +622,10 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                                 /* Process any additional nu_e~ or nu_tau. */
                                 if (nu_e != NULL)
                                         transport(ctx_ent, nu_e, eventid,
-                                            generation, ancester, stream);
+                                            generation, ancester);
                                 if (nu_t != NULL)
                                         transport(ctx_ent, nu_t, eventid,
-                                            generation, ancester, stream);
+                                            generation, ancester);
                         }
                 }
                 if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
@@ -548,23 +634,169 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
         }
 }
 
-int main(int nargc, char * argv[])
+int main(int argc, char * argv[])
 {
         /* Set the input arguments. */
-        double energy = 1E+09;
-        enum ent_pid projectile = ENT_PID_NU_TAU;
-        int events = 10001;
-        int do_interaction = 0;
-        double theta_min = 0.15;
-        double theta_max = 0.25;
+        int n_events = 0, n_taus = 0;
+        int use_append = 0, do_interaction = 1, theta_interval = 1;
+        double cos_theta_min = 0.15;
+        double cos_theta_max = 0.25;
+        char * pdf_file = DANTON_DIR "/ent/data/pdf/CT14nnlo_0000.dat";
+
+        /* Parse the optional arguments. */
+        for (;;) {
+                /* Short options. */
+                const char * short_options = "c:hn:t:o:";
+
+                /* Long options. */
+                struct option long_options[] = { /* Configuration options. */
+                        { "cos-theta", required_argument, NULL, 'c' },
+                        { "cos-theta-max", required_argument, NULL, 0 },
+                        { "cos-theta-min", required_argument, NULL, 0 },
+                        { "taus", required_argument, NULL, 't' },
+
+                        /* Control options. */
+                        { "append", no_argument, &use_append, 1 },
+                        { "grammage", no_argument, &do_interaction, 0 },
+                        { "help", no_argument, NULL, 'h' },
+                        { "output-file", required_argument, NULL, 'o' },
+                        { "pdf-file", required_argument, NULL, 0 },
+
+                        { 0, 0, 0, 0 }
+                };
+
+                /* Process the next argument. */
+                char * endptr = NULL; /* For parsing with str* functions. */
+                int option_index = 0;
+                int c = getopt_long(
+                    argc, argv, short_options, long_options, &option_index);
+                if (c == -1)
+                        break; /* No more options to parse. */
+                else if (c > 0) {
+                        if (c == 'c') {
+                                theta_interval = 0;
+                                cos_theta_min = strtod(optarg, &endptr);
+                        } else if (c == 'h')
+                                exit_with_help(EXIT_SUCCESS);
+                        else if (c == 'n')
+                                n_events = strtol(optarg, &endptr, 0);
+                        else if (c == 't')
+                                n_taus = strtol(optarg, &endptr, 0);
+                        else if (c == 'o')
+                                output_file = optarg;
+                        else {
+                                /*
+                                 * getopt should already have reported
+                                 * an error.
+                                 */
+                                exit(EXIT_FAILURE);
+                        }
+                } else {
+                        /* Setters for long options. */
+                        struct opt_setter setters[] = {
+                                /* Configuration options. */
+                                { NULL, NULL, NULL }, /* cos-theta */
+                                { &cos_theta_max, &opt_strtod, &endptr },
+                                { &cos_theta_min, &opt_strtod, &endptr },
+                                { &n_taus, &opt_strtoi, &endptr },
+
+                                /* Control options. */
+                                { NULL, NULL, NULL }, /* append */
+                                { NULL, NULL, NULL }, /* grammage */
+                                { NULL, NULL, NULL }, /* help */
+                                { NULL, NULL, NULL }, /* output-file */
+                                { &pdf_file, &opt_copy, NULL },
+                                /* grammage */
+                        };
+
+                        /* Set the long option. */
+                        struct opt_setter * s = setters + option_index;
+                        if (s->variable == NULL) continue;
+                        s->set(optarg, s->argument, s->variable);
+                }
+
+                /* Check the parsing. */
+                if (endptr == optarg) errno = EINVAL;
+                if (errno != 0) {
+                        perror("danton");
+                        exit(EXIT_FAILURE);
+                }
+        }
+
+        /* Check the consistency of the options. */
+        if (((cos_theta_min < 0.) || (cos_theta_min > 1.)) ||
+            ((theta_interval &&
+                ((cos_theta_min >= cos_theta_max) || (cos_theta_max > 1.) ||
+                    (cos_theta_max < 0.))))) {
+                fprintf(stderr, "danton: inconsistent cos(theta) value(s)."
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+        if (n_events < 1) n_events = do_interaction ? 10000 : 1001;
+        if (!do_interaction && !theta_interval) n_events = 1;
+        if (!do_interaction && theta_interval && n_events < 2) {
+                fprintf(stderr, "danton: numbers of bins must be 2 or more. "
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+
+        /* Parse and check the mandatory arguments. */
+        if (argc - optind != 2) {
+                fprintf(stderr, "danton: wrong number of arguments. "
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+
+        int projectile;
+        double energy;
+        if (sscanf(argv[optind++], "%d", &projectile) != 1)
+                exit_with_help(EXIT_FAILURE);
+
+        if ((projectile != ENT_PID_NU_TAU) &&
+            (projectile != ENT_PID_NU_BAR_TAU) &&
+            (projectile != ENT_PID_NU_BAR_E)) {
+                fprintf(stderr, "danton: invalid neutrino PID."
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+
+        if (sscanf(argv[optind++], "%lf", &energy) != 1)
+                exit_with_help(EXIT_FAILURE);
+
+        /* Configure the output stream. */
+        int print_header = !use_append;
+        FILE * stream;
+        if (output_file == NULL)
+                stream = stdout;
+        else if (use_append) {
+                stream = fopen(output_file, "a");
+                if (stream == NULL) {
+                        stream = fopen(output_file, "w+");
+                        print_header = 1;
+                }
+        } else
+                stream = fopen(output_file, "w+");
+
+        if (stream == NULL) {
+                fprintf(stderr, "danton: could not open the output file. "
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+
+        if (print_header) {
+                if (do_interaction)
+                        print_header_decay(stream);
+                else
+                        print_header_grammage(stream);
+                if (output_file != NULL) fclose(stream);
+        }
 
         /* Register the error handlers. */
         ent_error_handler_set(&handle_ent);
         pumas_error_handler_set(&handle_pumas);
 
         /* Create a new neutrino Physics environment. */
-        if (do_interaction)
-                ent_physics_create(&physics, "ent/data/pdf/CT14nnlo_0000.dat");
+        if (do_interaction) ent_physics_create(&physics, pdf_file);
 
         /* Initialise the PUMAS transport engine. */
         load_pumas();
@@ -581,16 +813,16 @@ int main(int nargc, char * argv[])
         ctx_pumas->kinetic_limit = ENERGY_MIN - tau_mass;
 
         /* Run a batch of Monte-Carlo events. */
-        const char * file = do_interaction ? "decays.dat" : "grammage.dat";
-        strout = fopen(file, "w+");
-        if (do_interaction)
-                print_header_decay(strout);
-        else
-                print_header_grammage(strout);
         int i;
-        for (i = 0; i < events; i++) {
-                double u = do_interaction ? random01(NULL) : i / (events - 1.);
-                const double ct = (theta_max - theta_min) * u + theta_min;
+        for (i = 0; i < n_events; i++) {
+                double ct;
+                if (theta_interval) {
+                        const double u = do_interaction ? random01(NULL) :
+                                                          i / (n_events - 1.);
+                        ct =
+                            (cos_theta_max - cos_theta_min) * u + cos_theta_min;
+                } else
+                        ct = cos_theta_min;
                 const double st = sqrt(1. - ct * ct);
                 struct generic_state state = {
                         .base.ent = { projectile, energy, 0., 0., 1.,
@@ -599,10 +831,10 @@ int main(int nargc, char * argv[])
                 };
                 struct ent_state ancester;
                 memcpy(&ancester, &state.base.ent, sizeof(ancester));
-                transport(&ctx_ent, (struct ent_state *)&state, i, 1, &ancester,
-                    strout);
+                transport(
+                    &ctx_ent, (struct ent_state *)&state, i, 1, &ancester);
                 if (!do_interaction)
-                        format_grammage(strout, ct, state.base.ent.grammage);
+                        format_grammage(ct, state.base.ent.grammage);
         }
 
         /* Finalise and exit to the OS. */

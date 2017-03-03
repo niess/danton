@@ -1,4 +1,5 @@
-CFLAGS := -O2 -std=c99 -pedantic -Wall
+DANTON_DIR := $(abspath .)
+CFLAGS := -O2 -std=c99 -pedantic -Wall -DDANTON_DIR="\"$(DANTON_DIR)\""
 INCLUDE := -Ient/include -Ipumas/include -Itauola-c/include
 LIBS := -Lent/lib -lent -Lpumas/lib -lpumas -Ltauola-c/lib -ltauola-c -lm
 
