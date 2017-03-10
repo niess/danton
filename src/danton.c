@@ -19,9 +19,6 @@
 /* The radius of the geostationary orbit, in m. */
 #define GEO_ORBIT 42164E+03
 
-/* The lower energy bound. */
-#define ENERGY_MIN 1E+03
-
 /* Handles for the transport engines. */
 static struct ent_physics * physics = NULL;
 static struct pumas_context * ctx_pumas = NULL;
@@ -45,17 +42,27 @@ static void exit_with_help(int code)
 {
         // clang-format off
         fprintf(stderr,
-"Usage: danton [OPTION]... [PID] [EN]\n"
+"Usage: danton [OPTION]... [PID]\n"
 "Simulate taus decaying in the Earth atmosphere, originating from neutrinos\n"
-"with the given flavour (PID) and with the given initial ENergy, in GeV.\n"
+"with the given flavour (PID).\n"
 "\n"
 "Configuration options:\n"
 "  -c, --cos-theta=C          switch to a point estimate with cos(theta)=C\n"
 "      --cos-theta-max=C      set the maximum value of cos(theta) to C [0.25]\n"
 "      --cos-theta-min=C      set the minimum value of cos(theta) to C [0.15]\n"
+"  -e, --energy=E             switch to a monokinetic beam of primaries with\n"
+"                               energy E\n"
+"      --energy-analog        switch to an analog sampling of the primary\n"
+"                               energy\n"
+"      --energy-cut=E         set to E the energy under which all particles\n"
+"                               are killed [1E+03]\n"
+"      --energy-max=E         set to E the maximum primary energy [1E+12]\n"
+"      --energy-min=E         set to E the minimum primary energy [1E+07]\n"
 "  -n                         set the number of incoming neutrinos [10000] or\n"
 "                               the number of bins for the grammage sampling\n"
 "                               [1001]\n"
+"      --pem-no-sea           Replace seas witn rocks in the Preliminary\n"
+"                               Earth Model (PEM)\n"
 "  -t, --taus=M               request at most M > 0 tau decays\n"
 "\n"
 "Control options:\n"
@@ -68,7 +75,12 @@ static void exit_with_help(int code)
 "                               [(builtin)/CT14nnlo_0000.dat]. The format\n"
 "                               must be `lhagrid1` complient.\n"
 "\n"
-"The default behaviour is to randomise the incoming neutrinos uniformly over\n"
+"Energies (E) must be given in GeV. PID must be one of -12 (nu_e_bar),\n"
+"16 (nu_tau) or -16 (nu_tau_bar).\n"
+"\n"
+"The default behaviour is to randomise the primary neutrino energy over a\n"
+"1/E^2 spectrum with a log bias. Use the --energy-analog option in order to\n"
+"to an analog simulation. The primary direction is randomised uniformly over\n"
 "a solid angle specified by the min an max value of the cosine of the angle\n"
 "theta with the local vertical at the atmosphere entrance. Use the -c,\n"
 "--cos-theta option in order to perform a point estimate instead.\n");
@@ -348,10 +360,7 @@ static double medium(const double * position, const double * direction,
         return step;
 }
 
-/* Medium callback encapsulation for ENT. */
-static double medium_ent(struct ent_context * context, struct ent_state * state,
-    struct ent_medium ** medium_ptr)
-{
+/* Media table for ENT. */
 #define ZR 13.
 #define AR 26.
 #define ZW 3.33334
@@ -359,44 +368,51 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
 #define ZA 7.26199
 #define AA 14.5477
 
-        static struct ent_medium media[] = { { ZR, AR, &density_pem0 },
-                { ZR, AR, &density_pem1 }, { ZR, AR, &density_pem2 },
-                { ZR, AR, &density_pem3 }, { ZR, AR, &density_pem4 },
-                { ZR, AR, &density_pem5 }, { ZR, AR, &density_pem6 },
-                { ZR, AR, &density_pem7 }, { ZR, AR, &density_pem8 },
-                { ZW, AW, &density_pem9 }, { ZA, AA, &density_uss0 },
-                { ZA, AA, &density_uss1 }, { ZA, AA, &density_uss2 },
-                { ZA, AA, &density_uss3 }, { ZA, AA, &density_space0 } };
+static struct ent_medium media_ent[] = { { ZR, AR, &density_pem0 },
+        { ZR, AR, &density_pem1 }, { ZR, AR, &density_pem2 },
+        { ZR, AR, &density_pem3 }, { ZR, AR, &density_pem4 },
+        { ZR, AR, &density_pem5 }, { ZR, AR, &density_pem6 },
+        { ZR, AR, &density_pem7 }, { ZR, AR, &density_pem8 },
+        { ZW, AW, &density_pem9 }, { ZA, AA, &density_uss0 },
+        { ZA, AA, &density_uss1 }, { ZA, AA, &density_uss2 },
+        { ZA, AA, &density_uss3 }, { ZA, AA, &density_space0 } };
+
+/* Medium callback encapsulation for ENT. */
+static double medium_ent(struct ent_context * context, struct ent_state * state,
+    struct ent_medium ** medium_ptr)
+{
         int index;
         const double step = medium(state->position, state->direction, &index,
             (struct generic_state *)state);
         if (index >= 0)
-                *medium_ptr = media + index;
+                *medium_ptr = media_ent + index;
         else
                 *medium_ptr = NULL;
         return step;
+}
 
 #undef ZR
 #undef AR
 #undef ZA
 #undef AA
-}
+
+/* Media table for PUMAS. */
+static struct pumas_medium media_pumas[] = { { 0, &locals_pem0 },
+        { 0, &locals_pem1 }, { 0, &locals_pem2 }, { 0, &locals_pem3 },
+        { 0, &locals_pem4 }, { 0, &locals_pem5 }, { 0, &locals_pem6 },
+        { 0, &locals_pem7 }, { 0, &locals_pem8 }, { 1, &locals_pem9 },
+        { 2, &locals_uss0 }, { 2, &locals_uss1 }, { 2, &locals_uss2 },
+        { 2, &locals_uss3 }, { 2, &locals_space0 } };
 
 /* Medium callback encapsulation for PUMAS. */
 double medium_pumas(struct pumas_context * context, struct pumas_state * state,
     struct pumas_medium ** medium_ptr)
 {
-        static struct pumas_medium media[] = { { 0, &locals_pem0 },
-                { 0, &locals_pem1 }, { 0, &locals_pem2 }, { 0, &locals_pem3 },
-                { 0, &locals_pem4 }, { 0, &locals_pem5 }, { 0, &locals_pem6 },
-                { 0, &locals_pem7 }, { 0, &locals_pem8 }, { 1, &locals_pem9 },
-                { 2, &locals_uss0 }, { 2, &locals_uss1 }, { 2, &locals_uss2 },
-                { 2, &locals_uss3 }, { 2, &locals_space0 } };
         int index;
         const double step = medium(state->position, state->direction, &index,
             (struct generic_state *)state);
         if (index >= 0)
-                *medium_ptr = media + index;
+                *medium_ptr = media_pumas + index;
         else
                 *medium_ptr = NULL;
         return step;
@@ -468,10 +484,12 @@ static void output_close(FILE * stream)
 static void format_ancester(long eventid, const struct ent_state * ancester)
 {
         FILE * stream = output_open();
-        fprintf(stream, "%10ld %4d %12.5lE %12.5lE %12.5lE %12.5lE\n",
+        fprintf(stream, "%10ld %4d %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf "
+                        "%12.3lf %12.3lf %12.5lE\n",
             eventid + 1, ancester->pid, ancester->energy,
             ancester->direction[0], ancester->direction[1],
-            ancester->direction[2]);
+            ancester->direction[2], ancester->position[0],
+            ancester->position[1], ancester->position[2], ancester->weight);
         output_close(stream);
 }
 
@@ -511,12 +529,12 @@ static void format_grammage(double cos_theta, double grammage)
 /* Print the header of the output file. */
 static void print_header_decay(FILE * stream)
 {
-        fprintf(stream,
-            "    Event   PID    Energy             Direction or Momentum   "
-            "                    Position\n                    (GeV)       "
-            "          (1 or GeV/c)                               (m)\n    "
-            "                            ux or Px     uy or Py    uz or "
-            "Pz        X            Y            Z\n");
+        fprintf(stream, "    Event   PID    Energy             Direction or "
+                        "Momentum                       Position               "
+                        "     Weight\n                    (GeV)                "
+                        " (1 or GeV/c)                               (m)\n     "
+                        "                           ux or Px     uy or Py    "
+                        "uz or Pz        X            Y            Z\n");
 }
 
 static void print_header_grammage(FILE * stream)
@@ -526,6 +544,9 @@ static void print_header_grammage(FILE * stream)
 
 /* The requested number of tau decays. */
 static int n_taus = 0;
+
+/* The lower energy bound under which all particles are killed. */
+static double energy_cut = 1E+03;
 
 /* Transport routine, recursive. */
 static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
@@ -542,7 +563,7 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                 /* Neutrino transport with ENT. */
                 ent_transport(physics, ctx_ent, neutrino, &product, &event);
                 if ((event == ENT_EVENT_EXIT) ||
-                    (neutrino->energy <= ENERGY_MIN))
+                    (neutrino->energy <= energy_cut))
                         break;
 
                 if (abs(product.pid) == ENT_PID_TAU) {
@@ -644,18 +665,27 @@ int main(int argc, char * argv[])
         int use_append = 0, do_interaction = 1, theta_interval = 1;
         double cos_theta_min = 0.15;
         double cos_theta_max = 0.25;
+        double energy_min = 1E+07, energy_max = 1E+12;
+        int energy_spectrum = 1, energy_analog = 0;
+        int pem_sea = 1;
         char * pdf_file = DANTON_DIR "/ent/data/pdf/CT14nnlo_0000.dat";
 
         /* Parse the optional arguments. */
         for (;;) {
                 /* Short options. */
-                const char * short_options = "c:hn:t:o:";
+                const char * short_options = "c:e:hn:t:o:";
 
                 /* Long options. */
                 struct option long_options[] = { /* Configuration options. */
                         { "cos-theta", required_argument, NULL, 'c' },
                         { "cos-theta-max", required_argument, NULL, 0 },
                         { "cos-theta-min", required_argument, NULL, 0 },
+                        { "energy", required_argument, NULL, 'e' },
+                        { "energy-analog", no_argument, &energy_analog, 1 },
+                        { "energy-cut", required_argument, NULL, 0 },
+                        { "energy-max", required_argument, NULL, 0 },
+                        { "energy-min", required_argument, NULL, 0 },
+                        { "pem-no-sea", no_argument, &pem_sea, 0 },
                         { "taus", required_argument, NULL, 't' },
 
                         /* Control options. */
@@ -679,6 +709,9 @@ int main(int argc, char * argv[])
                         if (c == 'c') {
                                 theta_interval = 0;
                                 cos_theta_min = strtod(optarg, &endptr);
+                        } else if (c == 'e') {
+                                energy_spectrum = 0;
+                                energy_min = strtod(optarg, &endptr);
                         } else if (c == 'h')
                                 exit_with_help(EXIT_SUCCESS);
                         else if (c == 'n')
@@ -701,6 +734,12 @@ int main(int argc, char * argv[])
                                 { NULL, NULL, NULL }, /* cos-theta */
                                 { &cos_theta_max, &opt_strtod, &endptr },
                                 { &cos_theta_min, &opt_strtod, &endptr },
+                                { NULL, NULL, NULL }, /* energy */
+                                { NULL, NULL, NULL }, /* energy-analog */
+                                { &energy_cut, &opt_strtod, &endptr },
+                                { &energy_max, &opt_strtod, &endptr },
+                                { &energy_min, &opt_strtod, &endptr },
+                                { NULL, NULL, NULL }, /* pem-no-sea */
                                 { NULL, NULL, NULL }, /* taus */
 
                                 /* Control options. */
@@ -742,13 +781,22 @@ int main(int argc, char * argv[])
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
         }
+        if ((energy_cut < 1E+02) || (energy_min < 1E+02)) {
+                fprintf(stderr, "danton: energies must be at least 100 GeV. "
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+        if (energy_spectrum && (energy_max <= energy_min)) {
+                fprintf(stderr, "danton: inconsistent energy range. "
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
 
         /* Set the primary. */
         int projectile;
-        double energy;
         if (do_interaction) {
                 /* Parse and check the mandatory arguments. */
-                if (argc - optind != 2) {
+                if (argc - optind != 1) {
                         fprintf(stderr, "danton: wrong number of arguments. "
                                         "Call with -h, --help for usage.\n");
                         exit(EXIT_FAILURE);
@@ -764,13 +812,18 @@ int main(int argc, char * argv[])
                                         "Call with -h, --help for usage.\n");
                         exit(EXIT_FAILURE);
                 }
-
-                if (sscanf(argv[optind++], "%lf", &energy) != 1)
-                        exit_with_help(EXIT_FAILURE);
         } else {
                 /* This is a grammage scan. Let's use some arbitrary primary. */
-                energy = 1E+09;
+                energy_spectrum = 0;
+                energy_min = 1E+09;
                 projectile = ENT_PID_NU_TAU;
+        }
+
+        /* Configure the geometry. */
+        if (!pem_sea) {
+                /* Replace seas with rock. */
+                memcpy(media_ent + 9, media_ent + 8, sizeof(*media_ent));
+                memcpy(media_pumas + 9, media_pumas + 8, sizeof(*media_pumas));
         }
 
         /* Configure the output stream. */
@@ -820,7 +873,7 @@ int main(int argc, char * argv[])
         pumas_context_create(0, &ctx_pumas);
         ctx_pumas->medium = &medium_pumas;
         ctx_pumas->random = (pumas_random_cb *)&random01;
-        ctx_pumas->kinetic_limit = ENERGY_MIN - tau_mass;
+        ctx_pumas->kinetic_limit = energy_cut - tau_mass;
 
         /* Run a batch of Monte-Carlo events. */
         long i;
@@ -835,8 +888,23 @@ int main(int argc, char * argv[])
                 } else
                         ct = cos_theta_min;
                 const double st = sqrt(1. - ct * ct);
+                double energy, weight = 1.;
+                if (energy_spectrum) {
+                        if (energy_analog) {
+                                const double ei0 = 1. / energy_min;
+                                energy = 1. / (ei0 +
+                                                  random01(NULL) *
+                                                      (ei0 - 1. / energy_max));
+                        } else {
+                                const double r = log(energy_max / energy_min);
+                                energy = energy_min * exp(r * random01(NULL));
+                                weight = r * energy_max * energy_min /
+                                    ((energy_max - energy_min) * energy);
+                        }
+                } else
+                        energy = energy_min;
                 struct generic_state state = {
-                        .base.ent = { projectile, energy, 0., 0., 1.,
+                        .base.ent = { projectile, energy, 0., 0., weight,
                             { 0., 0., -EARTH_RADIUS - 1E+05 }, { st, 0., ct } },
                         .r = 0.
                 };
