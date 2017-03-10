@@ -100,13 +100,6 @@ static void opt_strtod(char * optarg, void * argument, void * variable)
         *d = strtod(optarg, argument);
 }
 
-/* Setter for an int variable. */
-static void opt_strtoi(char * optarg, void * argument, void * variable)
-{
-        int * v = variable;
-        *v = (int)strtol(optarg, argument, 0);
-}
-
 /* Error handler for ENT. */
 static void handle_ent(enum ent_return rc, ent_function_t * caller)
 {
@@ -263,8 +256,8 @@ DENSITY(space, 0)
 
 /* Local callbacks for PUMAS. */
 #define LOCALS(MODEL, INDEX)                                                   \
-        static double locals_##MODEL##INDEX(                                   \
-            const struct pumas_state * state, struct pumas_locals * locals)    \
+        static double locals_##MODEL##INDEX(struct pumas_medium * medium,      \
+            struct pumas_state * state, struct pumas_locals * locals)          \
         {                                                                      \
                 struct generic_state * s = (struct generic_state *)state;      \
                 const double step =                                            \
@@ -472,12 +465,13 @@ static void output_close(FILE * stream)
 }
 
 /* Utility functions for formating the results to the ouytput stream. */
-static void format_ancester(int eventid, const struct ent_state * ancester)
+static void format_ancester(long eventid, const struct ent_state * ancester)
 {
         FILE * stream = output_open();
-        fprintf(stream, "%8d %4d %12.5lE %12.5lE %12.5lE %12.5lE\n", eventid,
-            ancester->pid, ancester->energy, ancester->direction[0],
-            ancester->direction[1], ancester->direction[2]);
+        fprintf(stream, "%10ld %4d %12.5lE %12.5lE %12.5lE %12.5lE\n",
+            eventid + 1, ancester->pid, ancester->energy,
+            ancester->direction[0], ancester->direction[1],
+            ancester->direction[2]);
         output_close(stream);
 }
 
@@ -485,14 +479,14 @@ static void format_tau(int generation, int pid,
     const struct pumas_state * production, const struct pumas_state * decay)
 {
         FILE * stream = output_open();
-        fprintf(stream,
-            "%8d %4d %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf %12.3lf %12.3lf\n",
+        fprintf(stream, "%10d %4d %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf "
+                        "%12.3lf %12.3lf\n",
             generation, pid, production->kinetic, production->direction[0],
             production->direction[1], production->direction[2],
             production->position[0], production->position[1],
             production->position[2]);
-        fprintf(stream,
-            "%8c %4c %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf %12.3lf %12.3lf\n",
+        fprintf(stream, "%10c %4c %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf "
+                        "%12.3lf %12.3lf\n",
             ' ', ' ', decay->kinetic, decay->direction[0], decay->direction[1],
             decay->direction[2], decay->position[0], decay->position[1],
             decay->position[2]);
@@ -502,8 +496,8 @@ static void format_tau(int generation, int pid,
 static void format_decay_product(int pid, const double momentum[3])
 {
         FILE * stream = output_open();
-        fprintf(stream, "%8c %4d %12c %12.5lE %12.5lE %12.5lE\n", ' ', pid, ' ',
-            momentum[0], momentum[1], momentum[2]);
+        fprintf(stream, "%10c %4d %12c %12.5lE %12.5lE %12.5lE\n", ' ', pid,
+            ' ', momentum[0], momentum[1], momentum[2]);
         output_close(stream);
 }
 
@@ -518,9 +512,9 @@ static void format_grammage(double cos_theta, double grammage)
 static void print_header_decay(FILE * stream)
 {
         fprintf(stream,
-            "   Event  PID    Energy             Direction or Momentum   "
-            "                    Position\n                  (GeV)       "
-            "          (1 or GeV/c)                               (m)\n  "
+            "    Event   PID    Energy             Direction or Momentum   "
+            "                    Position\n                    (GeV)       "
+            "          (1 or GeV/c)                               (m)\n    "
             "                            ux or Px     uy or Py    uz or "
             "Pz        X            Y            Z\n");
 }
@@ -530,13 +524,17 @@ static void print_header_grammage(FILE * stream)
         fprintf(stream, "  cos(theta)    Grammage\n                (kg/m^2)\n");
 }
 
+/* The requested number of tau decays. */
+static int n_taus = 0;
+
 /* Transport routine, recursive. */
 static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
-    int eventid, int generation, const struct ent_state * ancester)
+    long eventid, int generation, const struct ent_state * ancester, int * done)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU))
                 return;
+        if ((n_taus > 0) && (*done >= n_taus)) return;
 
         struct ent_state product;
         enum ent_event event;
@@ -620,15 +618,17 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                                         format_decay_product(pid, momentum);
                                         nprod++;
                                 }
+                                if (nprod > 0) (*done)++;
+                                if ((n_taus > 0) && (*done >= n_taus)) return;
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
                                 if (nu_e != NULL)
                                         transport(ctx_ent, nu_e, eventid,
-                                            generation, ancester);
+                                            generation, ancester, done);
                                 if (nu_t != NULL)
                                         transport(ctx_ent, nu_t, eventid,
-                                            generation, ancester);
+                                            generation, ancester, done);
                         }
                 }
                 if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
@@ -640,7 +640,7 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
 int main(int argc, char * argv[])
 {
         /* Set the input arguments. */
-        int n_events = 0, n_taus = 0;
+        int n_events = 0;
         int use_append = 0, do_interaction = 1, theta_interval = 1;
         double cos_theta_min = 0.15;
         double cos_theta_max = 0.25;
@@ -701,7 +701,7 @@ int main(int argc, char * argv[])
                                 { NULL, NULL, NULL }, /* cos-theta */
                                 { &cos_theta_max, &opt_strtod, &endptr },
                                 { &cos_theta_min, &opt_strtod, &endptr },
-                                { &n_taus, &opt_strtoi, &endptr },
+                                { NULL, NULL, NULL }, /* taus */
 
                                 /* Control options. */
                                 { NULL, NULL, NULL }, /* append */
@@ -743,28 +743,35 @@ int main(int argc, char * argv[])
                 exit(EXIT_FAILURE);
         }
 
-        /* Parse and check the mandatory arguments. */
-        if (argc - optind != 2) {
-                fprintf(stderr, "danton: wrong number of arguments. "
-                                "Call with -h, --help for usage.\n");
-                exit(EXIT_FAILURE);
-        }
-
+        /* Set the primary. */
         int projectile;
         double energy;
-        if (sscanf(argv[optind++], "%d", &projectile) != 1)
-                exit_with_help(EXIT_FAILURE);
+        if (do_interaction) {
+                /* Parse and check the mandatory arguments. */
+                if (argc - optind != 2) {
+                        fprintf(stderr, "danton: wrong number of arguments. "
+                                        "Call with -h, --help for usage.\n");
+                        exit(EXIT_FAILURE);
+                }
 
-        if ((projectile != ENT_PID_NU_TAU) &&
-            (projectile != ENT_PID_NU_BAR_TAU) &&
-            (projectile != ENT_PID_NU_BAR_E)) {
-                fprintf(stderr, "danton: invalid neutrino PID."
-                                "Call with -h, --help for usage.\n");
-                exit(EXIT_FAILURE);
+                if (sscanf(argv[optind++], "%d", &projectile) != 1)
+                        exit_with_help(EXIT_FAILURE);
+
+                if ((projectile != ENT_PID_NU_TAU) &&
+                    (projectile != ENT_PID_NU_BAR_TAU) &&
+                    (projectile != ENT_PID_NU_BAR_E)) {
+                        fprintf(stderr, "danton: invalid neutrino PID."
+                                        "Call with -h, --help for usage.\n");
+                        exit(EXIT_FAILURE);
+                }
+
+                if (sscanf(argv[optind++], "%lf", &energy) != 1)
+                        exit_with_help(EXIT_FAILURE);
+        } else {
+                /* This is a grammage scan. Let's use some arbitrary primary. */
+                energy = 1E+09;
+                projectile = ENT_PID_NU_TAU;
         }
-
-        if (sscanf(argv[optind++], "%lf", &energy) != 1)
-                exit_with_help(EXIT_FAILURE);
 
         /* Configure the output stream. */
         int print_header = !use_append;
@@ -816,7 +823,8 @@ int main(int argc, char * argv[])
         ctx_pumas->kinetic_limit = ENERGY_MIN - tau_mass;
 
         /* Run a batch of Monte-Carlo events. */
-        int i;
+        long i;
+        int done = 0;
         for (i = 0; i < n_events; i++) {
                 double ct;
                 if (theta_interval) {
@@ -834,8 +842,9 @@ int main(int argc, char * argv[])
                 };
                 struct ent_state ancester;
                 memcpy(&ancester, &state.base.ent, sizeof(ancester));
-                transport(
-                    &ctx_ent, (struct ent_state *)&state, i, 1, &ancester);
+                transport(&ctx_ent, (struct ent_state *)&state, i, 1, &ancester,
+                    &done);
+                if ((n_taus > 0) && (done >= n_taus)) break;
                 if (!do_interaction)
                         format_grammage(ct, state.base.ent.grammage);
         }
