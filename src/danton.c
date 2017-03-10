@@ -550,7 +550,8 @@ static double energy_cut = 1E+03;
 
 /* Transport routine, recursive. */
 static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
-    long eventid, int generation, const struct ent_state * ancester, int * done)
+    long eventid, int generation, int primary_dumped,
+    const struct ent_state * ancester, int * done)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU))
@@ -629,9 +630,11 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                                             &medium_index, &tau_data);
                                         if (medium_index < 10) continue;
                                         if (nprod == 0) {
-                                                if (generation == 1)
+                                                if (!primary_dumped) {
                                                         format_ancester(
                                                             eventid, ancester);
+                                                        primary_dumped = 1;
+                                                }
                                                 format_tau(generation,
                                                     product.pid, &tau_prod,
                                                     tau);
@@ -646,10 +649,12 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                                 /* Process any additional nu_e~ or nu_tau. */
                                 if (nu_e != NULL)
                                         transport(ctx_ent, nu_e, eventid,
-                                            generation, ancester, done);
+                                            generation, primary_dumped,
+                                            ancester, done);
                                 if (nu_t != NULL)
                                         transport(ctx_ent, nu_t, eventid,
-                                            generation, ancester, done);
+                                            generation, primary_dumped,
+                                            ancester, done);
                         }
                 }
                 if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
@@ -910,8 +915,8 @@ int main(int argc, char * argv[])
                 };
                 struct ent_state ancester;
                 memcpy(&ancester, &state.base.ent, sizeof(ancester));
-                transport(&ctx_ent, (struct ent_state *)&state, i, 1, &ancester,
-                    &done);
+                transport(&ctx_ent, (struct ent_state *)&state, i, 1, 0,
+                    &ancester, &done);
                 if ((n_taus > 0) && (done >= n_taus)) break;
                 if (!do_interaction)
                         format_grammage(ct, state.base.ent.grammage);
