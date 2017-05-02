@@ -32,7 +32,7 @@
 /* The Physics APIs. */
 #include "ent.h"
 #include "pumas.h"
-#include "tauola-c.h"
+#include "alouette.h"
 
 /* The spherical Earth radius, in m. */
 #define EARTH_RADIUS 6371.E+03
@@ -54,7 +54,7 @@ static void gracefully_exit(int rc)
         ent_physics_destroy(&physics);
         pumas_context_destroy(&ctx_pumas);
         pumas_finalise();
-        tauola_finalise();
+        alouette_finalise();
         exit(rc);
 }
 
@@ -607,18 +607,23 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                         memcpy(&tau_prod, tau, sizeof(tau_prod));
                         pumas_transport(ctx_pumas, tau);
                         if (tau->decayed) {
-                                /* Tau decay with TAUOLA. */
+                                /* Tau decay with ALOUETTE/TAUOLA. */
                                 const double p = sqrt(tau->kinetic *
                                     (tau->kinetic + 2. * tau_mass));
                                 double momentum[3] = { p * tau->direction[0],
                                         p * tau->direction[1],
                                         p * tau->direction[2] };
-                                tauola_decay(
-                                    product.pid, momentum, tau->direction);
+                                int trials;
+                                for (trials = 0; trials < 20; trials++) {
+					if (alouette_decay(product.pid,
+					    momentum, tau->direction) == 
+					    ALOUETTE_RETURN_SUCCESS) break;
+				}
                                 int pid, nprod = 0;
                                 struct generic_state nu_e_data, nu_t_data;
                                 struct ent_state *nu_e = NULL, *nu_t = NULL;
-                                while (tauola_product(&pid, momentum)) {
+                                while (alouette_product(&pid, momentum) ==
+                                    ALOUETTE_RETURN_SUCCESS) {
                                         if (abs(pid) == 16) {
                                                 /* Update the neutrino state
                                                  * with
@@ -890,8 +895,13 @@ int main(int argc, char * argv[])
         /* Initialise the PUMAS transport engine. */
         load_pumas();
 
-        /* Initialise TAUOLA. */
-        tauola_initialise(1, NULL);
+        /* Initialise ALOUETTE/TAUOLA. */
+        enum alouette_return a_rc;
+        if ((a_rc = alouette_initialise(1, NULL)) != ALOUETTE_RETURN_SUCCESS) {
+		fprintf(stderr, "alouette_initialise: %s\n",
+		    alouette_strerror(a_rc));
+		gracefully_exit(EXIT_FAILURE);
+	};
 
         /* Initialise the Monte-Carlo contexts. */
         struct ent_context ctx_ent = { &medium_ent, (ent_random_cb *)&random01,

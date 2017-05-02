@@ -7,3 +7,6 @@
 [submodule "tauola-c"]
 	path = tauola-c
 	url = https://github.com/niess/tauola-c.git
+[submodule "alouette"]
+	path = alouette
+	url = https://gitlab.in2p3.fr/niess/alouette.git
