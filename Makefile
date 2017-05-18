@@ -1,7 +1,7 @@
 DANTON_DIR := $(abspath .)
 CFLAGS := -O2 -std=c99 -pedantic -Wall -DDANTON_DIR="\"$(DANTON_DIR)\""
 INCLUDE := -Ient/include -Ipumas/include -Ialouette/include
-LIBS := -Lent/lib -lent -Lpumas/lib -lpumas -Lalouette/lib -lalouette
+LIBS := -Lent/lib -lent -Lpumas/lib -lpumas -Lalouette/lib -lalouette -lm
 
 .PHONY: bin clean lib libclean
 

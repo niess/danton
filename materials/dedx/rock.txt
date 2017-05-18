@@ -1,10 +1,10 @@
  Incident particle is a Tau with M = 1776.82000 MeV
- Index = 0: Rock
+ Index = 0: StandardRock
       Absorber with <Z/A> = 0.50000
  Sternheimer coef:  a     k=m_s   x_0    x_1    I[eV]   Cbar  delta0
                  0.0830  3.4120  0.0492  3.0549  136.4  3.7738 0.00
 
- *** Table generated with PUMAS v0.6 ***
+ *** Table generated with PUMAS v0.8 ***
 
       T         p     Ionization  brems     pair     photonuc  Radloss    dE/dx   CSDA Range  delta   beta
     [MeV]    [MeV/c]  -----------------------[MeV cm^2/g]------------------------  [g/cm^2]
