@@ -18,3 +18,8 @@ export PUMAS_DEDX=$danton_dir/materials/dedx
 # Set the PATH for binaries.
 bin_dir=$danton_dir/bin
 [[ "$PATH" =~ "${bin_dir}" ]] || export PATH=${bin_dir}:$PATH
+
+# Set the PYTHONPATH For python module.
+python_dir=$danton_dir/lib/python
+[[ "$PYTHONPATH" =~ "${python_dir}" ]] || export PYTHONPATH=${python_dir}:$PYTHONPATH
+

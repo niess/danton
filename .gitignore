@@ -1,6 +1,9 @@
 # Ignore any library object.
-lib
-*.so
+*.so 
+
+# Ignore python bytecode objects.
+lib/python/*.pyo
+lib/python/*.pyc
 
 # Ignore any binary object.
 bin
