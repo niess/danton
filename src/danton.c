@@ -615,10 +615,10 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                                         p * tau->direction[2] };
                                 int trials;
                                 for (trials = 0; trials < 20; trials++) {
-					if (alouette_decay(product.pid,
-					    momentum, tau->direction) == 
-					    ALOUETTE_RETURN_SUCCESS) break;
-				}
+                                        if (alouette_decay(product.pid,
+                                            momentum, tau->direction) ==
+                                            ALOUETTE_RETURN_SUCCESS) break;
+                                }
                                 int pid, nprod = 0;
                                 struct generic_state nu_e_data, nu_t_data;
                                 struct ent_state *nu_e = NULL, *nu_t = NULL;
@@ -898,10 +898,10 @@ int main(int argc, char * argv[])
         /* Initialise ALOUETTE/TAUOLA. */
         enum alouette_return a_rc;
         if ((a_rc = alouette_initialise(1, NULL)) != ALOUETTE_RETURN_SUCCESS) {
-		fprintf(stderr, "alouette_initialise: %s\n",
-		    alouette_strerror(a_rc));
-		gracefully_exit(EXIT_FAILURE);
-	};
+                fprintf(stderr, "alouette_initialise: %s\n",
+                    alouette_strerror(a_rc));
+                gracefully_exit(EXIT_FAILURE);
+        };
 
         /* Initialise the Monte-Carlo contexts. */
         struct ent_context ctx_ent = { &medium_ent, (ent_random_cb *)&random01,
