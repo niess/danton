@@ -691,6 +691,9 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
 
 int main(int argc, char * argv[])
 {
+        /* Clear the error status. */
+        errno = 0;
+
         /* Set the input arguments. */
         int n_events = 0;
         int use_append = 0, do_interaction = 1, theta_interval = 1;
