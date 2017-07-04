@@ -587,6 +587,13 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                 if ((event == ENT_EVENT_EXIT) ||
                     (neutrino->energy <= energy_cut))
                         break;
+                if (abs(neutrino->pid) == ENT_PID_TAU) {
+                        /* Exchange the lepton and product state. */
+                        struct ent_state tmp;
+                        memcpy(&tmp, neutrino, sizeof(tmp));
+                        memcpy(neutrino, &product, sizeof(*neutrino));
+                        memcpy(&product, &tmp, sizeof(product));
+                }
 
                 if (abs(product.pid) == ENT_PID_TAU) {
                         /* Tau transport with PUMAS. */
@@ -908,7 +915,7 @@ int main(int argc, char * argv[])
 
         /* Initialise the Monte-Carlo contexts. */
         struct ent_context ctx_ent = { &medium_ent, (ent_random_cb *)&random01,
-                1 };
+                NULL };
         pumas_context_create(0, &ctx_pumas);
         ctx_pumas->medium = &medium_pumas;
         ctx_pumas->random = (pumas_random_cb *)&random01;
