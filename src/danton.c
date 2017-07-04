@@ -82,7 +82,7 @@ static void exit_with_help(int code)
 "  -n                         set the number of incoming neutrinos [10000] or\n"
 "                               the number of bins for the grammage sampling\n"
 "                               [1001]\n"
-"      --pem-no-sea           Replace seas witn rocks in the Preliminary\n"
+"      --pem-no-sea           Replace seas with rocks in the Preliminary\n"
 "                               Earth Model (PEM)\n"
 "  -t, --taus=M               request at most M > 0 tau decays\n"
 "\n"
@@ -109,7 +109,7 @@ static void exit_with_help(int code)
         // clang-format on
 }
 
-/* Prototype for ;ong options setters. */
+/* Prototype for long options setters. */
 typedef void opt_setter_t(char * optarg, void * argument, void * variable);
 
 /* Container for setting a long option. */
@@ -467,6 +467,7 @@ void load_pumas()
         stream = fopen(dump, "wb+");
         if (stream == NULL) handle_pumas(PUMAS_RETURN_IO_ERROR, NULL, NULL);
         pumas_dump(stream);
+        fclose(stream);
 }
 
 /* Set a neutrino state from a tau decay product. */
