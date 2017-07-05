@@ -72,6 +72,9 @@ static void exit_with_help(int code)
 "with the given flavour (PID).\n"
 "\n"
 "Configuration options:\n"
+"      --altitude=Z           switch to a point estimate at altitude Z\n"
+"      --altitude-max=Z       set the maximum decay altitude to Z [1E+05]\n"
+"      --altitude-min=Z       set the minimum decay altitude to Z [1E+00]\n"
 "  -c, --cos-theta=C          switch to a point estimate with cos(theta)=C\n"
 "      --cos-theta-max=C      set the maximum value of cos(theta) to C [0.25]\n"
 "      --cos-theta-min=C      set the minimum value of cos(theta) to C [0.15]\n"
@@ -101,15 +104,18 @@ static void exit_with_help(int code)
 "                               [(builtin)/CT14nnlo_0000.dat]. The format\n"
 "                               must be `lhagrid1` complient.\n"
 "\n"
-"Energies (E) must be given in GeV. PID must be one of -12 (nu_e_bar),\n"
-"16 (nu_tau) or -16 (nu_tau_bar).\n"
+"Energies (E) must be given in GeV and altitudes (Z) in m. PID must be one of\n"
+"15 (tau) or -15 (tau_bar) in backward mode and -12 (nu_e_bar), 16 (nu_tau) \n"
+"or -16 (nu_tau_bar) in forward mode.\n"
 "\n"
 "The default behaviour is to randomise the primary neutrino energy over a\n"
 "1/E^2 spectrum with a log bias. Use the --energy-analog option in order to\n"
 "to an analog simulation. The primary direction is randomised uniformly over\n"
 "a solid angle specified by the min an max value of the cosine of the angle\n"
 "theta with the local vertical at the atmosphere entrance. Use the -c,\n"
-"--cos-theta option in order to perform a point estimate instead.\n");
+"--cos-theta option in order to perform a point estimate instead.\n"
+"\n"
+"Note that altitudes (Z) must be strictly positive.\n");
         exit(code);
         // clang-format on
 }
@@ -771,12 +777,11 @@ static void transport_backward(
 
         /* Backward propagate the neutrino. */
         enum ent_event event = ENT_EVENT_NONE;
-        int generation = 0;
+        int generation = 1;
         while ((event != ENT_EVENT_EXIT) &&
             (state.base.ent.energy < energy_cut - FLT_EPSILON)) {
                 ent_transport(
                     physics, ctx_ent, (struct ent_state *)&state, NULL, &event);
-                if (event == ENT_EVENT_INTERACTION) generation++;
         }
         if (event != ENT_EVENT_EXIT) return;
         enum ent_pid pid0 =
@@ -823,9 +828,9 @@ int main(int argc, char * argv[])
         /* Set the input arguments. */
         int n_events = 0;
         int use_append = 0, do_interaction = 1, theta_interval = 1;
-        int mode_forward = 0;
-        double cos_theta_min = 0.15;
-        double cos_theta_max = 0.25;
+        int z_interval = 1, mode_forward = 0;
+        double cos_theta_min = 0.15, cos_theta_max = 0.25;
+        double z_min = 1E+00, z_max = 1E+05;
         double energy_min = 1E+07, energy_max = 1E+12;
         int energy_spectrum = 1, energy_analog = 0;
         int pem_sea = 1;
@@ -838,6 +843,9 @@ int main(int argc, char * argv[])
 
                 /* Long options. */
                 struct option long_options[] = { /* Configuration options. */
+                        { "altitude", required_argument, NULL, 0 },
+                        { "altitude-max", required_argument, NULL, 0 },
+                        { "altitude-min", required_argument, NULL, 0 },
                         { "cos-theta", required_argument, NULL, 'c' },
                         { "cos-theta-max", required_argument, NULL, 0 },
                         { "cos-theta-min", required_argument, NULL, 0 },
@@ -893,6 +901,9 @@ int main(int argc, char * argv[])
                         /* Setters for long options. */
                         struct opt_setter setters[] = {
                                 /* Configuration options. */
+                                { &z_min, &opt_strtod, &endptr },
+                                { &z_max, &opt_strtod, &endptr },
+                                { &z_min, &opt_strtod, &endptr },
                                 { NULL, NULL, NULL }, /* cos-theta */
                                 { &cos_theta_max, &opt_strtod, &endptr },
                                 { &cos_theta_min, &opt_strtod, &endptr },
@@ -918,6 +929,8 @@ int main(int argc, char * argv[])
                         struct opt_setter * s = setters + option_index;
                         if (s->variable == NULL) continue;
                         s->set(optarg, s->argument, s->variable);
+                        if (strcmp(long_options[option_index].name, "altitude") == 0)
+                                z_interval = 0;
                 }
 
                 /* Check the parsing. */
@@ -935,6 +948,11 @@ int main(int argc, char * argv[])
                 ((cos_theta_min >= cos_theta_max) || (cos_theta_max > 1.) ||
                     (cos_theta_max < cmin))))) {
                 fprintf(stderr, "danton: inconsistent cos(theta) value(s)."
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+        if ((z_min <= 0.) || (z_interval && (z_min >= z_max))) {
+                fprintf(stderr, "danton: inconsistent altitude value(s)."
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
         }
@@ -1120,7 +1138,7 @@ int main(int argc, char * argv[])
                                     i / (n_events - 1.);
                                 const double dc = cos_theta_max - cos_theta_min;
                                 ct = dc * u + cos_theta_min;
-                                weight /= dc;
+                                weight *= dc;
                         } else
                                 ct = cos_theta_min;
                         const double st = sqrt(1. - ct * ct);
@@ -1128,15 +1146,21 @@ int main(int argc, char * argv[])
                         if (energy_spectrum) {
                                 const double r = log(energy_max / energy_min);
                                 energy = energy_min * exp(r * random01(NULL));
-                                weight /= r * energy_max * energy_min /
-                                    ((energy_max - energy_min) * energy);
+                                weight *= r * energy;
                         } else
                                 energy = energy_min;
+                        double z0;
+                        if (z_interval) {
+                                const double r = log(z_max / z_min);
+                                z0 = z_min * exp(r * random01(NULL));
+                                weight *= r * z0;
+                        } else
+                                z0 = z_min;
                         const double charge = (projectile > 0) ? -1. : 1.;
                         struct generic_state state = {
                                 .base.pumas = { charge, energy - tau_mass, 0.,
                                     0., 0., weight,
-                                    { 0., 0., EARTH_RADIUS + 1E+03 },
+                                    { 0., 0., EARTH_RADIUS + z0 },
                                     { st, 0., ct }, 0 },
                                 .r = 0.
                         };
