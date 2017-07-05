@@ -21,6 +21,7 @@
 
 /* Standard library includes. */
 #include <errno.h>
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,15 +31,18 @@
 #include <getopt.h>
 
 /* The Physics APIs. */
+#include "alouette.h"
 #include "ent.h"
 #include "pumas.h"
-#include "alouette.h"
 
 /* The spherical Earth radius, in m. */
 #define EARTH_RADIUS 6371.E+03
 
 /* The radius of the geostationary orbit, in m. */
 #define GEO_ORBIT 42164E+03
+
+/* Avogadro's number. */
+#define PHYS_NA 6.022E+23
 
 /* Handles for the transport engines. */
 static struct ent_physics * physics = NULL;
@@ -79,6 +83,7 @@ static void exit_with_help(int code)
 "                               are killed [1E+03]\n"
 "      --energy-max=E         set to E the maximum primary energy [1E+12]\n"
 "      --energy-min=E         set to E the minimum primary energy [1E+07]\n"
+"      --forward              switch to forward Monte-Carlo\n"
 "  -n                         set the number of incoming neutrinos [10000] or\n"
 "                               the number of bins for the grammage sampling\n"
 "                               [1001]\n"
@@ -384,10 +389,10 @@ static double medium(const double * position, const double * direction,
 /* Media table for ENT. */
 #define ZR 13.
 #define AR 26.
-#define ZW 3.33334
-#define AW 6.00557
-#define ZA 7.26199
-#define AA 14.5477
+#define ZW 10.
+#define AW 18.
+#define ZA 7.32
+#define AA 14.72
 
 static struct ent_medium media_ent[] = { { ZR, AR, &density_pem0 },
         { ZR, AR, &density_pem1 }, { ZR, AR, &density_pem2 },
@@ -506,8 +511,8 @@ static void output_close(FILE * stream)
 static void format_ancester(long eventid, const struct ent_state * ancester)
 {
         FILE * stream = output_open();
-        fprintf(stream, "%10ld %4d %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf "
-                        "%12.3lf %12.3lf %12.5lE\n",
+        fprintf(stream, "%10ld %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
+                        "%13.3lf %13.3lf %12.5lE\n",
             eventid + 1, ancester->pid, ancester->energy,
             ancester->direction[0], ancester->direction[1],
             ancester->direction[2], ancester->position[0],
@@ -519,14 +524,14 @@ static void format_tau(int generation, int pid,
     const struct pumas_state * production, const struct pumas_state * decay)
 {
         FILE * stream = output_open();
-        fprintf(stream, "%10d %4d %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf "
-                        "%12.3lf %12.3lf\n",
+        fprintf(stream, "%10d %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
+                        "%13.3lf %13.3lf\n",
             generation, pid, production->kinetic, production->direction[0],
             production->direction[1], production->direction[2],
             production->position[0], production->position[1],
             production->position[2]);
-        fprintf(stream, "%10c %4c %12.5lE %12.5lE %12.5lE %12.5lE %12.3lf "
-                        "%12.3lf %12.3lf\n",
+        fprintf(stream, "%10c %4c %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
+                        "%13.3lf %13.3lf\n",
             ' ', ' ', decay->kinetic, decay->direction[0], decay->direction[1],
             decay->direction[2], decay->position[0], decay->position[1],
             decay->position[2]);
@@ -551,12 +556,13 @@ static void format_grammage(double cos_theta, double grammage)
 /* Print the header of the output file. */
 static void print_header_decay(FILE * stream)
 {
-        fprintf(stream, "    Event   PID    Energy             Direction or "
-                        "Momentum                       Position               "
-                        "     Weight\n                    (GeV)                "
-                        " (1 or GeV/c)                               (m)\n     "
-                        "                           ux or Px     uy or Py    "
-                        "uz or Pz        X            Y            Z\n");
+        fprintf(stream,
+            "    Event   PID    Energy             Direction or "
+            "Momentum                         Position               "
+            "      Weight\n                    (GeV)                "
+            " (1 or GeV/c)                                 (m)\n     "
+            "                           ux or Px     uy or Py    "
+            "uz or Pz         X             Y             Z\n");
 }
 
 static void print_header_grammage(FILE * stream)
@@ -567,13 +573,15 @@ static void print_header_grammage(FILE * stream)
 /* The requested number of tau decays. */
 static int n_taus = 0;
 
-/* The lower energy bound under which all particles are killed. */
-static double energy_cut = 1E+03;
+/* The lower (upper) energy bound under (above) which all particles are
+ * killed.
+ */
+static double energy_cut = -1.;
 
-/* Transport routine, recursive. */
-static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
-    long eventid, int generation, int primary_dumped,
-    const struct ent_state * ancester, int * done)
+/* Forward transport routine, recursive. */
+static void transport_forward(struct ent_context * ctx_ent,
+    struct ent_state * neutrino, long eventid, int generation,
+    int primary_dumped, const struct ent_state * ancester, int * done)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU))
@@ -624,8 +632,9 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
                                 int trials;
                                 for (trials = 0; trials < 20; trials++) {
                                         if (alouette_decay(product.pid,
-                                            momentum, tau->direction) ==
-                                            ALOUETTE_RETURN_SUCCESS) break;
+                                                momentum, tau->direction) ==
+                                            ALOUETTE_RETURN_SUCCESS)
+                                                break;
                                 }
                                 int pid, nprod = 0;
                                 struct generic_state nu_e_data, nu_t_data;
@@ -682,18 +691,127 @@ static void transport(struct ent_context * ctx_ent, struct ent_state * neutrino,
 
                                 /* Process any additional nu_e~ or nu_tau. */
                                 if (nu_e != NULL)
-                                        transport(ctx_ent, nu_e, eventid,
-                                            generation, primary_dumped,
+                                        transport_forward(ctx_ent, nu_e,
+                                            eventid, generation, primary_dumped,
                                             ancester, done);
                                 if (nu_t != NULL)
-                                        transport(ctx_ent, nu_t, eventid,
-                                            generation, primary_dumped,
+                                        transport_forward(ctx_ent, nu_t,
+                                            eventid, generation, primary_dumped,
                                             ancester, done);
                         }
                 }
                 if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
                     (abs(neutrino->pid) != ENT_PID_NU_TAU))
                         break;
+        }
+}
+
+/* Ancester callback for ENT. */
+static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
+    struct ent_state * daughter)
+{
+        if (daughter->pid == ENT_PID_NU_BAR_E) {
+                if (ancester == ENT_PID_NU_BAR_E) return 1.;
+                return 0.;
+        } else if (daughter->pid == ENT_PID_NU_TAU) {
+                if (ancester == ENT_PID_NU_TAU) return 1.;
+                return 0.;
+        } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
+                if (ancester == ENT_PID_NU_BAR_TAU) return 1.;
+                return 0.;
+        } else if (daughter->pid == ENT_PID_TAU) {
+                if (ancester == ENT_PID_NU_TAU) return 1.;
+                return 0.;
+        } else if (daughter->pid == ENT_PID_TAU_BAR) {
+                if (ancester == ENT_PID_NU_BAR_TAU) return 1.;
+                return 0.;
+        } else
+                return 0.;
+}
+
+/* Backward transport routine. */
+static void transport_backward(
+    struct ent_context * ctx_ent, struct pumas_state * tau, long eventid)
+{
+        /* Backward propagate the final tau state. */
+        struct pumas_state tau_at_decay;
+        memcpy(&tau_at_decay, tau, sizeof(tau_at_decay));
+        pumas_transport(ctx_pumas, tau);
+        if (!tau->decayed ||
+            (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
+                return;
+        struct pumas_state tau_at_production;
+        memcpy(&tau_at_production, tau, sizeof(tau_at_production));
+
+        /* Backward generate the production vertex. */
+        enum ent_pid pid = (tau->charge < 0.) ? ENT_PID_TAU : ENT_PID_TAU_BAR;
+        const double * const r = tau->position;
+        const double * const u = tau->direction;
+        struct generic_state state = {
+                .base.ent = { pid, tau->kinetic + tau_mass, tau->distance,
+                    tau->grammage, tau->weight, { r[0], r[1], r[2] },
+                    { u[0], u[1], u[2] } },
+                .r = 0.
+        };
+        struct ent_medium * medium;
+        medium_ent(ctx_ent, (struct ent_state *)&state, &medium);
+        if (medium == NULL) return;
+        ent_vertex(physics, ctx_ent, (struct ent_state *)&state, medium,
+            ENT_PROCESS_NONE, NULL);
+
+        /* Append the effective BMC weight for the transport, in order to
+         * recover a flux convention.
+         */
+        double cs;
+        ent_physics_cross_section(physics, pid, state.base.ent.energy,
+            medium->Z, medium->A, ENT_PROCESS_NONE, &cs);
+        double density;
+        medium->density(medium, (struct ent_state *)&state, &density);
+        state.base.ent.weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
+
+        /* Backward propagate the neutrino. */
+        enum ent_event event = ENT_EVENT_NONE;
+        int generation = 0;
+        while ((event != ENT_EVENT_EXIT) &&
+            (state.base.ent.energy < energy_cut - FLT_EPSILON)) {
+                ent_transport(
+                    physics, ctx_ent, (struct ent_state *)&state, NULL, &event);
+                if (event == ENT_EVENT_INTERACTION) generation++;
+        }
+        if (event != ENT_EVENT_EXIT) return;
+        enum ent_pid pid0 =
+            (tau->charge < 0.) ? ENT_PID_NU_TAU : ENT_PID_NU_BAR_TAU;
+        if (state.base.ent.pid != pid0) return;
+
+        /* This is a valid event. Now let us perform the tau decay with
+         * ALOUETTE/TAUOLA.
+         */
+        const double p =
+            sqrt(tau_at_decay.kinetic * (tau_at_decay.kinetic + 2. * tau_mass));
+        double momentum[3] = { p * tau_at_decay.direction[0],
+                p * tau_at_decay.direction[1], p * tau_at_decay.direction[2] };
+        int trials;
+        for (trials = 0; trials < 20; trials++) {
+                if (alouette_decay(pid, momentum, tau_at_decay.direction) ==
+                    ALOUETTE_RETURN_SUCCESS)
+                        break;
+        }
+
+        int pid1, nprod = 0;
+        while (alouette_product(&pid1, momentum) == ALOUETTE_RETURN_SUCCESS) {
+                if (abs(pid1 == 12) || (abs(pid1) == 13) || (abs(pid1) == 14) ||
+                    (abs(pid1) == 16))
+                        continue;
+                if (nprod == 0) {
+                        /* Log the primary neutrino state. */
+                        format_ancester(eventid, (struct ent_state *)&state);
+
+                        /* Log the end points of the tau state. */
+                        format_tau(
+                            generation, pid, &tau_at_production, &tau_at_decay);
+                }
+                format_decay_product(pid1, momentum);
+                nprod++;
         }
 }
 
@@ -705,6 +823,7 @@ int main(int argc, char * argv[])
         /* Set the input arguments. */
         int n_events = 0;
         int use_append = 0, do_interaction = 1, theta_interval = 1;
+        int mode_forward = 0;
         double cos_theta_min = 0.15;
         double cos_theta_max = 0.25;
         double energy_min = 1E+07, energy_max = 1E+12;
@@ -727,6 +846,7 @@ int main(int argc, char * argv[])
                         { "energy-cut", required_argument, NULL, 0 },
                         { "energy-max", required_argument, NULL, 0 },
                         { "energy-min", required_argument, NULL, 0 },
+                        { "forward", no_argument, &mode_forward, 1 },
                         { "pem-no-sea", no_argument, &pem_sea, 0 },
                         { "taus", required_argument, NULL, 't' },
 
@@ -781,6 +901,7 @@ int main(int argc, char * argv[])
                                 { &energy_cut, &opt_strtod, &endptr },
                                 { &energy_max, &opt_strtod, &endptr },
                                 { &energy_min, &opt_strtod, &endptr },
+                                { NULL, NULL, NULL }, /* forward */
                                 { NULL, NULL, NULL }, /* pem-no-sea */
                                 { NULL, NULL, NULL }, /* taus */
 
@@ -808,10 +929,11 @@ int main(int argc, char * argv[])
         }
 
         /* Check the consistency of the options. */
-        if (((cos_theta_min < 0.) || (cos_theta_min > 1.)) ||
+        const double cmin = (mode_forward) ? 0. : -1.;
+        if (((cos_theta_min < cmin) || (cos_theta_min > 1.)) ||
             ((theta_interval &&
                 ((cos_theta_min >= cos_theta_max) || (cos_theta_max > 1.) ||
-                    (cos_theta_max < 0.))))) {
+                    (cos_theta_max < cmin))))) {
                 fprintf(stderr, "danton: inconsistent cos(theta) value(s)."
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
@@ -823,6 +945,7 @@ int main(int argc, char * argv[])
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
         }
+        if (energy_cut <= 0.) energy_cut = (mode_forward) ? 1E+03 : 1E+12;
         if ((energy_cut < 1E+02) || (energy_min < 1E+02)) {
                 fprintf(stderr, "danton: energies must be at least 100 GeV. "
                                 "Call with -h, --help for usage.\n");
@@ -847,15 +970,27 @@ int main(int argc, char * argv[])
                 if (sscanf(argv[optind++], "%d", &projectile) != 1)
                         exit_with_help(EXIT_FAILURE);
 
-                if ((projectile != ENT_PID_NU_TAU) &&
-                    (projectile != ENT_PID_NU_BAR_TAU) &&
-                    (projectile != ENT_PID_NU_BAR_E)) {
-                        fprintf(stderr, "danton: invalid neutrino PID."
-                                        "Call with -h, --help for usage.\n");
-                        exit(EXIT_FAILURE);
+                if (mode_forward) {
+                        if ((projectile != ENT_PID_NU_TAU) &&
+                            (projectile != ENT_PID_NU_BAR_TAU) &&
+                            (projectile != ENT_PID_NU_BAR_E)) {
+                                fprintf(stderr,
+                                    "danton: invalid neutrino PID."
+                                    "Call with -h, --help for usage.\n");
+                                exit(EXIT_FAILURE);
+                        }
+                } else {
+                        if (abs(projectile) != ENT_PID_TAU) {
+                                fprintf(stderr,
+                                    "danton: invalid neutrino PID."
+                                    "Call with -h, --help for usage.\n");
+                                exit(EXIT_FAILURE);
+                        }
                 }
+
         } else {
                 /* This is a grammage scan. Let's use some arbitrary primary. */
+                mode_forward = 1;
                 energy_spectrum = 0;
                 energy_min = 1E+09;
                 projectile = ENT_PID_NU_TAU;
@@ -922,46 +1057,92 @@ int main(int argc, char * argv[])
         ctx_pumas->random = (pumas_random_cb *)&random01;
         ctx_pumas->kinetic_limit = energy_cut - tau_mass;
 
-        /* Run a batch of Monte-Carlo events. */
-        long i;
-        int done = 0;
-        for (i = 0; i < n_events; i++) {
-                double ct;
-                if (theta_interval) {
-                        const double u = do_interaction ? random01(NULL) :
-                                                          i / (n_events - 1.);
-                        ct =
-                            (cos_theta_max - cos_theta_min) * u + cos_theta_min;
-                } else
-                        ct = cos_theta_min;
-                const double st = sqrt(1. - ct * ct);
-                double energy, weight = 1.;
-                if (energy_spectrum) {
-                        if (energy_analog) {
-                                const double ei0 = 1. / energy_min;
-                                energy = 1. / (ei0 +
-                                                  random01(NULL) *
-                                                      (ei0 - 1. / energy_max));
-                        } else {
+        if (mode_forward) {
+                /* Run a bunch of forward Monte-Carlo events. */
+                long i;
+                int done = 0;
+                for (i = 0; i < n_events; i++) {
+                        double ct;
+                        if (theta_interval) {
+                                const double u = do_interaction ?
+                                    random01(NULL) :
+                                    i / (n_events - 1.);
+                                ct = (cos_theta_max - cos_theta_min) * u +
+                                    cos_theta_min;
+                        } else
+                                ct = cos_theta_min;
+                        const double st = sqrt(1. - ct * ct);
+                        double energy, weight = 1.;
+                        if (energy_spectrum) {
+                                if (energy_analog) {
+                                        const double ei0 = 1. / energy_min;
+                                        energy =
+                                            1. /
+                                            (ei0 +
+                                                random01(NULL) *
+                                                    (ei0 - 1. / energy_max));
+                                } else {
+                                        const double r =
+                                            log(energy_max / energy_min);
+                                        energy = energy_min *
+                                            exp(r * random01(NULL));
+                                        weight = r * energy_max * energy_min /
+                                            ((energy_max - energy_min) *
+                                                     energy);
+                                }
+                        } else
+                                energy = energy_min;
+                        struct generic_state state = {
+                                .base.ent = { projectile, energy, 0., 0.,
+                                    weight, { 0., 0., -EARTH_RADIUS - 1E+05 },
+                                    { st, 0., ct } },
+                                .r = 0.
+                        };
+                        struct ent_state ancester;
+                        memcpy(&ancester, &state.base.ent, sizeof(ancester));
+                        transport_forward(&ctx_ent, (struct ent_state *)&state,
+                            i, 1, 0, &ancester, &done);
+                        if ((n_taus > 0) && (done >= n_taus)) break;
+                        if (!do_interaction)
+                                format_grammage(ct, state.base.ent.grammage);
+                }
+        } else {
+                /* Run a bunch of backward Monte-Carlo events. */
+                ctx_ent.ancester = &ancester_cb;
+                ctx_pumas->forward = 0;
+
+                long i;
+                for (i = 0; i < n_events; i++) {
+                        double ct, weight = 1.;
+                        if (theta_interval) {
+                                const double u = do_interaction ?
+                                    random01(NULL) :
+                                    i / (n_events - 1.);
+                                const double dc = cos_theta_max - cos_theta_min;
+                                ct = dc * u + cos_theta_min;
+                                weight /= dc;
+                        } else
+                                ct = cos_theta_min;
+                        const double st = sqrt(1. - ct * ct);
+                        double energy;
+                        if (energy_spectrum) {
                                 const double r = log(energy_max / energy_min);
                                 energy = energy_min * exp(r * random01(NULL));
-                                weight = r * energy_max * energy_min /
+                                weight /= r * energy_max * energy_min /
                                     ((energy_max - energy_min) * energy);
-                        }
-                } else
-                        energy = energy_min;
-                struct generic_state state = {
-                        .base.ent = { projectile, energy, 0., 0., weight,
-                            { 0., 0., -EARTH_RADIUS - 1E+05 }, { st, 0., ct } },
-                        .r = 0.
-                };
-                struct ent_state ancester;
-                memcpy(&ancester, &state.base.ent, sizeof(ancester));
-                transport(&ctx_ent, (struct ent_state *)&state, i, 1, 0,
-                    &ancester, &done);
-                if ((n_taus > 0) && (done >= n_taus)) break;
-                if (!do_interaction)
-                        format_grammage(ct, state.base.ent.grammage);
+                        } else
+                                energy = energy_min;
+                        const double charge = (projectile > 0) ? -1. : 1.;
+                        struct generic_state state = {
+                                .base.pumas = { charge, energy - tau_mass, 0.,
+                                    0., 0., weight,
+                                    { 0., 0., EARTH_RADIUS + 1E+03 },
+                                    { st, 0., ct }, 0 },
+                                .r = 0.
+                        };
+                        transport_backward(
+                            &ctx_ent, (struct pumas_state *)&state, i);
+                }
         }
 
         /* Finalise and exit to the OS. */
