@@ -75,7 +75,7 @@ static void exit_with_help(int code)
 "with the given flavour (PID).\n"
 "\n"
 "Configuration options:\n"
-"      --altitude=Z           switch to a point estimate at altitude Z\n"
+"      --altitude=Z           switch to a point estimate at an altitude of Z\n"
 "      --altitude-max=Z       set the maximum decay altitude to Z [1E+05]\n"
 "      --altitude-min=Z       set the minimum decay altitude to Z [1E+00]\n"
 "  -c, --cos-theta=C          switch to a point estimate with cos(theta)=C\n"
@@ -102,6 +102,8 @@ static void exit_with_help(int code)
 "      --append               append to the output file if it already exists\n"
 "      --grammage             disable neutrino interactions but compute the\n"
 "                               total grammage along the path.\n"
+"      --flux=Z               switch to the sampling of the tau flux at an\n"
+"                               altitude of Z\n"
 "  -h, --help                 show this help and exit\n"
 "  -o, --output-file=FILE     set the output FILE for the computed flux\n"
 "      --pdf-file=FILE        specify a pdf FILE for partons distributions\n"
@@ -275,6 +277,9 @@ struct generic_state {
                 struct pumas_state pumas;
         } base;
         double r;
+        int is_tau;
+        int is_inside;
+        int has_crossed;
 };
 
 /* Density callbacks for ENT. */
@@ -330,6 +335,12 @@ LOCALS(uss, 2)
 LOCALS(uss, 3)
 LOCALS(space, 0)
 
+/* Flag for switching to a tau flux computation. */
+static int flux_mode = 0;
+
+/* Altitude at which the flux is to be computed. */
+static double flux_altitude = 0.;
+
 /* Generic medium callback. */
 static double medium(const double * position, const double * direction,
     int * index, struct generic_state * state)
@@ -342,6 +353,16 @@ static double medium(const double * position, const double * direction,
         if (r2 > GEO_ORBIT * GEO_ORBIT) return step;
         const double r = sqrt(r2);
         state->r = r;
+
+        if (flux_mode && state->is_tau) {
+                if (state->is_inside < 0)
+                        state->is_inside = (r < flux_altitude) ? 1 : 0;
+                else if ((state->is_inside && (r >= flux_altitude)) ||
+                    (!state->is_inside && (r <= flux_altitude))) {
+                        state->has_crossed = 1;
+                        return step;
+                }
+        };
 
         const double ri[] = { 1221.5E+03, 3480.E+03, 5701.E+03, 5771.E+03,
                 5971.E+03, 6151.E+03, 6346.6E+03, 6356.E+03, 6368.E+03,
@@ -644,7 +665,9 @@ static void transport_forward(struct ent_context * ctx_ent,
                                 .base.pumas = { charge, kinetic,
                                     product.distance, product.grammage, 0.,
                                     product.weight },
-                                .r = 0.
+                                .r = 0.,
+                                .is_tau = 1,
+                                .is_inside = -1
                         };
                         struct pumas_state * tau = &tau_data.base.pumas;
                         memcpy(&tau->position, &product.position,
@@ -670,6 +693,8 @@ static void transport_forward(struct ent_context * ctx_ent,
                                 }
                                 int pid, nprod = 0;
                                 struct generic_state nu_e_data, nu_t_data;
+                                memset(&nu_e_data, 0x0, sizeof(nu_e_data));
+                                memset(&nu_t_data, 0x0, sizeof(nu_t_data));
                                 struct ent_state *nu_e = NULL, *nu_t = NULL;
                                 while (alouette_product(&pid, momentum) ==
                                     ALOUETTE_RETURN_SUCCESS) {
@@ -702,6 +727,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                 continue;
 
                                         /* Log the decay if in air. */
+                                        if (flux_mode) continue;
                                         int medium_index;
                                         medium(tau->position, tau->direction,
                                             &medium_index, &tau_data);
@@ -733,6 +759,13 @@ static void transport_forward(struct ent_context * ctx_ent,
                                         transport_forward(ctx_ent, nu_t,
                                             eventid, generation, primary_dumped,
                                             ancester, done);
+                        } else if (tau_data.has_crossed) {
+                                if (!primary_dumped) {
+                                        format_ancester(eventid, ancester);
+                                        primary_dumped = 1;
+                                }
+                                format_tau(
+                                    generation, product.pid, &tau_prod, tau);
                         }
                 }
                 if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
@@ -821,7 +854,10 @@ static void transport_backward(struct ent_context * ctx_ent,
                 .base.ent = { pid, tau->kinetic + tau_mass, tau->distance,
                     tau->grammage, tau->weight, { r[0], r[1], r[2] },
                     { u[0], u[1], u[2] } },
-                .r = 0.
+                .r = 0.,
+                .is_tau = 0,
+                .is_inside = -1,
+                .has_crossed = 0
         };
         struct ent_state * state = &g_state.base.ent;
         struct ent_medium * medium;
@@ -979,6 +1015,7 @@ int main(int argc, char * argv[])
 
                         /* Control options. */
                         { "append", no_argument, &use_append, 1 },
+                        { "flux", required_argument, NULL, 0 },
                         { "grammage", no_argument, &do_interaction, 0 },
                         { "help", no_argument, NULL, 'h' },
                         { "output-file", required_argument, NULL, 'o' },
@@ -1038,11 +1075,11 @@ int main(int argc, char * argv[])
 
                                 /* Control options. */
                                 { NULL, NULL, NULL }, /* append */
+                                { &flux_altitude, &opt_strtod, &endptr },
                                 { NULL, NULL, NULL }, /* grammage */
                                 { NULL, NULL, NULL }, /* help */
                                 { NULL, NULL, NULL }, /* output-file */
                                 { &pdf_file, &opt_copy, NULL },
-                                /* grammage */
                         };
 
                         /* Set the long option. */
@@ -1052,6 +1089,9 @@ int main(int argc, char * argv[])
                         if (strcmp(long_options[option_index].name,
                                 "altitude") == 0)
                                 z_interval = 0;
+                        else if (strcmp(long_options[option_index].name,
+                                "flux") == 0)
+                                flux_mode = 1;
                 }
 
                 /* Check the parsing. */
@@ -1237,7 +1277,10 @@ int main(int argc, char * argv[])
                                 .base.ent = { projectile, energy, 0., 0.,
                                     weight, { 0., 0., -EARTH_RADIUS - 1E+05 },
                                     { st, 0., ct } },
-                                .r = 0.
+                                .r = 0.,
+                                .is_tau = 0,
+                                .is_inside = -1,
+                                .has_crossed = 0
                         };
                         struct ent_state ancester;
                         memcpy(&ancester, &state.base.ent, sizeof(ancester));
@@ -1285,7 +1328,10 @@ int main(int argc, char * argv[])
                                     0., 0., weight,
                                     { 0., 0., EARTH_RADIUS + z0 },
                                     { st, 0., ct }, 0 },
-                                .r = 0.
+                                .r = 0.,
+                                .is_tau = 1,
+                                .is_inside = -1,
+                                .has_crossed = 0
                         };
                         struct pumas_state tau_at_decay, tau_at_production;
                         transport_backward(&ctx_ent,
