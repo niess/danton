@@ -746,6 +746,14 @@ static void transport_backward(
         if (!tau->decayed ||
             (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
                 return;
+
+        /* Apply the BMC weight for an explicit vertex to vertex transport. */
+        const double Ei = tau->kinetic + tau_mass;
+        const double Pi = sqrt(Ei * (Ei + 2. * tau_mass));
+        const double Ef = tau_at_decay.kinetic + tau_mass;
+        const double Pf = sqrt(Ef * (Ef + 2. * tau_mass));
+        tau->weight *= Pi / Pf;
+
         struct pumas_state tau_at_production;
         memcpy(&tau_at_production, tau, sizeof(tau_at_production));
 
