@@ -44,6 +44,9 @@
 /* Avogadro's number. */
 #define PHYS_NA 6.022E+23
 
+/* Biasing factor for backward tau decays. */
+#define DECAY_BIAS 6.
+
 /* Handles for the transport engines. */
 static struct ent_physics * physics = NULL;
 static struct pumas_context * ctx_pumas = NULL;
@@ -721,9 +724,11 @@ static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_TAU) {
                 if (ancester == ENT_PID_NU_TAU) return 1.;
+                else if (ancester == ENT_PID_TAU) return 1E-04;
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
                 if (ancester == ENT_PID_NU_BAR_TAU) return 1.;
+                else if (ancester == ENT_PID_TAU_BAR) return 1E-04;
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU) {
                 if (ancester == ENT_PID_NU_TAU) return 1.;
@@ -735,77 +740,143 @@ static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
                 return 0.;
 }
 
-/* Backward transport routine. */
-static void transport_backward(
-    struct ent_context * ctx_ent, struct pumas_state * tau, long eventid)
+/* Polarisation callback for ALOUETTE. A 100% logitudinal polarisation is
+ * assumed.
+ */
+void polarisation_cb(int pid, const double momentum[3], double * polarisation)
 {
-        /* Backward propagate the final tau state. */
-        struct pumas_state tau_at_decay;
-        memcpy(&tau_at_decay, tau, sizeof(tau_at_decay));
+        double nrm = momentum[0] * momentum[0] + momentum[1] * momentum[1] +
+            momentum[2] * momentum[2];
+        if (nrm <= 0.) {
+                polarisation[0] = 0.;
+                polarisation[1] = 0.;
+                polarisation[2] = 0.;
+                return;
+        }
+        nrm = 1. / sqrt(nrm);
+        polarisation[0] = momentum[0] * nrm;
+        polarisation[1] = momentum[1] * nrm;
+        polarisation[2] = momentum[2] * nrm;
+}
+
+/* Backward transport routine. */
+static void transport_backward(struct ent_context * ctx_ent,
+    struct pumas_state * tau, long eventid, int generation,
+    struct pumas_state * tau_at_decay, struct pumas_state * tau_at_production)
+{
+        /* Backup the final tau state at decay. */
+        if (generation == 1) memcpy(tau_at_decay, tau, sizeof(*tau_at_decay));
+
+        /* Backward propagate the tau state. */
+        const double Kf = tau->kinetic;
         pumas_transport(ctx_pumas, tau);
         if (!tau->decayed ||
             (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
                 return;
 
         /* Apply the BMC weight for an explicit vertex to vertex transport. */
-        const double Ei = tau->kinetic + tau_mass;
-        const double Pi = sqrt(Ei * (Ei + 2. * tau_mass));
-        const double Ef = tau_at_decay.kinetic + tau_mass;
-        const double Pf = sqrt(Ef * (Ef + 2. * tau_mass));
+        const double Pi = sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+        const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
         tau->weight *= Pi / Pf;
 
-        struct pumas_state tau_at_production;
-        memcpy(&tau_at_production, tau, sizeof(tau_at_production));
+        /* Backup the tau state at production. */
+        if (generation == 1)
+                memcpy(tau_at_production, tau, sizeof(*tau_at_production));
 
         /* Backward generate the production vertex. */
         enum ent_pid pid = (tau->charge < 0.) ? ENT_PID_TAU : ENT_PID_TAU_BAR;
         const double * const r = tau->position;
         const double * const u = tau->direction;
-        struct generic_state state = {
+        struct generic_state g_state = {
                 .base.ent = { pid, tau->kinetic + tau_mass, tau->distance,
                     tau->grammage, tau->weight, { r[0], r[1], r[2] },
                     { u[0], u[1], u[2] } },
                 .r = 0.
         };
+        struct ent_state * state = &g_state.base.ent;
         struct ent_medium * medium;
-        medium_ent(ctx_ent, (struct ent_state *)&state, &medium);
+        medium_ent(ctx_ent, state, &medium);
         if (medium == NULL) return;
-        ent_vertex(physics, ctx_ent, (struct ent_state *)&state, medium,
-            ENT_PROCESS_NONE, NULL);
+        ent_vertex(physics, ctx_ent, state, medium, ENT_PROCESS_NONE, NULL);
 
         /* Append the effective BMC weight for the transport, in order to
          * recover a flux convention.
          */
         double cs;
-        ent_physics_cross_section(physics, pid, state.base.ent.energy,
-            medium->Z, medium->A, ENT_PROCESS_NONE, &cs);
+        ent_physics_cross_section(physics, pid, state->energy, medium->Z,
+            medium->A, ENT_PROCESS_NONE, &cs);
         double density;
-        medium->density(medium, (struct ent_state *)&state, &density);
-        state.base.ent.weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
+        medium->density(medium, state, &density);
+        state->weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
 
         /* Backward propagate the neutrino. */
         enum ent_event event = ENT_EVENT_NONE;
-        int generation = 1;
         while ((event != ENT_EVENT_EXIT) &&
-            (state.base.ent.energy < energy_cut - FLT_EPSILON)) {
-                ent_transport(
-                    physics, ctx_ent, (struct ent_state *)&state, NULL, &event);
+            (state->energy < energy_cut - FLT_EPSILON)) {
+                ent_transport(physics, ctx_ent, state, NULL, &event);
+
+                if (event == ENT_EVENT_DECAY_TAU) {
+                        /* Backward randomise the tau decay. */
+                        const double k = state->energy - tau_mass;
+                        const double p = sqrt(k * (k + 2. * tau_mass));
+                        double momentum[3] = { p * state->direction[0],
+                                p * state->direction[1],
+                                p * state->direction[2] };
+                        double weight;
+                        int trials;
+                        for (trials = 0; trials < 20; trials++) {
+                                if (alouette_undecay(state->pid, momentum,
+                                        &polarisation_cb, DECAY_BIAS,
+                                        &weight) == ALOUETTE_RETURN_SUCCESS)
+                                        break;
+                        }
+
+                        int pid1;
+                        if ((alouette_product(&pid1, momentum) !=
+                                ALOUETTE_RETURN_SUCCESS) ||
+                            (abs(pid1) != ENT_PID_TAU))
+                                return;
+                        const double E1 = sqrt(momentum[0] * momentum[0] +
+                            momentum[1] * momentum[1] +
+                            momentum[2] * momentum[2] + tau_mass * tau_mass);
+                        if (E1 >= energy_cut - FLT_EPSILON) return;
+
+                        /* Update the tau state and start again the BMC
+                         * transport.
+                         */
+                        tau->charge = (pid1 > 0) ? -1. : 1.;
+                        tau->kinetic = E1 - tau_mass;
+                        tau->distance = state->distance;
+                        tau->grammage = state->grammage;
+                        tau->time = 0.;
+                        tau->weight = state->weight * weight;
+                        memcpy(tau->position, state->position,
+                            sizeof(tau->position));
+                        memcpy(tau->direction, state->direction,
+                            sizeof(tau->direction));
+                        tau->decayed = 0;
+                        generation++;
+                        transport_backward(ctx_ent, tau, eventid, generation,
+                            tau_at_decay, tau_at_production);
+                        return;
+                }
         }
         if (event != ENT_EVENT_EXIT) return;
         enum ent_pid pid0 =
-            (tau->charge < 0.) ? ENT_PID_NU_TAU : ENT_PID_NU_BAR_TAU;
-        if (state.base.ent.pid != pid0) return;
+            (tau_at_decay->charge < 0.) ? ENT_PID_NU_TAU : ENT_PID_NU_BAR_TAU;
+        if (state->pid != pid0) return;
 
         /* This is a valid event. Now let us perform the tau decay with
          * ALOUETTE/TAUOLA.
          */
-        const double p =
-            sqrt(tau_at_decay.kinetic * (tau_at_decay.kinetic + 2. * tau_mass));
-        double momentum[3] = { p * tau_at_decay.direction[0],
-                p * tau_at_decay.direction[1], p * tau_at_decay.direction[2] };
+        const double p = sqrt(
+            tau_at_decay->kinetic * (tau_at_decay->kinetic + 2. * tau_mass));
+        double momentum[3] = { p * tau_at_decay->direction[0],
+                p * tau_at_decay->direction[1],
+                p * tau_at_decay->direction[2] };
         int trials;
         for (trials = 0; trials < 20; trials++) {
-                if (alouette_decay(pid, momentum, tau_at_decay.direction) ==
+                if (alouette_decay(pid, momentum, tau_at_decay->direction) ==
                     ALOUETTE_RETURN_SUCCESS)
                         break;
         }
@@ -817,11 +888,11 @@ static void transport_backward(
                         continue;
                 if (nprod == 0) {
                         /* Log the primary neutrino state. */
-                        format_ancester(eventid, (struct ent_state *)&state);
+                        format_ancester(eventid, state);
 
                         /* Log the end points of the tau state. */
                         format_tau(
-                            generation, pid, &tau_at_production, &tau_at_decay);
+                            generation, pid, tau_at_production, tau_at_decay);
                 }
                 format_decay_product(pid1, momentum);
                 nprod++;
@@ -937,7 +1008,8 @@ int main(int argc, char * argv[])
                         struct opt_setter * s = setters + option_index;
                         if (s->variable == NULL) continue;
                         s->set(optarg, s->argument, s->variable);
-                        if (strcmp(long_options[option_index].name, "altitude") == 0)
+                        if (strcmp(long_options[option_index].name,
+                                "altitude") == 0)
                                 z_interval = 0;
                 }
 
@@ -1000,22 +1072,23 @@ int main(int argc, char * argv[])
                         if ((projectile != ENT_PID_NU_TAU) &&
                             (projectile != ENT_PID_NU_BAR_TAU) &&
                             (projectile != ENT_PID_NU_BAR_E)) {
-                                fprintf(stderr,
-                                    "danton: invalid neutrino PID."
-                                    "Call with -h, --help for usage.\n");
+                                fprintf(stderr, "danton: invalid neutrino PID."
+                                                "Call with -h, --help for "
+                                                "usage.\n");
                                 exit(EXIT_FAILURE);
                         }
                 } else {
                         if (abs(projectile) != ENT_PID_TAU) {
-                                fprintf(stderr,
-                                    "danton: invalid neutrino PID."
-                                    "Call with -h, --help for usage.\n");
+                                fprintf(stderr, "danton: invalid neutrino PID."
+                                                "Call with -h, --help for "
+                                                "usage.\n");
                                 exit(EXIT_FAILURE);
                         }
                 }
 
         } else {
-                /* This is a grammage scan. Let's use some arbitrary primary. */
+                /* This is a grammage scan. Let's use some arbitrary
+                 * primary. */
                 mode_forward = 1;
                 energy_spectrum = 0;
                 energy_min = 1E+09;
@@ -1172,8 +1245,10 @@ int main(int argc, char * argv[])
                                     { st, 0., ct }, 0 },
                                 .r = 0.
                         };
-                        transport_backward(
-                            &ctx_ent, (struct pumas_state *)&state, i);
+                        struct pumas_state tau_at_decay, tau_at_production;
+                        transport_backward(&ctx_ent,
+                            (struct pumas_state *)&state, i, 1, &tau_at_decay,
+                            &tau_at_production);
                 }
         }
 
