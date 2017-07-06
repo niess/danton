@@ -90,6 +90,7 @@ static void exit_with_help(int code)
 "      --energy-max=E         set to E the maximum primary energy [1E+12]\n"
 "      --energy-min=E         set to E the minimum primary energy [1E+07]\n"
 "      --forward              switch to forward Monte-Carlo\n"
+"      --longitudinal         disable the transverse transport\n"
 "  -n                         set the number of incoming neutrinos [10000] or\n"
 "                               the number of bins for the grammage sampling\n"
 "                               [1001]\n"
@@ -484,17 +485,26 @@ void load_pumas()
         fclose(stream);
 }
 
+/* Flag to disable the transverse transport. */
+static int longitudinal = 0;
+
 /* Set a neutrino state from a tau decay product. */
 static void copy_neutrino(const struct pumas_state * tau, int pid,
-    const double * momentum, struct ent_state * neutrino)
+    const double * momentum, struct ent_state * neutrino, double * direction)
 {
         neutrino->pid = pid;
         neutrino->energy = sqrt(momentum[0] * momentum[0] +
             momentum[1] * momentum[1] + momentum[2] * momentum[2]);
         memcpy(neutrino->position, tau->position, sizeof(neutrino->position));
-        neutrino->direction[0] = momentum[0] / neutrino->energy;
-        neutrino->direction[1] = momentum[1] / neutrino->energy;
-        neutrino->direction[2] = momentum[2] / neutrino->energy;
+        if (longitudinal) {
+                neutrino->direction[0] = direction[0];
+                neutrino->direction[1] = direction[1];
+                neutrino->direction[2] = direction[2];
+        } else {
+                neutrino->direction[0] = momentum[0] / neutrino->energy;
+                neutrino->direction[1] = momentum[1] / neutrino->energy;
+                neutrino->direction[2] = momentum[2] / neutrino->energy;
+        }
         neutrino->distance = tau->distance;
         neutrino->grammage = tau->grammage;
         neutrino->weight = tau->weight;
@@ -597,6 +607,13 @@ static void transport_forward(struct ent_context * ctx_ent,
                 return;
         if ((n_taus > 0) && (*done >= n_taus)) return;
 
+        /* Backup the initial direction if the transverse transport is
+         * disabled.
+         */
+        double direction[3];
+        if (longitudinal)
+                memcpy(direction, neutrino->direction, sizeof(direction));
+
         struct ent_state product;
         enum ent_event event;
         for (;;) {
@@ -605,6 +622,12 @@ static void transport_forward(struct ent_context * ctx_ent,
                 if ((event == ENT_EVENT_EXIT) ||
                     (neutrino->energy <= energy_cut))
                         break;
+                if (longitudinal) {
+                        memcpy(neutrino->direction, direction,
+                            sizeof(neutrino->direction));
+                        memcpy(product.direction, direction,
+                            sizeof(product.direction));
+                }
                 if (abs(neutrino->pid) == ENT_PID_TAU) {
                         /* Exchange the lepton and product state. */
                         struct ent_state tmp;
@@ -658,18 +681,20 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                 if (neutrino->pid ==
                                                     ENT_PID_HADRON)
                                                         copy_neutrino(tau, pid,
-                                                            momentum, neutrino);
+                                                            momentum, neutrino,
+                                                            direction);
                                                 else {
                                                         nu_t =
                                                             &nu_t_data.base.ent;
                                                         copy_neutrino(tau, pid,
-                                                            momentum, nu_t);
+                                                            momentum, nu_t,
+                                                            direction);
                                                 }
                                                 continue;
                                         } else if (pid == -12) {
                                                 nu_e = &nu_e_data.base.ent;
-                                                copy_neutrino(
-                                                    tau, pid, momentum, nu_e);
+                                                copy_neutrino(tau, pid,
+                                                    momentum, nu_e, direction);
                                                 continue;
                                         } else if ((pid == 12) ||
                                             (abs(pid) == 13) ||
@@ -699,10 +724,11 @@ static void transport_forward(struct ent_context * ctx_ent,
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
-                                if (nu_e != NULL)
+                                if (nu_e != NULL) {
                                         transport_forward(ctx_ent, nu_e,
                                             eventid, generation, primary_dumped,
                                             ancester, done);
+                                }
                                 if (nu_t != NULL)
                                         transport_forward(ctx_ent, nu_t,
                                             eventid, generation, primary_dumped,
@@ -723,12 +749,16 @@ static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
                 if (ancester == ENT_PID_NU_BAR_E) return 1.;
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_TAU) {
-                if (ancester == ENT_PID_NU_TAU) return 1.;
-                else if (ancester == ENT_PID_TAU) return 1E-04;
+                if (ancester == ENT_PID_NU_TAU)
+                        return 1.;
+                else if (ancester == ENT_PID_TAU)
+                        return 1E-04;
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
-                if (ancester == ENT_PID_NU_BAR_TAU) return 1.;
-                else if (ancester == ENT_PID_TAU_BAR) return 1E-04;
+                if (ancester == ENT_PID_NU_BAR_TAU)
+                        return 1.;
+                else if (ancester == ENT_PID_TAU_BAR)
+                        return 1E-04;
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU) {
                 if (ancester == ENT_PID_NU_TAU) return 1.;
@@ -809,11 +839,19 @@ static void transport_backward(struct ent_context * ctx_ent,
         medium->density(medium, state, &density);
         state->weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
 
+        /* Reset the initial direction if transvserse transport is disabled. */
+        if (longitudinal)
+                memcpy(
+                    state->direction, tau->direction, sizeof(state->direction));
+
         /* Backward propagate the neutrino. */
         enum ent_event event = ENT_EVENT_NONE;
         while ((event != ENT_EVENT_EXIT) &&
             (state->energy < energy_cut - FLT_EPSILON)) {
                 ent_transport(physics, ctx_ent, state, NULL, &event);
+                if (longitudinal)
+                        memcpy(state->direction, tau->direction,
+                            sizeof(state->direction));
 
                 if (event == ENT_EVENT_DECAY_TAU) {
                         /* Backward randomise the tau decay. */
@@ -852,8 +890,9 @@ static void transport_backward(struct ent_context * ctx_ent,
                         tau->weight = state->weight * weight;
                         memcpy(tau->position, state->position,
                             sizeof(tau->position));
-                        memcpy(tau->direction, state->direction,
-                            sizeof(tau->direction));
+                        if (!longitudinal)
+                                memcpy(tau->direction, state->direction,
+                                    sizeof(tau->direction));
                         tau->decayed = 0;
                         generation++;
                         transport_backward(ctx_ent, tau, eventid, generation,
@@ -934,6 +973,7 @@ int main(int argc, char * argv[])
                         { "energy-max", required_argument, NULL, 0 },
                         { "energy-min", required_argument, NULL, 0 },
                         { "forward", no_argument, &mode_forward, 1 },
+                        { "longitudinal", no_argument, &longitudinal, 1 },
                         { "pem-no-sea", no_argument, &pem_sea, 0 },
                         { "taus", required_argument, NULL, 't' },
 
@@ -992,6 +1032,7 @@ int main(int argc, char * argv[])
                                 { &energy_max, &opt_strtod, &endptr },
                                 { &energy_min, &opt_strtod, &endptr },
                                 { NULL, NULL, NULL }, /* forward */
+                                { NULL, NULL, NULL }, /* longitudinal */
                                 { NULL, NULL, NULL }, /* pem-no-sea */
                                 { NULL, NULL, NULL }, /* taus */
 
@@ -1155,6 +1196,7 @@ int main(int argc, char * argv[])
         ctx_pumas->medium = &medium_pumas;
         ctx_pumas->random = (pumas_random_cb *)&random01;
         ctx_pumas->kinetic_limit = energy_cut - tau_mass;
+        ctx_pumas->longitudinal = longitudinal;
 
         if (mode_forward) {
                 /* Run a bunch of forward Monte-Carlo events. */
