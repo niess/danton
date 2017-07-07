@@ -45,7 +45,11 @@
 #define PHYS_NA 6.022E+23
 
 /* Biasing factor for backward tau decays. */
-#define DECAY_BIAS 6.
+# define DECAY_BIAS 6.
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* Handles for the transport engines. */
 static struct ent_physics * physics = NULL;
@@ -834,7 +838,8 @@ void polarisation_cb(int pid, const double momentum[3], double * polarisation)
 /* Backward transport routine. */
 static void transport_backward(struct ent_context * ctx_ent,
     struct pumas_state * tau, long eventid, int generation,
-    struct pumas_state * tau_at_decay, struct pumas_state * tau_at_production)
+    struct pumas_state * tau_at_decay, struct pumas_state * tau_at_production,
+    int * done)
 {
         /* Backup the final tau state at decay. */
         if (generation == 1) memcpy(tau_at_decay, tau, sizeof(*tau_at_decay));
@@ -957,7 +962,7 @@ static void transport_backward(struct ent_context * ctx_ent,
                         tau->decayed = 0;
                         generation++;
                         transport_backward(ctx_ent, tau, eventid, generation,
-                            tau_at_decay, tau_at_production);
+                            tau_at_decay, tau_at_production, done);
                         return;
                 }
         }
@@ -965,6 +970,7 @@ static void transport_backward(struct ent_context * ctx_ent,
         enum ent_pid pid0 =
             (tau_at_decay->charge < 0.) ? ENT_PID_NU_TAU : ENT_PID_NU_BAR_TAU;
         if (state->pid != pid0) return;
+        (*done)++;
 
         /* This is a valid event. In flux mode let us dump the tau state and
          * then return.
@@ -1017,8 +1023,9 @@ int main(int argc, char * argv[])
         /* Set the input arguments. */
         int n_events = 0;
         int use_append = 0, do_interaction = 1, theta_interval = 1;
-        int z_interval = 1, mode_forward = 0;
+        int z_interval = 1, elevation_interval = 1, mode_forward = 0;
         double cos_theta_min = 0.15, cos_theta_max = 0.25;
+        double elevation_min = -10., elevation_max = 10.;
         double z_min = 1E+00, z_max = 1E+05;
         double energy_min = 1E+07, energy_max = 1E+12;
         int energy_spectrum = 1, energy_analog = 0;
@@ -1038,6 +1045,9 @@ int main(int argc, char * argv[])
                         { "cos-theta", required_argument, NULL, 'c' },
                         { "cos-theta-max", required_argument, NULL, 0 },
                         { "cos-theta-min", required_argument, NULL, 0 },
+                        { "elevation", required_argument, NULL, 0 },
+                        { "elevation-max", required_argument, NULL, 0 },
+                        { "elevation-min", required_argument, NULL, 0 },
                         { "energy", required_argument, NULL, 'e' },
                         { "energy-analog", no_argument, &energy_analog, 1 },
                         { "energy-cut", required_argument, NULL, 0 },
@@ -1098,6 +1108,9 @@ int main(int argc, char * argv[])
                                 { NULL, NULL, NULL }, /* cos-theta */
                                 { &cos_theta_max, &opt_strtod, &endptr },
                                 { &cos_theta_min, &opt_strtod, &endptr },
+                                { &elevation_min, &opt_strtod, &endptr },
+                                { &elevation_max, &opt_strtod, &endptr },
+                                { &elevation_min, &opt_strtod, &endptr },
                                 { NULL, NULL, NULL }, /* energy */
                                 { NULL, NULL, NULL }, /* energy-analog */
                                 { &energy_cut, &opt_strtod, &endptr },
@@ -1121,9 +1134,14 @@ int main(int argc, char * argv[])
                         struct opt_setter * s = setters + option_index;
                         if (s->variable == NULL) continue;
                         s->set(optarg, s->argument, s->variable);
+
+                        /* Check for extra flags to set. */
                         if (strcmp(long_options[option_index].name,
                                 "altitude") == 0)
                                 z_interval = 0;
+                        else if (strcmp(long_options[option_index].name,
+                                     "elevation") == 0)
+                                elevation_interval = 0;
                         else if (strcmp(long_options[option_index].name,
                                      "flux") == 0)
                                 flux_mode = 1;
@@ -1149,6 +1167,13 @@ int main(int argc, char * argv[])
         }
         if ((z_min <= 0.) || (z_interval && (z_min >= z_max))) {
                 fprintf(stderr, "danton: inconsistent altitude value(s)."
+                                "Call with -h, --help for usage.\n");
+                exit(EXIT_FAILURE);
+        }
+        if ((elevation_min < -90.) || (elevation_min > 90.) ||
+            (elevation_max > 90.) ||
+            (elevation_interval && (elevation_min >= elevation_max))) {
+                fprintf(stderr, "danton: inconsistent elevation value(s)."
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
         }
@@ -1273,10 +1298,10 @@ int main(int argc, char * argv[])
         ctx_pumas->kinetic_limit = energy_cut - tau_mass;
         ctx_pumas->longitudinal = longitudinal;
 
+        int done = 0;
         if (mode_forward) {
                 /* Run a bunch of forward Monte-Carlo events. */
                 long i;
-                int done = 0;
                 for (i = 0; i < n_events; i++) {
                         double ct;
                         if (theta_interval) {
@@ -1330,10 +1355,15 @@ int main(int argc, char * argv[])
                 ctx_ent.ancester = &ancester_cb;
                 ctx_pumas->forward = 0;
 
+                cos_theta_min = cos((90. - elevation_min) * M_PI / 180.);
+                if (elevation_interval)
+                        cos_theta_max =
+                            cos((90. - elevation_max) * M_PI / 180.);
+
                 long i;
                 for (i = 0; i < n_events; i++) {
                         double ct, weight = 1.;
-                        if (theta_interval) {
+                        if (elevation_interval) {
                                 const double u = do_interaction ?
                                     random01(NULL) :
                                     i / (n_events - 1.);
@@ -1373,7 +1403,8 @@ int main(int argc, char * argv[])
                         struct pumas_state tau_at_decay, tau_at_production;
                         transport_backward(&ctx_ent,
                             (struct pumas_state *)&state, i, 1, &tau_at_decay,
-                            &tau_at_production);
+                            &tau_at_production, &done);
+                        if ((n_taus > 0) && (done > n_taus)) break;
                 }
         }
 
