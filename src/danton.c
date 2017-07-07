@@ -54,6 +54,9 @@ static struct pumas_context * ctx_pumas = NULL;
 /* The tau lepton mass, in GeV / c^2. */
 static double tau_mass;
 
+/* The tau lifetime, in m / c. */
+static double tau_ctau0;
+
 /* Finalise and exit to the OS. */
 static void gracefully_exit(int rc)
 {
@@ -354,21 +357,27 @@ static double medium(const double * position, const double * direction,
         const double r = sqrt(r2);
         state->r = r;
 
-        if (flux_mode && state->is_tau) {
+        if (flux_mode && state->is_tau && state->has_crossed >= 0) {
+                /* Check the flux boundary in forward MC. */
+                const double rf = EARTH_RADIUS + flux_altitude;
                 if (state->is_inside < 0)
-                        state->is_inside = (r < flux_altitude) ? 1 : 0;
-                else if ((state->is_inside && (r >= flux_altitude)) ||
-                    (!state->is_inside && (r <= flux_altitude))) {
+                        state->is_inside = (r < rf) ? 1 : 0;
+                else if ((state->is_inside && (r >= rf)) ||
+                    (!state->is_inside && (r <= rf))) {
                         state->has_crossed = 1;
                         return step;
                 }
         };
 
-        const double ri[] = { 1221.5E+03, 3480.E+03, 5701.E+03, 5771.E+03,
+        const double ri[16] = { 1221.5E+03, 3480.E+03, 5701.E+03, 5771.E+03,
                 5971.E+03, 6151.E+03, 6346.6E+03, 6356.E+03, 6368.E+03,
                 EARTH_RADIUS, EARTH_RADIUS + 4.E+03, EARTH_RADIUS + 1.E+04,
                 EARTH_RADIUS + 4.E+04, EARTH_RADIUS + 1.E+05, GEO_ORBIT,
                 2 * GEO_ORBIT };
+
+        /* Kill neutrinos that exit the atmosphere.  */
+        if ((!state->is_tau) && (state->r > ri[13])) return step;
+
         int i;
         for (i = 0; i < sizeof(ri) / sizeof(*ri) - 1; i++) {
                 if (r <= ri[i]) {
@@ -491,7 +500,7 @@ void load_pumas()
                 pumas_load(stream);
                 fclose(stream);
                 pumas_error_raise();
-                pumas_particle(NULL, NULL, &tau_mass);
+                pumas_particle(NULL, &tau_ctau0, &tau_mass);
                 return;
         }
 
@@ -837,10 +846,15 @@ static void transport_backward(struct ent_context * ctx_ent,
             (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
                 return;
 
-        /* Apply the BMC weight for an explicit vertex to vertex transport. */
-        const double Pi = sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
-        const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
-        tau->weight *= Pi / Pf;
+        if (!flux_mode) {
+                /* Apply the BMC weight for an explicit vertex to vertex
+                 * transport.
+                 */
+                const double Pi =
+                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
+                tau->weight *= Pi / Pf;
+        }
 
         /* Backup the tau state at production. */
         if (generation == 1)
@@ -857,7 +871,7 @@ static void transport_backward(struct ent_context * ctx_ent,
                 .r = 0.,
                 .is_tau = 0,
                 .is_inside = -1,
-                .has_crossed = 0
+                .has_crossed = -1
         };
         struct ent_state * state = &g_state.base.ent;
         struct ent_medium * medium;
@@ -874,6 +888,17 @@ static void transport_backward(struct ent_context * ctx_ent,
         double density;
         medium->density(medium, state, &density);
         state->weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
+        if (flux_mode) {
+                const double Pi =
+                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                const double ct = tau_ctau0 * Pi / tau_mass;
+                double cs;
+                const int index = (medium - media_ent) / sizeof(*media_ent);
+                struct pumas_medium * m = media_pumas + index;
+                pumas_property_cross_section(m->material, tau->kinetic, &cs);
+                const double lambda = 1. / (cs * density + 1. / ct);
+                state->weight *= lambda;
+        }
 
         /* Reset the initial direction if transvserse transport is disabled. */
         if (longitudinal)
@@ -941,9 +966,19 @@ static void transport_backward(struct ent_context * ctx_ent,
             (tau_at_decay->charge < 0.) ? ENT_PID_NU_TAU : ENT_PID_NU_BAR_TAU;
         if (state->pid != pid0) return;
 
-        /* This is a valid event. Now let us perform the tau decay with
-         * ALOUETTE/TAUOLA.
+        /* This is a valid event. In flux mode let us dump the tau state and
+         * then return.
          */
+        if (flux_mode) {
+                /* Log the primary neutrino state. */
+                format_ancester(eventid, state);
+
+                /* Log the end points of the tau state. */
+                format_tau(generation, pid, tau_at_production, tau_at_decay);
+                return;
+        }
+
+        /* In full mode let us perform the tau decay with ALOUETTE/TAUOLA. */
         const double p = sqrt(
             tau_at_decay->kinetic * (tau_at_decay->kinetic + 2. * tau_mass));
         double momentum[3] = { p * tau_at_decay->direction[0],
@@ -1090,7 +1125,7 @@ int main(int argc, char * argv[])
                                 "altitude") == 0)
                                 z_interval = 0;
                         else if (strcmp(long_options[option_index].name,
-                                "flux") == 0)
+                                     "flux") == 0)
                                 flux_mode = 1;
                 }
 
@@ -1316,7 +1351,9 @@ int main(int argc, char * argv[])
                         } else
                                 energy = energy_min;
                         double z0;
-                        if (z_interval) {
+                        if (flux_mode)
+                                z0 = flux_altitude;
+                        else if (z_interval) {
                                 const double r = log(z_max / z_min);
                                 z0 = z_min * exp(r * random01(NULL));
                                 weight *= r * z0;
@@ -1331,7 +1368,7 @@ int main(int argc, char * argv[])
                                 .r = 0.,
                                 .is_tau = 1,
                                 .is_inside = -1,
-                                .has_crossed = 0
+                                .has_crossed = -1
                         };
                         struct pumas_state tau_at_decay, tau_at_production;
                         transport_backward(&ctx_ent,
