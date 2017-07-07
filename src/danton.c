@@ -88,6 +88,10 @@ static void exit_with_help(int code)
 "  -c, --cos-theta=C          switch to a point estimate with cos(theta)=C\n"
 "      --cos-theta-max=C      set the maximum value of cos(theta) to C [0.25]\n"
 "      --cos-theta-min=C      set the minimum value of cos(theta) to C [0.15]\n"
+"      --elevation=A          switch to a point estimate at an elevation\n"
+"                               angle of A\n"
+"      --elevation-max=A      set the maximum elevation angle to A [10.]\n"
+"      --elevation-min=A      set the minimum elevation angle to A [-10.]\n"
 "  -e, --energy=E             switch to a monokinetic beam of primaries with\n"
 "                               energy E\n"
 "      --energy-analog        switch to an analog sampling of the primary\n"
@@ -117,9 +121,9 @@ static void exit_with_help(int code)
 "                               [(builtin)/CT14nnlo_0000.dat]. The format\n"
 "                               must be `lhagrid1` complient.\n"
 "\n"
-"Energies (E) must be given in GeV and altitudes (Z) in m. PID must be one of\n"
-"15 (tau) or -15 (tau_bar) in backward mode and -12 (nu_e_bar), 16 (nu_tau) \n"
-"or -16 (nu_tau_bar) in forward mode.\n"
+"Energies (E) must be given in GeV, altitudes (Z) in m and angles (A) in deg.\n"
+"PID must be one of 15 (tau) or -15 (tau_bar) in backward mode and -12 \n"
+"(nu_e_bar), 16 (nu_tau) or -16 (nu_tau_bar) in forward mode.\n"
 "\n"
 "The default behaviour is to randomise the primary neutrino energy over a\n"
 "1/E^2 spectrum with a log bias. Use the --energy-analog option in order to\n"
@@ -898,7 +902,7 @@ static void transport_backward(struct ent_context * ctx_ent,
                     sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
                 const double ct = tau_ctau0 * Pi / tau_mass;
                 double cs;
-                const int index = (medium - media_ent) / sizeof(*media_ent);
+                const int index = medium - media_ent;
                 struct pumas_medium * m = media_pumas + index;
                 pumas_property_cross_section(m->material, tau->kinetic, &cs);
                 const double lambda = 1. / (cs * density + 1. / ct);
