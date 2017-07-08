@@ -45,7 +45,7 @@
 #define PHYS_NA 6.022E+23
 
 /* Biasing factor for backward tau decays. */
-# define DECAY_BIAS 6.
+#define DECAY_BIAS 6.
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -855,14 +855,12 @@ static void transport_backward(struct ent_context * ctx_ent,
             (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
                 return;
 
+        /* Apply the BMC weight for the tau decay. */
+        const double Pi = sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+        tau->weight *= tau_ctau0 * Pi / tau_mass;
         if (!flux_mode) {
-                /* Apply the BMC weight for an explicit vertex to vertex
-                 * transport.
-                 */
-                const double Pi =
-                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
                 const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
-                tau->weight *= Pi / Pf;
+                tau->weight /= tau_ctau0 * Pf / tau_mass;
         }
 
         /* Backup the tau state at production. */
@@ -897,17 +895,6 @@ static void transport_backward(struct ent_context * ctx_ent,
         double density;
         medium->density(medium, state, &density);
         state->weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
-        if (flux_mode) {
-                const double Pi =
-                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
-                const double ct = tau_ctau0 * Pi / tau_mass;
-                double cs;
-                const int index = medium - media_ent;
-                struct pumas_medium * m = media_pumas + index;
-                pumas_property_cross_section(m->material, tau->kinetic, &cs);
-                const double lambda = 1. / (cs * density + 1. / ct);
-                state->weight *= lambda;
-        }
 
         /* Reset the initial direction if transvserse transport is disabled. */
         if (longitudinal)
