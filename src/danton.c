@@ -884,13 +884,13 @@ static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
                 if (ancester == ENT_PID_NU_TAU)
                         return 1.;
                 else if (ancester == ENT_PID_TAU)
-                        return 1E-04;
+                        return 1E-03;
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
                 if (ancester == ENT_PID_NU_BAR_TAU)
                         return 1.;
                 else if (ancester == ENT_PID_TAU_BAR)
-                        return 1E-04;
+                        return 1E-03;
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU) {
                 if (ancester == ENT_PID_NU_TAU) return 1.;
@@ -902,7 +902,7 @@ static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
                 return 0.;
 }
 
-/* Polarisation callback for ALOUETTE. A 100% logitudinal polarisation is
+/* Polarisation callback for ALOUETTE. A 100% longitudinal polarisation is
  * assumed.
  */
 void polarisation_cb(int pid, const double momentum[3], double * polarisation)
@@ -940,7 +940,7 @@ static void transport_backward(struct ent_context * ctx_ent,
         /* Apply the BMC weight for the tau decay. */
         const double Pi = sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
         tau->weight *= tau_ctau0 * Pi / tau_mass;
-        if (!flux_mode) {
+        if (!flux_mode || (generation > 1)) {
                 const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
                 tau->weight /= tau_ctau0 * Pf / tau_mass;
         }
