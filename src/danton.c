@@ -492,8 +492,90 @@ double medium_pumas(struct pumas_context * context, struct pumas_state * state,
         return step;
 }
 
-/* Uniform distribution over [0,1]. */
-static double random01(void * context) { return rand() / (double)RAND_MAX; }
+/* Data for the Mersenne Twister PRNG. */
+static struct {
+#define MT_PERIOD 624
+        int index;
+        unsigned long data[MT_PERIOD];
+} random_mt;
+
+/* Initialise the PRNG random seed. */
+static void random_initialise()
+{
+        /* Get a seed from /dev/urandom*/
+        unsigned long seed;
+        static const char * urandom = "/dev/urandom";
+        FILE * fp = fopen(urandom, "rb");
+        if (fp == NULL) goto error;
+        if (fread(&seed, sizeof(long), 1, fp) <= 0) {
+                fclose(fp);
+                goto error;
+        }
+        fclose(fp);
+
+        /* Set the Mersenne Twister initial state. */
+        random_mt.data[0] = seed & 0xffffffffUL;
+        int j;
+        for (j = 1; j < MT_PERIOD; j++) {
+                random_mt.data[j] =
+                    (1812433253UL * (random_mt.data[j - 1] ^
+                                        (random_mt.data[j - 1] >> 30)) +
+                        j);
+                random_mt.data[j] &= 0xffffffffUL;
+        }
+        random_mt.index = MT_PERIOD;
+
+        return;
+error:
+        fprintf(
+            stderr, "danton: could not Initialise PRNG from %s.\n", urandom);
+        gracefully_exit(EXIT_FAILURE);
+}
+
+/* Uniform pseudo random distribution over [0,1] from a Mersenne Twister. */
+static double random_uniform01(void * context)
+{
+        /* Check the buffer. */
+        if (random_mt.index < MT_PERIOD - 1) {
+                random_mt.index++;
+        } else {
+                /* Update the MT state. */
+                const int M = 397;
+                const unsigned long UPPER_MASK = 0x80000000UL;
+                const unsigned long LOWER_MASK = 0x7fffffffUL;
+                static unsigned long mag01[2] = { 0x0UL, 0x9908b0dfUL };
+                unsigned long y;
+                int kk;
+                for (kk = 0; kk < MT_PERIOD - M; kk++) {
+                        y = (random_mt.data[kk] & UPPER_MASK) |
+                            (random_mt.data[kk + 1] & LOWER_MASK);
+                        random_mt.data[kk] = random_mt.data[kk + M] ^ (y >> 1) ^
+                            mag01[y & 0x1UL];
+                }
+                for (; kk < MT_PERIOD - 1; kk++) {
+                        y = (random_mt.data[kk] & UPPER_MASK) |
+                            (random_mt.data[kk + 1] & LOWER_MASK);
+                        random_mt.data[kk] =
+                            random_mt.data[kk + (M - MT_PERIOD)] ^ (y >> 1) ^
+                            mag01[y & 0x1UL];
+                }
+                y = (random_mt.data[MT_PERIOD - 1] & UPPER_MASK) |
+                    (random_mt.data[0] & LOWER_MASK);
+                random_mt.data[MT_PERIOD - 1] =
+                    random_mt.data[M - 1] ^ (y >> 1) ^ mag01[y & 0x1UL];
+                random_mt.index = 0;
+        }
+
+        /* Tempering. */
+        unsigned long y = random_mt.data[random_mt.index];
+        y ^= (y >> 11);
+        y ^= (y << 7) & 0x9d2c5680UL;
+        y ^= (y << 15) & 0xefc60000UL;
+        y ^= (y >> 18);
+
+        /* Convert to a floating point and return. */
+        return y * (1.0 / 4294967295.0);
+}
 
 /* Loader for PUMAS. */
 void load_pumas()
@@ -1280,12 +1362,15 @@ int main(int argc, char * argv[])
                 gracefully_exit(EXIT_FAILURE);
         };
 
+        /* Initialise the random engine. */
+        random_initialise();
+
         /* Initialise the Monte-Carlo contexts. */
-        struct ent_context ctx_ent = { &medium_ent, (ent_random_cb *)&random01,
-                NULL };
+        struct ent_context ctx_ent = { &medium_ent,
+                (ent_random_cb *)&random_uniform01, NULL };
         pumas_context_create(0, &ctx_pumas);
         ctx_pumas->medium = &medium_pumas;
-        ctx_pumas->random = (pumas_random_cb *)&random01;
+        ctx_pumas->random = (pumas_random_cb *)&random_uniform01;
         ctx_pumas->kinetic_limit = energy_cut - tau_mass;
         ctx_pumas->longitudinal = longitudinal;
 
@@ -1297,7 +1382,7 @@ int main(int argc, char * argv[])
                         double ct;
                         if (theta_interval) {
                                 const double u = do_interaction ?
-                                    random01(NULL) :
+                                    random_uniform01(NULL) :
                                     i / (n_events - 1.);
                                 ct = (cos_theta_max - cos_theta_min) * u +
                                     cos_theta_min;
@@ -1311,13 +1396,13 @@ int main(int argc, char * argv[])
                                         energy =
                                             1. /
                                             (ei0 +
-                                                random01(NULL) *
+                                                random_uniform01(NULL) *
                                                     (ei0 - 1. / energy_max));
                                 } else {
                                         const double r =
                                             log(energy_max / energy_min);
                                         energy = energy_min *
-                                            exp(r * random01(NULL));
+                                            exp(r * random_uniform01(NULL));
                                         weight = r * energy_max * energy_min /
                                             ((energy_max - energy_min) *
                                                      energy);
@@ -1356,7 +1441,7 @@ int main(int argc, char * argv[])
                         double ct, weight = 1.;
                         if (elevation_interval) {
                                 const double u = do_interaction ?
-                                    random01(NULL) :
+                                    random_uniform01(NULL) :
                                     i / (n_events - 1.);
                                 const double dc = cos_theta_max - cos_theta_min;
                                 ct = dc * u + cos_theta_min;
@@ -1367,7 +1452,8 @@ int main(int argc, char * argv[])
                         double energy;
                         if (energy_spectrum) {
                                 const double r = log(energy_max / energy_min);
-                                energy = energy_min * exp(r * random01(NULL));
+                                energy = energy_min *
+                                    exp(r * random_uniform01(NULL));
                                 weight *= r * energy;
                         } else
                                 energy = energy_min;
@@ -1376,7 +1462,7 @@ int main(int argc, char * argv[])
                                 z0 = flux_altitude;
                         else if (z_interval) {
                                 const double r = log(z_max / z_min);
-                                z0 = z_min * exp(r * random01(NULL));
+                                z0 = z_min * exp(r * random_uniform01(NULL));
                                 weight *= r * z0;
                         } else
                                 z0 = z_min;
