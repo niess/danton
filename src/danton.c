@@ -740,7 +740,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                 /* Neutrino transport with ENT. */
                 ent_transport(physics, ctx_ent, neutrino, &product, &event);
                 if ((event == ENT_EVENT_EXIT) ||
-                    (neutrino->energy <= energy_cut))
+                    (neutrino->energy <= energy_cut + FLT_EPSILON))
                         break;
                 if (longitudinal) {
                         memcpy(neutrino->direction, direction,
@@ -763,7 +763,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                         struct generic_state tau_data = {
                                 .base.pumas = { charge, kinetic,
                                     product.distance, product.grammage, 0.,
-                                    product.weight },
+                                    product.weight, .decayed = 0 },
                                 .r = 0.,
                                 .is_tau = 1,
                                 .is_inside = -1
@@ -799,34 +799,24 @@ static void transport_forward(struct ent_context * ctx_ent,
                                     ALOUETTE_RETURN_SUCCESS) {
                                         if (abs(pid) == 16) {
                                                 /* Update the neutrino state
-                                                 * with
-                                                 * the nu_tau daughter.
+                                                 * with the nu_tau daughter.
                                                  */
-                                                if (neutrino->pid ==
-                                                    ENT_PID_HADRON)
-                                                        copy_neutrino(tau, pid,
-                                                            momentum, neutrino,
-                                                            direction);
-                                                else {
-                                                        nu_t =
-                                                            &nu_t_data.base.ent;
-                                                        copy_neutrino(tau, pid,
-                                                            momentum, nu_t,
-                                                            direction);
-                                                }
+                                                nu_t = &nu_t_data.base.ent;
+                                                copy_neutrino(tau, pid,
+                                                    momentum, nu_t,
+                                                    direction);
                                                 continue;
                                         } else if (pid == -12) {
                                                 nu_e = &nu_e_data.base.ent;
                                                 copy_neutrino(tau, pid,
                                                     momentum, nu_e, direction);
                                                 continue;
-                                        } else if ((pid == 12) ||
+                                        } else if (flux_mode || (pid == 12) ||
                                             (abs(pid) == 13) ||
                                             (abs(pid) == 14))
                                                 continue;
 
                                         /* Log the decay if in air. */
-                                        if (flux_mode) continue;
                                         int medium_index;
                                         medium(tau->position, tau->direction,
                                             &medium_index, &tau_data);
@@ -1293,7 +1283,7 @@ int main(int argc, char * argv[])
                         }
                 } else {
                         if (abs(projectile) != ENT_PID_TAU) {
-                                fprintf(stderr, "danton: invalid neutrino PID."
+                                fprintf(stderr, "danton: invalid daughter PID."
                                                 "Call with -h, --help for "
                                                 "usage.\n");
                                 exit(EXIT_FAILURE);
