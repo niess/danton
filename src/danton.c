@@ -456,8 +456,18 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
     struct ent_medium ** medium_ptr)
 {
         int index;
-        const double step = medium(state->position, state->direction, &index,
-            (struct generic_state *)state);
+        double direction[3];
+        if (context->ancester) {
+                direction[0] = -state->direction[0];
+                direction[1] = -state->direction[1];
+                direction[2] = -state->direction[2];
+        } else {
+                direction[0] = state->direction[0];
+                direction[1] = state->direction[1];
+                direction[2] = state->direction[2];
+        }
+        const double step = medium(
+            state->position, direction, &index, (struct generic_state *)state);
         if (index >= 0)
                 *medium_ptr = media_ent + index;
         else
@@ -483,8 +493,18 @@ double medium_pumas(struct pumas_context * context, struct pumas_state * state,
     struct pumas_medium ** medium_ptr)
 {
         int index;
-        const double step = medium(state->position, state->direction, &index,
-            (struct generic_state *)state);
+        double direction[3];
+        if (context->forward) {
+                direction[0] = state->direction[0];
+                direction[1] = state->direction[1];
+                direction[2] = state->direction[2];
+        } else {
+                direction[0] = -state->direction[0];
+                direction[1] = -state->direction[1];
+                direction[2] = -state->direction[2];
+        }
+        const double step = medium(
+            state->position, direction, &index, (struct generic_state *)state);
         if (index >= 0)
                 *medium_ptr = media_pumas + index;
         else
