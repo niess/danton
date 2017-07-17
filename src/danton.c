@@ -803,8 +803,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                  */
                                                 nu_t = &nu_t_data.base.ent;
                                                 copy_neutrino(tau, pid,
-                                                    momentum, nu_t,
-                                                    direction);
+                                                    momentum, nu_t, direction);
                                                 continue;
                                         } else if (pid == -12) {
                                                 nu_e = &nu_e_data.base.ent;
@@ -984,11 +983,10 @@ static void transport_backward(struct ent_context * ctx_ent,
 
                 if (event == ENT_EVENT_DECAY_TAU) {
                         /* Backward randomise the tau decay. */
-                        const double k = state->energy - tau_mass;
-                        const double p = sqrt(k * (k + 2. * tau_mass));
-                        double momentum[3] = { p * state->direction[0],
-                                p * state->direction[1],
-                                p * state->direction[2] };
+                        double momentum[3] = { state->energy *
+                                    state->direction[0],
+                                state->energy * state->direction[1],
+                                state->energy * state->direction[2] };
                         double weight;
                         int trials;
                         for (trials = 0; trials < 20; trials++) {
@@ -1003,9 +1001,10 @@ static void transport_backward(struct ent_context * ctx_ent,
                                 ALOUETTE_RETURN_SUCCESS) ||
                             (abs(pid1) != ENT_PID_TAU))
                                 return;
-                        const double E1 = sqrt(momentum[0] * momentum[0] +
+                        const double p12 = momentum[0] * momentum[0] +
                             momentum[1] * momentum[1] +
-                            momentum[2] * momentum[2] + tau_mass * tau_mass);
+                            momentum[2] * momentum[2];
+                        const double E1 = sqrt(p12 + tau_mass * tau_mass);
                         if (E1 >= energy_cut - FLT_EPSILON) return;
 
                         /* Update the tau state and start again the BMC
@@ -1016,7 +1015,8 @@ static void transport_backward(struct ent_context * ctx_ent,
                         tau->distance = state->distance;
                         tau->grammage = state->grammage;
                         tau->time = 0.;
-                        tau->weight = state->weight * weight;
+                        tau->weight = state->weight * weight * state->energy *
+                            state->energy / p12;
                         memcpy(tau->position, state->position,
                             sizeof(tau->position));
                         if (!longitudinal)
