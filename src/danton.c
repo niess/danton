@@ -685,10 +685,15 @@ static void format_decay_product(int pid, const double momentum[3])
         output_close(stream);
 }
 
-static void format_grammage(double cos_theta, double grammage)
+static void format_grammage(int forward, double cos_theta, double grammage)
 {
         FILE * stream = output_open();
-        fprintf(stream, "%12.5lE %12.5lE\n", cos_theta, grammage);
+        if (forward)
+                fprintf(stream, "%12.5lE %12.5lE\n", cos_theta, grammage);
+        else {
+                const double elevation = 90. - acos(cos_theta) * 180. / M_PI;
+                fprintf(stream, "%12.5lf %12.5lE\n", elevation, grammage);
+        }
         output_close(stream);
 }
 
@@ -704,9 +709,14 @@ static void print_header_decay(FILE * stream)
             "uz or Pz         X             Y             Z\n");
 }
 
-static void print_header_grammage(FILE * stream)
+static void print_header_grammage(int forward, FILE * stream)
 {
-        fprintf(stream, "  cos(theta)    Grammage\n                (kg/m^2)\n");
+        if (forward)
+                fprintf(stream,
+                    "  cos(theta)    Grammage\n                (kg/m^2)\n");
+        else
+                fprintf(stream,
+                    "   elevation    Grammage\n     (deg)      (kg/m^2)\n");
 }
 
 /* The requested number of tau decays. */
@@ -1241,11 +1251,22 @@ int main(int argc, char * argv[])
                 exit(EXIT_FAILURE);
         }
         if (n_events < 1) n_events = do_interaction ? 10000 : 1001;
-        if (!do_interaction && !theta_interval) n_events = 1;
-        if (!do_interaction && theta_interval && n_events < 2) {
-                fprintf(stderr, "danton: numbers of bins must be 2 or more. "
-                                "Call with -h, --help for usage.\n");
-                exit(EXIT_FAILURE);
+        if (mode_forward) {
+                if (!do_interaction && !theta_interval) n_events = 1;
+                if (!do_interaction && theta_interval && n_events < 2) {
+                        fprintf(stderr,
+                            "danton: numbers of bins must be 2 or more. "
+                            "Call with -h, --help for usage.\n");
+                        exit(EXIT_FAILURE);
+                }
+        } else {
+                if (!do_interaction && !elevation_interval) n_events = 1;
+                if (!do_interaction && elevation_interval && n_events < 2) {
+                        fprintf(stderr,
+                            "danton: numbers of bins must be 2 or more. "
+                            "Call with -h, --help for usage.\n");
+                        exit(EXIT_FAILURE);
+                }
         }
         if (energy_cut <= 0.) energy_cut = (mode_forward) ? 1E+03 : 1E+12;
         if ((energy_cut < 1E+02) || (energy_min < 1E+02)) {
@@ -1293,7 +1314,6 @@ int main(int argc, char * argv[])
         } else {
                 /* This is a grammage scan. Let's use some arbitrary
                  * primary. */
-                mode_forward = 1;
                 energy_spectrum = 0;
                 energy_min = 1E+09;
                 projectile = ENT_PID_NU_TAU;
@@ -1330,7 +1350,7 @@ int main(int argc, char * argv[])
                 if (do_interaction)
                         print_header_decay(stream);
                 else
-                        print_header_grammage(stream);
+                        print_header_grammage(mode_forward, stream);
                 if (output_file != NULL) fclose(stream);
         }
 
@@ -1414,7 +1434,8 @@ int main(int argc, char * argv[])
                             i, 1, 0, &ancester, &done);
                         if ((n_taus > 0) && (done >= n_taus)) break;
                         if (!do_interaction)
-                                format_grammage(ct, state.base.ent.grammage);
+                                format_grammage(
+                                    mode_forward, ct, state.base.ent.grammage);
                 }
         } else {
                 /* Run a bunch of backward Monte-Carlo events. */
@@ -1456,22 +1477,50 @@ int main(int argc, char * argv[])
                                 weight *= r * z0;
                         } else
                                 z0 = z_min;
-                        const double charge = (projectile > 0) ? -1. : 1.;
-                        struct generic_state state = {
-                                .base.pumas = { charge, energy - tau_mass, 0.,
-                                    0., 0., weight,
-                                    { 0., 0., EARTH_RADIUS + z0 },
-                                    { st, 0., ct }, 0 },
-                                .r = 0.,
-                                .is_tau = 1,
-                                .is_inside = -1,
-                                .has_crossed = -1
-                        };
-                        struct pumas_state tau_at_decay, tau_at_production;
-                        transport_backward(&ctx_ent,
-                            (struct pumas_state *)&state, i, 1, &tau_at_decay,
-                            &tau_at_production, &done);
-                        if ((n_taus > 0) && (done > n_taus)) break;
+                        if (do_interaction) {
+                                /* This is a particle Monte-Carlo. */
+                                const double charge =
+                                    (projectile > 0) ? -1. : 1.;
+                                struct generic_state state = {
+                                        .base.pumas = { charge,
+                                            energy - tau_mass, 0., 0., 0.,
+                                            weight,
+                                            { 0., 0., EARTH_RADIUS + z0 },
+                                            { st, 0., ct }, 0 },
+                                        .r = 0.,
+                                        .is_tau = 1,
+                                        .is_inside = -1,
+                                        .has_crossed = -1
+                                };
+                                struct pumas_state tau_at_decay,
+                                    tau_at_production;
+                                transport_backward(&ctx_ent,
+                                    (struct pumas_state *)&state, i, 1,
+                                    &tau_at_decay, &tau_at_production, &done);
+                                if ((n_taus > 0) && (done > n_taus)) break;
+                        } else {
+                                /* This is a grammage scan. */
+                                struct generic_state g_state = {
+                                        .base.ent = { projectile, energy, 0.,
+                                            0., weight,
+                                            { 0., 0., EARTH_RADIUS + z0 },
+                                            { st, 0., ct } },
+                                        .r = 0.,
+                                        .is_tau = 0,
+                                        .is_inside = -1,
+                                        .has_crossed = 0
+                                };
+
+                                struct ent_state * state = &g_state.base.ent;
+                                enum ent_event event = ENT_EVENT_NONE;
+                                while (event != ENT_EVENT_EXIT) {
+                                        ent_transport(physics, &ctx_ent, state,
+                                            NULL, &event);
+                                }
+
+                                format_grammage(
+                                    mode_forward, ct, state->grammage);
+                        }
                 }
         }
 
