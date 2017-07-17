@@ -207,7 +207,7 @@ static double pem_model2(double r, double * density)
 {
         const double x = r / EARTH_RADIUS;
         const double a = 6.4761E+03;
-        *density = 7.9565E+03 + x * (-a + x * (2.5283E+03 - x * 3.0807E+03));
+        *density = 7.9565E+03 + x * (-a + x * (5.5283E+03 - x * 3.0807E+03));
         return 0.01 * EARTH_RADIUS / a;
 }
 
