@@ -616,7 +616,7 @@ void load_pumas()
 
         /* If no binary dump, initialise from the MDF and dump. */
         pumas_initialise(particle, NULL, NULL, NULL);
-        pumas_particle(NULL, NULL, &tau_mass);
+        pumas_particle(NULL, &tau_ctau0, &tau_mass);
 
         /* Dump the library configuration. */
         stream = fopen(dump, "wb+");
