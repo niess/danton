@@ -1006,66 +1006,84 @@ void polarisation_cb(int pid, const double momentum[3], double * polarisation)
 
 /* Backward transport routine. */
 static void transport_backward(struct ent_context * ctx_ent,
-    struct pumas_state * tau, long eventid, int generation,
-    struct pumas_state * tau_at_decay, struct pumas_state * tau_at_production,
+    struct generic_state * current, long eventid, int generation,
+    struct generic_state * final, struct generic_state * tau_at_production,
     int * done)
 {
-        /* Backup the final tau state at decay. */
-        if (generation == 1) memcpy(tau_at_decay, tau, sizeof(*tau_at_decay));
+        /* Backup the final state, e.g. the tau at decay. */
+        if (generation == 1) memcpy(final, current, sizeof(* final));
 
-        /* Backward propagate the tau state. */
-        const double Kf = tau->kinetic;
-        pumas_transport(ctx_pumas, tau);
-        if (!tau->decayed ||
-            (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
-                return;
+        struct ent_state * state = NULL;
+        struct generic_state g_state;
+        struct pumas_state * tau = &current->base.pumas;
+        double direction[3];
+        if (current->is_tau) {
+                /* Backward propagate the tau state. */
+                const double Kf = tau->kinetic;
+                memcpy(direction, tau->direction, sizeof(direction));
+                pumas_transport(ctx_pumas, tau);
+                if (!tau->decayed ||
+                    (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
+                        return;
 
-        /* Apply the BMC weight for the tau decay. */
-        const double Pi = sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
-        tau->weight *= tau_ctau0 * Pi / tau_mass;
-        if (!flux_mode || (generation > 1)) {
-                const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
-                tau->weight /= tau_ctau0 * Pf / tau_mass;
-        }
+                /* Apply the BMC weight for the tau decay. */
+                const double Pi =
+                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                tau->weight *= tau_ctau0 * Pi / tau_mass;
+                if (!flux_mode || (generation > 1)) {
+                        const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
+                        tau->weight /= tau_ctau0 * Pf / tau_mass;
+                }
 
-        /* Backup the tau state at production. */
-        if (generation == 1)
-                memcpy(tau_at_production, tau, sizeof(*tau_at_production));
+                /* Backup the tau state at production. */
+                if (generation == 1)
+                        memcpy(tau_at_production, current,
+                            sizeof(*tau_at_production));
 
-        /* Backward generate the production vertex. */
-        enum ent_pid pid = (tau->charge < 0.) ? ENT_PID_TAU : ENT_PID_TAU_BAR;
-        const double * const r = tau->position;
-        const double * const u = tau->direction;
-        struct generic_state g_state = {
-                .base.ent = { pid, tau->kinetic + tau_mass, tau->distance,
-                    tau->grammage, tau->weight, { r[0], r[1], r[2] },
-                    { u[0], u[1], u[2] } },
-                .r = 0.,
-                .is_tau = 0,
-                .is_inside = -1,
-                .has_crossed = -1,
-                .cross_count = 0
-        };
-        struct ent_state * state = &g_state.base.ent;
-        struct ent_medium * medium;
-        medium_ent(ctx_ent, state, &medium);
-        if (medium == NULL) return;
-        ent_vertex(physics, ctx_ent, state, medium, ENT_PROCESS_NONE, NULL);
-
-        /* Append the effective BMC weight for the transport, in order to
-         * recover a flux convention.
-         */
-        double cs;
-        ent_physics_cross_section(physics, pid, state->energy, medium->Z,
-            medium->A, ENT_PROCESS_NONE, &cs);
-        double density;
-        medium->density(medium, state, &density);
-        state->weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
-
-        /* Reset the initial direction if transvserse transport is disabled. */
-        if (longitudinal)
+                /* Backward generate the production vertex. */
+                enum ent_pid pid =
+                    (tau->charge < 0.) ? ENT_PID_TAU : ENT_PID_TAU_BAR;
+                state = &g_state.base.ent;
+                state->pid = pid;
+                state->energy = tau->kinetic + tau_mass;
+                state->distance = tau->distance;
+                state->grammage = tau->grammage;
+                state->weight = tau->weight;
+                memcpy(state->position, tau->position, sizeof(state->position));
                 memcpy(
                     state->direction, tau->direction, sizeof(state->direction));
+                g_state.r = 0.;
+                g_state.is_tau = 0;
+                g_state.is_inside = -1;
+                g_state.has_crossed = -1;
+                g_state.cross_count = 0;
+
+                struct ent_medium * medium;
+                medium_ent(ctx_ent, state, &medium);
+                if (medium == NULL) return;
+                ent_vertex(
+                    physics, ctx_ent, state, medium, ENT_PROCESS_NONE, NULL);
+
+                /* Append the effective BMC weight for the transport, in order
+                 * to
+                 * recover a flux convention.
+                 */
+                double cs;
+                ent_physics_cross_section(physics, pid, state->energy,
+                    medium->Z, medium->A, ENT_PROCESS_NONE, &cs);
+                double density;
+                medium->density(medium, state, &density);
+                state->weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
+
+                /* Reset the initial direction if transvserse transport is
+                 * disabled. */
+                if (longitudinal)
+                        memcpy(state->direction, direction,
+                            sizeof(state->direction));
+        } else {
+                state = &current->base.ent;
+                memcpy(direction, state->direction, sizeof(direction));
+        }
 
         /* Backward propagate the neutrino. */
         enum ent_event event = ENT_EVENT_NONE;
@@ -1073,7 +1091,7 @@ static void transport_backward(struct ent_context * ctx_ent,
             (state->energy < energy_cut - FLT_EPSILON)) {
                 ent_transport(physics, ctx_ent, state, NULL, &event);
                 if (longitudinal)
-                        memcpy(state->direction, tau->direction,
+                        memcpy(state->direction, direction,
                             sizeof(state->direction));
 
                 if (event == ENT_EVENT_DECAY_TAU) {
@@ -1115,18 +1133,23 @@ static void transport_backward(struct ent_context * ctx_ent,
                         memcpy(tau->position, state->position,
                             sizeof(tau->position));
                         if (!longitudinal)
-                                memcpy(tau->direction, state->direction,
+                                memcpy(tau->direction, direction,
                                     sizeof(tau->direction));
                         tau->decayed = 0;
+                        current->is_tau = 1;
                         generation++;
-                        transport_backward(ctx_ent, tau, eventid, generation,
-                            tau_at_decay, tau_at_production, done);
+                        transport_backward(ctx_ent, current, eventid,
+                            generation, final, tau_at_production, done);
                         return;
                 }
         }
         if (event != ENT_EVENT_EXIT) return;
-        enum ent_pid pid0 =
-            (tau_at_decay->charge < 0.) ? ENT_PID_NU_TAU : ENT_PID_NU_BAR_TAU;
+        enum ent_pid pid0;
+        if (final->is_tau)
+                pid0 = (final->base.pumas.charge < 0.) ? ENT_PID_NU_TAU :
+                                                         ENT_PID_NU_BAR_TAU;
+        else
+                pid0 = final->base.ent.pid;
         if (state->pid != pid0) return;
         (*done)++;
 
@@ -1137,21 +1160,33 @@ static void transport_backward(struct ent_context * ctx_ent,
                 /* Log the primary neutrino state. */
                 format_ancester(eventid, state);
 
-                /* Log the end points of the tau state. */
-                format_tau(generation, pid, tau_at_production, tau_at_decay);
+                if (flux_neutrino) {
+                        /* Log the neutrino final state. */
+                        format_neutrino(generation, & final->base.ent);
+                } else {
+                        /* Log the end points of the tau state. */
+                        enum ent_pid pid = (final->base.pumas.charge < 0.) ?
+                            ENT_PID_TAU :
+                            ENT_PID_TAU_BAR;
+                        format_tau(generation, pid,
+                            &tau_at_production->base.pumas, & final->base
+                                                                .pumas);
+                }
                 return;
         }
 
         /* In full mode let us perform the tau decay with ALOUETTE/TAUOLA. */
-        const double p = sqrt(
-            tau_at_decay->kinetic * (tau_at_decay->kinetic + 2. * tau_mass));
-        double momentum[3] = { p * tau_at_decay->direction[0],
-                p * tau_at_decay->direction[1],
-                p * tau_at_decay->direction[2] };
+        enum ent_pid pid =
+            (final->base.pumas.charge < 0.) ? ENT_PID_TAU : ENT_PID_TAU_BAR;
+        const double p = sqrt(final->base.pumas.kinetic *
+            (final->base.pumas.kinetic + 2. * tau_mass));
+        double momentum[3] = { p * final->base.pumas.direction[0],
+                p * final->base.pumas.direction[1],
+                p * final->base.pumas.direction[2] };
         int trials;
         for (trials = 0; trials < 20; trials++) {
-                if (alouette_decay(pid, momentum, tau_at_decay->direction) ==
-                    ALOUETTE_RETURN_SUCCESS)
+                if (alouette_decay(pid, momentum,
+                        final->base.pumas.direction) == ALOUETTE_RETURN_SUCCESS)
                         break;
         }
 
@@ -1165,8 +1200,9 @@ static void transport_backward(struct ent_context * ctx_ent,
                         format_ancester(eventid, state);
 
                         /* Log the end points of the tau state. */
-                        format_tau(
-                            generation, pid, tau_at_production, tau_at_decay);
+                        format_tau(generation, pid,
+                            &tau_at_production->base.pumas, & final->base
+                                                                .pumas);
                 }
                 format_decay_product(pid1, momentum);
                 nprod++;
@@ -1387,7 +1423,7 @@ int main(int argc, char * argv[])
                 if (sscanf(argv[optind++], "%d", &projectile) != 1)
                         exit_with_help(EXIT_FAILURE);
 
-                if (mode_forward) {
+                if (mode_forward || flux_neutrino) {
                         if ((projectile != ENT_PID_NU_TAU) &&
                             (projectile != ENT_PID_NU_BAR_TAU) &&
                             (projectile != ENT_PID_NU_BAR_E)) {
@@ -1573,7 +1609,7 @@ int main(int argc, char * argv[])
                                 weight *= r * z0;
                         } else
                                 z0 = z_min;
-                        if (do_interaction) {
+                        if (do_interaction && !flux_neutrino) {
                                 /* This is a particle Monte-Carlo. */
                                 const double charge =
                                     (projectile > 0) ? -1. : 1.;
@@ -1589,12 +1625,26 @@ int main(int argc, char * argv[])
                                         .has_crossed = -1,
                                         .cross_count = 0
                                 };
-                                struct pumas_state tau_at_decay,
+                                struct generic_state tau_at_decay,
                                     tau_at_production;
-                                transport_backward(&ctx_ent,
-                                    (struct pumas_state *)&state, i, 1,
+                                transport_backward(&ctx_ent, &state, i, 1,
                                     &tau_at_decay, &tau_at_production, &done);
                                 if ((n_taus > 0) && (done > n_taus)) break;
+                        } else if (do_interaction && flux_neutrino) {
+                                struct generic_state state = {
+                                        .base.ent = { projectile, energy, 0.,
+                                            0., weight,
+                                            { 0., 0., EARTH_RADIUS + z0 },
+                                            { st, 0., ct } },
+                                        .r = 0.,
+                                        .is_tau = 0,
+                                        .is_inside = -1,
+                                        .has_crossed = -1,
+                                        .cross_count = 0
+                                };
+                                struct generic_state daughter;
+                                transport_backward(&ctx_ent, &state, i, 1,
+                                    &daughter, NULL, &done);
                         } else {
                                 /* This is a grammage scan. */
                                 struct generic_state g_state = {
