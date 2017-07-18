@@ -802,6 +802,8 @@ static void transport_forward(struct ent_context * ctx_ent,
                                         format_neutrino(generation, neutrino);
                                         break;
                                 } else {
+                                        g_state->is_inside = -1;
+                                        g_state->has_crossed = 0;
                                         continue;
                                 }
                         }
