@@ -114,7 +114,8 @@ static void exit_with_help(int code)
 "      --grammage             disable neutrino interactions but compute the\n"
 "                               total grammage along the path.\n"
 "      --flux=Z               switch to the sampling of the tau flux at an\n"
-"                               altitude of Z\n"
+"                               altitude of Z [0.]\n"
+"      --flux-neutrino        Switch to the neutrino flux sampling\n"
 "  -h, --help                 show this help and exit\n"
 "  -o, --output-file=FILE     set the output FILE for the computed flux\n"
 "      --pdf-file=FILE        specify a pdf FILE for partons distributions\n"
@@ -291,6 +292,7 @@ struct generic_state {
         int is_tau;
         int is_inside;
         int has_crossed;
+        int cross_count;
 };
 
 /* Density callbacks for ENT. */
@@ -352,6 +354,9 @@ static int flux_mode = 0;
 /* Altitude at which the flux is to be computed. */
 static double flux_altitude = 0.;
 
+/* Secondary particle to sample in flux mode. */
+static int flux_neutrino = 0;
+
 /* Generic medium callback. */
 static double medium(const double * position, const double * direction,
     int * index, struct generic_state * state)
@@ -365,7 +370,7 @@ static double medium(const double * position, const double * direction,
         const double r = sqrt(r2);
         state->r = r;
 
-        if (flux_mode && state->is_tau && state->has_crossed >= 0) {
+        if (flux_mode && (state->has_crossed >= 0)) {
                 /* Check the flux boundary in forward MC. */
                 const double rf = EARTH_RADIUS + flux_altitude;
                 if (state->is_inside < 0)
@@ -685,15 +690,27 @@ static void format_tau(int generation, int pid,
         FILE * stream = output_open();
         fprintf(stream, "%10d %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
                         "%13.3lf %13.3lf\n",
-            generation, pid, production->kinetic, production->direction[0],
-            production->direction[1], production->direction[2],
-            production->position[0], production->position[1],
-            production->position[2]);
+            generation, pid, production->kinetic + tau_mass,
+            production->direction[0], production->direction[1],
+            production->direction[2], production->position[0],
+            production->position[1], production->position[2]);
         fprintf(stream, "%10c %4c %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
                         "%13.3lf %13.3lf\n",
-            ' ', ' ', decay->kinetic, decay->direction[0], decay->direction[1],
-            decay->direction[2], decay->position[0], decay->position[1],
-            decay->position[2]);
+            ' ', ' ', decay->kinetic + tau_mass, decay->direction[0],
+            decay->direction[1], decay->direction[2], decay->position[0],
+            decay->position[1], decay->position[2]);
+        output_close(stream);
+}
+
+static void format_neutrino(int generation, const struct ent_state * neutrino)
+{
+        FILE * stream = output_open();
+        fprintf(stream, "%10d %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
+                        "%13.3lf %13.3lf\n",
+            generation, neutrino->pid, neutrino->energy, neutrino->direction[0],
+            neutrino->direction[1], neutrino->direction[2],
+            neutrino->position[0], neutrino->position[1],
+            neutrino->position[2]);
         output_close(stream);
 }
 
@@ -769,9 +786,27 @@ static void transport_forward(struct ent_context * ctx_ent,
         for (;;) {
                 /* Neutrino transport with ENT. */
                 ent_transport(physics, ctx_ent, neutrino, &product, &event);
-                if ((event == ENT_EVENT_EXIT) ||
-                    (neutrino->energy <= energy_cut + FLT_EPSILON))
-                        break;
+                if (neutrino->energy <= energy_cut + FLT_EPSILON) break;
+                if (flux_neutrino) {
+                        /* Check for a flux crossing condition. */
+                        struct generic_state * g_state =
+                            (struct generic_state *)neutrino;
+                        if (g_state->has_crossed) {
+                                g_state->cross_count++;
+                                if (g_state->cross_count == 2) {
+                                        if (!primary_dumped) {
+                                                format_ancester(
+                                                    eventid, ancester);
+                                                primary_dumped = 1;
+                                        }
+                                        format_neutrino(generation, neutrino);
+                                        break;
+                                } else {
+                                        continue;
+                                }
+                        }
+                }
+                if (event == ENT_EVENT_EXIT) break;
                 if (longitudinal) {
                         memcpy(neutrino->direction, direction,
                             sizeof(neutrino->direction));
@@ -796,7 +831,9 @@ static void transport_forward(struct ent_context * ctx_ent,
                                     product.weight, .decayed = 0 },
                                 .r = 0.,
                                 .is_tau = 1,
-                                .is_inside = -1
+                                .is_inside = -1,
+                                .has_crossed = (flux_neutrino) ? -1 : 0,
+                                .cross_count = 0
                         };
                         struct pumas_state * tau = &tau_data.base.pumas;
                         memcpy(&tau->position, &product.position,
@@ -869,14 +906,41 @@ static void transport_forward(struct ent_context * ctx_ent,
 
                                 /* Process any additional nu_e~ or nu_tau. */
                                 if (nu_e != NULL) {
+                                        if (flux_neutrino) {
+                                                nu_e_data.is_inside = -1;
+                                                nu_e_data.has_crossed = 0;
+                                                nu_e_data.cross_count =
+                                                    (tau_data.r <=
+                                                        EARTH_RADIUS +
+                                                            flux_altitude +
+                                                            FLT_EPSILON) ?
+                                                    1 :
+                                                    0;
+                                        } else {
+                                                nu_e_data.has_crossed = -1;
+                                        }
                                         transport_forward(ctx_ent, nu_e,
                                             eventid, generation, primary_dumped,
                                             ancester, done);
                                 }
-                                if (nu_t != NULL)
+                                if (nu_t != NULL) {
+                                        if (flux_neutrino) {
+                                                nu_t_data.is_inside = -1;
+                                                nu_t_data.has_crossed = 0;
+                                                nu_t_data.cross_count =
+                                                    (tau_data.r <=
+                                                        EARTH_RADIUS +
+                                                            flux_altitude +
+                                                            FLT_EPSILON) ?
+                                                    1 :
+                                                    0;
+                                        } else {
+                                                nu_t_data.has_crossed = -1;
+                                        }
                                         transport_forward(ctx_ent, nu_t,
                                             eventid, generation, primary_dumped,
                                             ancester, done);
+                                }
                         } else if (tau_data.has_crossed) {
                                 if (!primary_dumped) {
                                         format_ancester(eventid, ancester);
@@ -979,7 +1043,8 @@ static void transport_backward(struct ent_context * ctx_ent,
                 .r = 0.,
                 .is_tau = 0,
                 .is_inside = -1,
-                .has_crossed = -1
+                .has_crossed = -1,
+                .cross_count = 0
         };
         struct ent_state * state = &g_state.base.ent;
         struct ent_medium * medium;
@@ -1154,6 +1219,7 @@ int main(int argc, char * argv[])
                         /* Control options. */
                         { "append", no_argument, &use_append, 1 },
                         { "flux", required_argument, NULL, 0 },
+                        { "flux-neutrino", no_argument, &flux_neutrino, 1 },
                         { "grammage", no_argument, &do_interaction, 0 },
                         { "help", no_argument, NULL, 'h' },
                         { "output-file", required_argument, NULL, 'o' },
@@ -1217,6 +1283,7 @@ int main(int argc, char * argv[])
                                 /* Control options. */
                                 { NULL, NULL, NULL }, /* append */
                                 { &flux_altitude, &opt_strtod, &endptr },
+                                { NULL, NULL, NULL }, /* flux-neutrino */
                                 { NULL, NULL, NULL }, /* grammage */
                                 { NULL, NULL, NULL }, /* help */
                                 { NULL, NULL, NULL }, /* output-file */
@@ -1298,6 +1365,13 @@ int main(int argc, char * argv[])
                 fprintf(stderr, "danton: inconsistent energy range. "
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
+        }
+        if (flux_neutrino && !flux_mode) {
+                /* Default settings for a neutrino flux sampling, if nothing
+                 * was specified.
+                 */
+                flux_mode = 1;
+                flux_altitude = 0.;
         }
 
         /* Set the primary. */
@@ -1439,6 +1513,7 @@ int main(int argc, char * argv[])
                                 }
                         } else
                                 energy = energy_min;
+                        const int crossed = (flux_neutrino) ? 0 : -1;
                         struct generic_state state = {
                                 .base.ent = { projectile, energy, 0., 0.,
                                     weight, { 0., 0., -EARTH_RADIUS - 1E+05 },
@@ -1446,7 +1521,8 @@ int main(int argc, char * argv[])
                                 .r = 0.,
                                 .is_tau = 0,
                                 .is_inside = -1,
-                                .has_crossed = 0
+                                .has_crossed = crossed,
+                                .cross_count = 0
                         };
                         struct ent_state ancester;
                         memcpy(&ancester, &state.base.ent, sizeof(ancester));
@@ -1510,7 +1586,8 @@ int main(int argc, char * argv[])
                                         .r = 0.,
                                         .is_tau = 1,
                                         .is_inside = -1,
-                                        .has_crossed = -1
+                                        .has_crossed = -1,
+                                        .cross_count = 0
                                 };
                                 struct pumas_state tau_at_decay,
                                     tau_at_production;
@@ -1528,7 +1605,8 @@ int main(int argc, char * argv[])
                                         .r = 0.,
                                         .is_tau = 0,
                                         .is_inside = -1,
-                                        .has_crossed = 0
+                                        .has_crossed = -1,
+                                        .cross_count = 0
                                 };
 
                                 struct ent_state * state = &g_state.base.ent;
