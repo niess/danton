@@ -764,10 +764,13 @@ static int n_taus = 0;
  */
 static double energy_cut = -1.;
 
+/* Flag for the dumping of the primary state. */
+static int primary_dumped = 0;
+
 /* Forward transport routine, recursive. */
 static void transport_forward(struct ent_context * ctx_ent,
     struct ent_state * neutrino, long eventid, int generation,
-    int primary_dumped, const struct ent_state * ancester, int * done)
+    const struct ent_state * ancester, int * done)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU))
@@ -922,8 +925,8 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                 nu_e_data.has_crossed = -1;
                                         }
                                         transport_forward(ctx_ent, nu_e,
-                                            eventid, generation, primary_dumped,
-                                            ancester, done);
+                                            eventid, generation, ancester,
+                                            done);
                                 }
                                 if (nu_t != NULL) {
                                         if (flux_neutrino) {
@@ -940,10 +943,10 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                 nu_t_data.has_crossed = -1;
                                         }
                                         transport_forward(ctx_ent, nu_t,
-                                            eventid, generation, primary_dumped,
-                                            ancester, done);
+                                            eventid, generation, ancester,
+                                            done);
                                 }
-                        } else if (tau_data.has_crossed) {
+                        } else if (tau_data.has_crossed == 1) {
                                 if (!primary_dumped) {
                                         format_ancester(eventid, ancester);
                                         primary_dumped = 1;
@@ -1564,8 +1567,9 @@ int main(int argc, char * argv[])
                         };
                         struct ent_state ancester;
                         memcpy(&ancester, &state.base.ent, sizeof(ancester));
+                        primary_dumped = 0;
                         transport_forward(&ctx_ent, (struct ent_state *)&state,
-                            i, 1, 0, &ancester, &done);
+                            i, 1, &ancester, &done);
                         if ((n_taus > 0) && (done >= n_taus)) break;
                         if (!do_interaction)
                                 format_grammage(

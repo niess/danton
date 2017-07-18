@@ -91,10 +91,10 @@ class iter_flux:
     """
 
     # Data structures for events.
-    State = collections.namedtuple("State", ("pid", "energy", "direction",
-        "position"))
-    Event = collections.namedtuple("Event", ("id", "generation", "primary",
-        "final", "weight"))
+    State = collections.namedtuple("State", ("pid", "generation", "energy",
+        "direction", "position"))
+    Event = collections.namedtuple("Event", ("id", "primary", "final",
+        "weight"))
 
     def __init__(self, filename):
         self.fid = open(filename, "r")
@@ -119,16 +119,18 @@ class iter_flux:
         # Get the primary and event info.
         eventid = int(self.field[0])
         weight = float(self.field[9])
-        primary = self.State(int(self.field[1]),
+        primary = self.State(int(self.field[1]), 1,
             float(self.field[2]), map(float, self.field[3:6]),
             map(float, self.field[6:9]))
 
-        # Get the final state info.
+        # Get the final state(s) info.
+        final = []
         self.field = self.fid.readline().split()
-        genid = int(self.field[0])
-        pid = int(self.field[1])
-        final = self.State(pid, float(self.field[2]),
-                    map(float, self.field[3:6]), map(float, self.field[6:9]))
-        self.field = self.fid.readline().split()
+        while len(self.field) == 9:
+            genid = int(self.field[0])
+            pid = int(self.field[1])
+            final.append(self.State(pid, genid, float(self.field[2]),
+                    map(float, self.field[3:6]), map(float, self.field[6:9])))
+            self.field = self.fid.readline().split()
 
-        return self.field, self.Event(eventid, genid, primary, final, weight)
+        return self.field, self.Event(eventid, primary, final, weight)
