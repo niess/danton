@@ -790,7 +790,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                 /* Neutrino transport with ENT. */
                 ent_transport(physics, ctx_ent, neutrino, &product, &event);
                 if (neutrino->energy <= energy_cut + FLT_EPSILON) break;
-                if (flux_neutrino) {
+                if (flux_neutrino && (event == ENT_EVENT_EXIT)) {
                         /* Check for a flux crossing condition. */
                         struct generic_state * g_state =
                             (struct generic_state *)neutrino;
