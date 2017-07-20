@@ -1018,12 +1018,13 @@ static void transport_backward(struct ent_context * ctx_ent,
         /* Backup the final state, e.g. the tau at decay. */
         if (generation == 1) memcpy(final, current, sizeof(* final));
 
-        struct ent_state * state = NULL;
         struct generic_state g_state;
-        struct pumas_state * tau = &current->base.pumas;
+        struct ent_state * state = NULL;
+        struct pumas_state * tau = NULL;
         double direction[3];
         if (current->is_tau) {
                 /* Backward propagate the tau state. */
+                tau = &current->base.pumas;
                 const double Kf = tau->kinetic;
                 memcpy(direction, tau->direction, sizeof(direction));
                 pumas_transport(ctx_pumas, tau);
@@ -1087,6 +1088,7 @@ static void transport_backward(struct ent_context * ctx_ent,
                             sizeof(state->direction));
         } else {
                 state = &current->base.ent;
+                tau = &g_state.base.pumas;
                 memcpy(direction, state->direction, sizeof(direction));
         }
 
@@ -1137,14 +1139,24 @@ static void transport_backward(struct ent_context * ctx_ent,
                             state->energy / p12;
                         memcpy(tau->position, state->position,
                             sizeof(tau->position));
-                        if (!longitudinal)
-                                memcpy(tau->direction, direction,
-                                    sizeof(tau->direction));
+                        struct generic_state * g = (struct generic_state *)tau;
+                        if (longitudinal) {
+                                if (g != current)
+                                        memcpy(tau->direction, direction,
+                                            sizeof(tau->direction));
+                        } else {
+                                const double d = 1. / sqrt(p12);
+                                tau->direction[0] = momentum[0] * d;
+                                tau->direction[1] = momentum[1] * d;
+                                tau->direction[2] = momentum[2] * d;
+                        }
                         tau->decayed = 0;
-                        current->is_tau = 1;
+                        g->r = 0., g->is_tau = 1;
+                        g->is_inside = -1, g->has_crossed = -1,
+                        g->cross_count = 0;
                         generation++;
-                        transport_backward(ctx_ent, current, eventid,
-                            generation, final, tau_at_production, done);
+                        transport_backward(ctx_ent, g, eventid, generation,
+                            final, tau_at_production, done);
                         return;
                 }
         }
