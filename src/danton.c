@@ -819,7 +819,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                             sizeof(product.direction));
                 }
                 if (abs(neutrino->pid) == ENT_PID_TAU) {
-                        /* Exchange the lepton and product state. */
+                        /* Exchange the lepton and the product state. */
                         struct ent_state tmp;
                         memcpy(&tmp, neutrino, sizeof(tmp));
                         memcpy(neutrino, &product, sizeof(*neutrino));
@@ -1025,15 +1025,21 @@ static void transport_backward(struct ent_context * ctx_ent,
         if (current->is_tau) {
                 /* Apply the BMC weight for the tau decay. */
                 tau = &current->base.pumas;
+                const double lambda0 = 3E+07;
                 if (!flux_mode || (generation > 1)) {
+                        struct pumas_medium * medium;
+                        medium_pumas(ctx_pumas, tau, &medium);
+                        if (medium == NULL) return;
+                        struct pumas_locals locals;
+                        medium->locals(medium, tau, &locals);
                         const double Pf =
                             sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
-                        tau->weight *= tau_mass / (tau_ctau0 * Pf);
+                        tau->weight *= tau_mass / (tau_ctau0 * Pf) +
+                             locals.density / lambda0;
                 }
 
                 /* Backward propagate the tau state. */
                 memcpy(direction, tau->direction, sizeof(direction));
-                const double lambda0 = 3E+07;
                 const double x0 = tau->grammage;
                 ctx_pumas->grammage_max =
                     x0 - lambda0 * log(ctx_pumas->random(ctx_pumas));
