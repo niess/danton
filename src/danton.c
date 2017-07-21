@@ -972,13 +972,13 @@ static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
                 if (ancester == ENT_PID_NU_TAU)
                         return 1.;
                 else if (ancester == ENT_PID_TAU)
-                        return 1E-03;
+                        return 1E-04;
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
                 if (ancester == ENT_PID_NU_BAR_TAU)
                         return 1.;
                 else if (ancester == ENT_PID_TAU_BAR)
-                        return 1E-03;
+                        return 1E-04;
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU) {
                 if (ancester == ENT_PID_NU_TAU) return 1.;
@@ -1023,23 +1023,26 @@ static void transport_backward(struct ent_context * ctx_ent,
         struct pumas_state * tau = NULL;
         double direction[3];
         if (current->is_tau) {
-                /* Backward propagate the tau state. */
+                /* Apply the BMC weight for the tau decay. */
                 tau = &current->base.pumas;
-                const double Kf = tau->kinetic;
+                if (!flux_mode || (generation > 1)) {
+                        const double Pf =
+                            sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                        tau->weight *= tau_mass / (tau_ctau0 * Pf);
+                }
+
+                /* Backward propagate the tau state. */
                 memcpy(direction, tau->direction, sizeof(direction));
+                const double lambda0 = 3E+07;
+                const double x0 = tau->grammage;
+                ctx_pumas->grammage_max =
+                    x0 - lambda0 * log(ctx_pumas->random(ctx_pumas));
                 pumas_transport(ctx_pumas, tau);
-                if (!tau->decayed ||
+                if ((!tau->decayed &&
+                        (tau->grammage <=
+                            ctx_pumas->grammage_max - FLT_EPSILON)) ||
                     (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
                         return;
-
-                /* Apply the BMC weight for the tau decay. */
-                const double Pi =
-                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
-                tau->weight *= tau_ctau0 * Pi / tau_mass;
-                if (!flux_mode || (generation > 1)) {
-                        const double Pf = sqrt(Kf * (Kf + 2. * tau_mass));
-                        tau->weight /= tau_ctau0 * Pf / tau_mass;
-                }
 
                 /* Backup the tau state at production. */
                 if (generation == 1)
@@ -1079,7 +1082,13 @@ static void transport_backward(struct ent_context * ctx_ent,
                     medium->Z, medium->A, ENT_PROCESS_NONE, &cs);
                 double density;
                 medium->density(medium, state, &density);
-                state->weight *= 1E+03 * cs * PHYS_NA * density / medium->A;
+                const double lP = 1E-03 * medium->A / (cs * PHYS_NA * density);
+                const double Pi =
+                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                const double lD = tau_ctau0 * Pi / tau_mass;
+                const double lB = lambda0 / density;
+                const double p0 = exp(-(tau->grammage - x0) / lambda0);
+                state->weight *= lB * lD / ((lB + lD) * lP * p0);
 
                 /* Reset the initial direction if transvserse transport is
                  * disabled. */
@@ -1151,8 +1160,10 @@ static void transport_backward(struct ent_context * ctx_ent,
                                 tau->direction[2] = momentum[2] * d;
                         }
                         tau->decayed = 0;
-                        g->r = 0., g->is_tau = 1;
-                        g->is_inside = -1, g->has_crossed = -1,
+                        g->r = 0.;
+                        g->is_tau = 1;
+                        g->is_inside = -1;
+                        g->has_crossed = -1;
                         g->cross_count = 0;
                         generation++;
                         transport_backward(ctx_ent, g, eventid, generation,
