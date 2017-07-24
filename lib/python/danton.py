@@ -60,7 +60,10 @@ class iter_event:
                         self.fid.close()
                         self.fid = None
                 raise StopIteration()
-        self.field, event = self._get_next_event()
+        try:
+		self.field, event = self._get_next_event()
+	except:
+		raise StopIteration()
         return event
 
     def _get_next_event(self):
