@@ -972,13 +972,13 @@ static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
                 if (ancester == ENT_PID_NU_TAU)
                         return 1.;
                 else if (ancester == ENT_PID_TAU)
-                        return 1E-04;
+                        return 1.63E-14 * pow(daughter->energy, 1.363);
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
                 if (ancester == ENT_PID_NU_BAR_TAU)
                         return 1.;
                 else if (ancester == ENT_PID_TAU_BAR)
-                        return 1E-04;
+                        return 1.63E-14 * pow(daughter->energy, 1.363);
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU) {
                 if (ancester == ENT_PID_NU_TAU) return 1.;
@@ -1025,28 +1025,21 @@ static void transport_backward(struct ent_context * ctx_ent,
         if (current->is_tau) {
                 /* Apply the BMC weight for the tau decay. */
                 tau = &current->base.pumas;
-                const double lambda0 = 3E+07;
                 if (!flux_mode || (generation > 1)) {
-                        struct pumas_medium * medium;
-                        medium_pumas(ctx_pumas, tau, &medium);
-                        if (medium == NULL) return;
-                        struct pumas_locals locals;
-                        medium->locals(medium, tau, &locals);
                         const double Pf =
                             sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
-                        tau->weight *= tau_mass / (tau_ctau0 * Pf) +
-                             locals.density / lambda0;
+                        tau->weight *= tau_mass / (tau_ctau0 * Pf);
                 }
 
                 /* Backward propagate the tau state. */
                 memcpy(direction, tau->direction, sizeof(direction));
+                const double lambda0 = 3E+07;
                 const double x0 = tau->grammage;
                 ctx_pumas->grammage_max =
                     x0 - lambda0 * log(ctx_pumas->random(ctx_pumas));
                 pumas_transport(ctx_pumas, tau);
-                if ((!tau->decayed &&
-                        (tau->grammage <=
-                            ctx_pumas->grammage_max - FLT_EPSILON)) ||
+                if ((!tau->decayed && (tau->grammage < ctx_pumas->grammage_max -
+                                              FLT_EPSILON)) ||
                     (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
                         return;
 
@@ -1080,8 +1073,7 @@ static void transport_backward(struct ent_context * ctx_ent,
                     physics, ctx_ent, state, medium, ENT_PROCESS_NONE, NULL);
 
                 /* Append the effective BMC weight for the transport, in order
-                 * to
-                 * recover a flux convention.
+                 * to recover a flux convention.
                  */
                 double cs;
                 ent_physics_cross_section(physics, pid, state->energy,
@@ -1096,7 +1088,7 @@ static void transport_backward(struct ent_context * ctx_ent,
                 const double p0 = exp(-(tau->grammage - x0) / lambda0);
                 state->weight *= lB * lD / ((lB + lD) * lP * p0);
 
-                /* Reset the initial direction if transvserse transport is
+                /* Reset the initial direction if the transverse transport is
                  * disabled. */
                 if (longitudinal)
                         memcpy(state->direction, direction,
