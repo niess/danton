@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>
 
+import cStringIO
 import collections
 
 # The Earth radius in the Preliminary Earth Model (PEM).
@@ -37,10 +38,18 @@ class iter_event:
     Event = collections.namedtuple("Event", ("id", "primary", "decay",
         "weight"))
 
-    def __init__(self, filename):
-        self.fid = open(filename, "r")
+    def __init__(self, filename=None, text=None):
+        if text is not None:
+            self.fid = cStringIO.StringIO(text)
+        else:
+            self.fid = open(filename, "r")
         for _ in xrange(3): self.fid.readline() # skip the header
         self.field = self.fid.readline().split()
+
+    def __delete__(self):
+        if self.fid is not None:
+            self.fid.close()
+            self.fid = None
 
     def __iter__(self):
         return self
@@ -96,10 +105,18 @@ class iter_flux:
     Event = collections.namedtuple("Event", ("id", "primary", "final",
         "weight"))
 
-    def __init__(self, filename):
-        self.fid = open(filename, "r")
+    def __init__(self, filename=None, text=None):
+        if text is not None:
+            self.fid = cStringIO.StringIO(text)
+        else:
+            self.fid = open(filename, "r")
         for _ in xrange(3): self.fid.readline() # skip the header
         self.field = self.fid.readline().split()
+
+    def __delete__(self):
+        if self.fid is not None:
+            self.fid.close()
+            self.fid = None
 
     def __iter__(self):
         return self
