@@ -462,7 +462,7 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
 {
         int index;
         double direction[3];
-        if (context->ancester) {
+        if (context->ancestor) {
                 direction[0] = -state->direction[0];
                 direction[1] = -state->direction[1];
                 direction[2] = -state->direction[2];
@@ -672,15 +672,15 @@ static void output_close(FILE * stream)
 }
 
 /* Utility functions for formating the results to the ouytput stream. */
-static void format_ancester(long eventid, const struct ent_state * ancester)
+static void format_ancestor(long eventid, const struct ent_state * ancestor)
 {
         FILE * stream = output_open();
         fprintf(stream, "%10ld %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
                         "%13.3lf %13.3lf %12.5lE\n",
-            eventid + 1, ancester->pid, ancester->energy,
-            ancester->direction[0], ancester->direction[1],
-            ancester->direction[2], ancester->position[0],
-            ancester->position[1], ancester->position[2], ancester->weight);
+            eventid + 1, ancestor->pid, ancestor->energy,
+            ancestor->direction[0], ancestor->direction[1],
+            ancestor->direction[2], ancestor->position[0],
+            ancestor->position[1], ancestor->position[2], ancestor->weight);
         output_close(stream);
 }
 
@@ -770,7 +770,7 @@ static int primary_dumped = 0;
 /* Forward transport routine, recursive. */
 static void transport_forward(struct ent_context * ctx_ent,
     struct ent_state * neutrino, long eventid, int generation,
-    const struct ent_state * ancester, int * done)
+    const struct ent_state * ancestor, int * done)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU))
@@ -798,8 +798,8 @@ static void transport_forward(struct ent_context * ctx_ent,
                                 g_state->cross_count++;
                                 if (g_state->cross_count == 2) {
                                         if (!primary_dumped) {
-                                                format_ancester(
-                                                    eventid, ancester);
+                                                format_ancestor(
+                                                    eventid, ancestor);
                                                 primary_dumped = 1;
                                         }
                                         format_neutrino(generation, neutrino);
@@ -894,8 +894,8 @@ static void transport_forward(struct ent_context * ctx_ent,
                                         if (medium_index < 10) continue;
                                         if (nprod == 0) {
                                                 if (!primary_dumped) {
-                                                        format_ancester(
-                                                            eventid, ancester);
+                                                        format_ancestor(
+                                                            eventid, ancestor);
                                                         primary_dumped = 1;
                                                 }
                                                 format_tau(generation,
@@ -925,7 +925,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                 nu_e_data.has_crossed = -1;
                                         }
                                         transport_forward(ctx_ent, nu_e,
-                                            eventid, generation, ancester,
+                                            eventid, generation, ancestor,
                                             done);
                                 }
                                 if (nu_t != NULL) {
@@ -943,12 +943,12 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                 nu_t_data.has_crossed = -1;
                                         }
                                         transport_forward(ctx_ent, nu_t,
-                                            eventid, generation, ancester,
+                                            eventid, generation, ancestor,
                                             done);
                                 }
                         } else if (tau_data.has_crossed == 1) {
                                 if (!primary_dumped) {
-                                        format_ancester(eventid, ancester);
+                                        format_ancestor(eventid, ancestor);
                                         primary_dumped = 1;
                                 }
                                 format_tau(
@@ -961,30 +961,30 @@ static void transport_forward(struct ent_context * ctx_ent,
         }
 }
 
-/* Ancester callback for ENT. */
-static double ancester_cb(struct ent_context * context, enum ent_pid ancester,
+/* ancestor callback for ENT. */
+static double ancestor_cb(struct ent_context * context, enum ent_pid ancestor,
     struct ent_state * daughter)
 {
         if (daughter->pid == ENT_PID_NU_BAR_E) {
-                if (ancester == ENT_PID_NU_BAR_E) return 1.;
+                if (ancestor == ENT_PID_NU_BAR_E) return 1.;
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_TAU) {
-                if (ancester == ENT_PID_NU_TAU)
+                if (ancestor == ENT_PID_NU_TAU)
                         return 1.;
-                else if (ancester == ENT_PID_TAU)
+                else if (ancestor == ENT_PID_TAU)
                         return 1.63E-14 * pow(daughter->energy, 1.363);
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
-                if (ancester == ENT_PID_NU_BAR_TAU)
+                if (ancestor == ENT_PID_NU_BAR_TAU)
                         return 1.;
-                else if (ancester == ENT_PID_TAU_BAR)
+                else if (ancestor == ENT_PID_TAU_BAR)
                         return 1.63E-14 * pow(daughter->energy, 1.363);
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU) {
-                if (ancester == ENT_PID_NU_TAU) return 1.;
+                if (ancestor == ENT_PID_NU_TAU) return 1.;
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU_BAR) {
-                if (ancester == ENT_PID_NU_BAR_TAU) return 1.;
+                if (ancestor == ENT_PID_NU_BAR_TAU) return 1.;
                 return 0.;
         } else
                 return 0.;
@@ -1184,7 +1184,7 @@ static void transport_backward(struct ent_context * ctx_ent,
          */
         if (flux_mode) {
                 /* Log the primary neutrino state. */
-                format_ancester(eventid, state);
+                format_ancestor(eventid, state);
 
                 if (flux_neutrino) {
                         /* Log the neutrino final state. */
@@ -1223,7 +1223,7 @@ static void transport_backward(struct ent_context * ctx_ent,
                         continue;
                 if (nprod == 0) {
                         /* Log the primary neutrino state. */
-                        format_ancester(eventid, state);
+                        format_ancestor(eventid, state);
 
                         /* Log the end points of the tau state. */
                         format_tau(generation, pid,
@@ -1586,11 +1586,11 @@ int main(int argc, char * argv[])
                                 .has_crossed = crossed,
                                 .cross_count = 0
                         };
-                        struct ent_state ancester;
-                        memcpy(&ancester, &state.base.ent, sizeof(ancester));
+                        struct ent_state ancestor;
+                        memcpy(&ancestor, &state.base.ent, sizeof(ancestor));
                         primary_dumped = 0;
                         transport_forward(&ctx_ent, (struct ent_state *)&state,
-                            i, 1, &ancester, &done);
+                            i, 1, &ancestor, &done);
                         if ((n_taus > 0) && (done >= n_taus)) break;
                         if (!do_interaction)
                                 format_grammage(
@@ -1598,7 +1598,7 @@ int main(int argc, char * argv[])
                 }
         } else {
                 /* Run a bunch of backward Monte-Carlo events. */
-                ctx_ent.ancester = &ancester_cb;
+                ctx_ent.ancestor = &ancestor_cb;
                 ctx_pumas->forward = 0;
 
                 cos_theta_min = cos((90. - elevation_min) * M_PI / 180.);
