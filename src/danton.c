@@ -400,13 +400,12 @@ static double medium(const double * position, const double * direction,
                         const double b = position[0] * direction[0] +
                             position[1] * direction[1] +
                             position[2] * direction[2];
-                        const double r1 = ri[i + 1];
-                        const double d2 = b * b + r1 * r1 - r * r;
+                        const double d2 = b * b + ri[i] * ri[i] - r * r;
                         const double d = (d2 <= 0.) ? 0. : sqrt(d2);
-                        step = d - b - 1.;
+                        step = d - b;
 
                         if ((i > 0) && (b < 0.)) {
-                                /* This is a downgoing trajectory. First, let
+                                /* This is a downgoing trajectory. Let
                                  * us compute the intersection with the lower
                                  * radius.
                                  */
@@ -414,25 +413,11 @@ static double medium(const double * position, const double * direction,
                                 const double d2 = b * b + r1 * r1 - r * r;
                                 if (d2 > 0.) {
                                         const double d = sqrt(d2);
-                                        const double s = d - b - 1.;
-                                        if (s < step) step = s;
-                                }
-
-                                if (i > 1) {
-                                        /* Let us check for an intersection with
-                                         * the below lower radius.
-                                         */
-                                        const double r1 = ri[i - 2];
-                                        const double d2 =
-                                            b * b + r1 * r1 - r * r;
-                                        if (d2 > 0.) {
-                                                const double d = sqrt(d2);
-                                                const double s = d - b - 1.;
-                                                if (s < step) step = s;
-                                        }
+                                        double s = -b - d;
+                                        if ((s > 0.) && (s < step)) step = s;
                                 }
                         }
-                        if (step < 1.) step = 1.;
+                        if (step < 1E-03) step = 1E-03;
                         break;
                 }
         }
