@@ -84,7 +84,7 @@ static void exit_with_help(int code)
 "Configuration options:\n"
 "      --altitude=Z           switch to a point estimate at an altitude of Z\n"
 "      --altitude-max=Z       set the maximum decay altitude to Z [1E+05]\n"
-"      --altitude-min=Z       set the minimum decay altitude to Z [1E+00]\n"
+"      --altitude-min=Z       set the minimum decay altitude to Z [1E-03]\n"
 "  -c, --cos-theta=C          switch to a point estimate with cos(theta)=C\n"
 "      --cos-theta-max=C      set the maximum value of cos(theta) to C [0.25]\n"
 "      --cos-theta-min=C      set the minimum value of cos(theta) to C [0.15]\n"
@@ -132,8 +132,7 @@ static void exit_with_help(int code)
 "a solid angle specified by the min an max value of the cosine of the angle\n"
 "theta with the local vertical at the atmosphere entrance. Use the -c,\n"
 "--cos-theta option in order to perform a point estimate instead.\n"
-"\n"
-"Note that altitudes (Z) must be strictly positive.\n");
+"\n");
         exit(code);
         // clang-format on
 }
@@ -1231,7 +1230,7 @@ int main(int argc, char * argv[])
         int z_interval = 1, elevation_interval = 1, mode_forward = 0;
         double cos_theta_min = 0.15, cos_theta_max = 0.25;
         double elevation_min = -10., elevation_max = 10.;
-        double z_min = 1E+00, z_max = 1E+05;
+        double z_min = 1E-03, z_max = 1E+05;
         double energy_min = 1E+07, energy_max = 1E+12;
         int energy_spectrum = 1, energy_analog = 0;
         int pem_sea = 1;
@@ -1372,7 +1371,7 @@ int main(int argc, char * argv[])
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
         }
-        if ((z_min <= 0.) || (z_interval && (z_min >= z_max))) {
+        if ((z_min < 0.) || (z_interval && (z_min >= z_max))) {
                 fprintf(stderr, "danton: inconsistent altitude value(s)."
                                 "Call with -h, --help for usage.\n");
                 exit(EXIT_FAILURE);
@@ -1616,9 +1615,22 @@ int main(int argc, char * argv[])
                         if (flux_mode)
                                 z0 = flux_altitude;
                         else if (z_interval) {
-                                const double r = log(z_max / z_min);
-                                z0 = z_min * exp(r * random_uniform01(NULL));
-                                weight *= r * z0;
+                                if (z_min > 0.) {
+                                        const double r = log(z_max / z_min);
+                                        z0 = z_min *
+                                            exp(r * random_uniform01(NULL));
+                                        weight *= r * z0;
+                                } else if (z_max < 0.) {
+                                        const double r = log(z_min / z_max);
+                                        z0 = z_max *
+                                            exp(r * random_uniform01(NULL));
+                                        weight *= r * z0;
+                                } else {
+                                        const double dz = z_max - z_min;
+                                        z0 =
+                                            z_min + dz * random_uniform01(NULL);
+                                        weight *= dz;
+                                }
                         } else
                                 z0 = z_min;
                         if (do_interaction && !flux_neutrino) {
