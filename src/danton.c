@@ -1018,14 +1018,61 @@ static void transport_backward(struct ent_context * ctx_ent,
                 /* Backward propagate the tau state. */
                 memcpy(direction, tau->direction, sizeof(direction));
                 const double lambda0 = 3E+07;
-                const double x0 = tau->grammage;
-                ctx_pumas->grammage_max =
-                    x0 - lambda0 * log(ctx_pumas->random(ctx_pumas));
-                pumas_transport(ctx_pumas, tau);
-                if ((!tau->decayed && (tau->grammage < ctx_pumas->grammage_max -
-                                              FLT_EPSILON)) ||
-                    (tau->kinetic + tau_mass >= energy_cut - FLT_EPSILON))
-                        return;
+                const double p1 = 0.1;
+                double x0;
+                for (;;) {
+                        x0 = tau->grammage;
+                        ctx_pumas->grammage_max =
+                            x0 - lambda0 * log(ctx_pumas->random(ctx_pumas));
+                        tau->decayed = 0;
+                        pumas_transport(ctx_pumas, tau);
+                        if ((!tau->decayed &&
+                                (tau->grammage <
+                                    ctx_pumas->grammage_max - FLT_EPSILON)) ||
+                            (tau->kinetic + tau_mass >=
+                                energy_cut - FLT_EPSILON))
+                                return;
+                        if (generation > 1) break;
+
+                        /* Check that the tau is **not** emerging from the
+                         * Earth.
+                         */
+                        const double b = -tau->position[0] * tau->direction[0] -
+                            tau->position[1] * tau->direction[1] -
+                            tau->position[2] * tau->direction[2];
+                        struct generic_state * g = (struct generic_state *)tau;
+                        const double d2 =
+                            b * b + EARTH_RADIUS * EARTH_RADIUS - g->r * g->r;
+                        if ((d2 <= 0.) || (sqrt(d2) > -b)) break;
+
+                        /* Check that the proposed vertex is **not** in air. */
+                        struct pumas_medium * m;
+                        medium_pumas(ctx_pumas, tau, &m);
+                        if (m->material != media_pumas[10].material) break;
+
+                        /* If upgoing and in air, randomly recycle the event
+                         * by biasing the decay probability at the vertex.
+                         * First let us compute the true decay probability.
+                         */
+                        struct pumas_locals l;
+                        m->locals(m, tau, &l);
+                        const double Pf =
+                            sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                        const double lD = tau_ctau0 * Pf / tau_mass;
+                        const double lB = lambda0 / l.density;
+                        const double pD = lB / (lB + lD);
+                        const double pB = lD / (lB + lD); /* For underflow. */
+                        if ((pD <= 0.) || (pB <= 0.)) break;
+
+                        /* Draw over the biased probability and re-weight
+                         * accordingly.
+                         */
+                        if (ctx_pumas->random(ctx_pumas) < p1) {
+                                tau->weight *= pD / p1;
+                                break;
+                        } else
+                                tau->weight *= pB / (1. - p1);
+                }
 
                 /* Backup the tau state at production. */
                 if (generation == 1)
