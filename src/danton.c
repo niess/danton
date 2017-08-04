@@ -94,7 +94,7 @@ static void exit_with_help(int code)
 "      --elevation-min=A      set the minimum elevation angle to A [-10.]\n"
 "  -e, --energy=E             switch to a monokinetic beam of primaries with\n"
 "                               energy E\n"
-"      --energy-analog        switch to an analog sampling of the primary\n"
+"      --energy-analogue      switch to an analogue sampling of the primary\n"
 "                               energy\n"
 "      --energy-cut=E         set to E the energy under which all particles\n"
 "                               are killed [1E+03]\n"
@@ -120,17 +120,17 @@ static void exit_with_help(int code)
 "  -o, --output-file=FILE     set the output FILE for the computed flux\n"
 "      --pdf-file=FILE        specify a pdf FILE for partons distributions\n"
 "                               [(builtin)/CT14nnlo_0000.dat]. The format\n"
-"                               must be `lhagrid1` complient.\n"
+"                               must be `lhagrid1` compliant.\n"
 "\n"
 "Energies (E) must be given in GeV, altitudes (Z) in m and angles (A) in deg.\n"
 "PID must be one of 15 (tau) or -15 (tau_bar) in backward mode and -12 \n"
 "(nu_e_bar), 16 (nu_tau) or -16 (nu_tau_bar) in forward mode.\n"
 "\n"
 "The default behaviour is to randomise the primary neutrino energy over a\n"
-"1/E^2 spectrum with a log bias. Use the --energy-analog option in order to\n"
-"to an analog simulation. The primary direction is randomised uniformly over\n"
-"a solid angle specified by the min an max value of the cosine of the angle\n"
-"theta with the local vertical at the atmosphere entrance. Use the -c,\n"
+"1/E^2 spectrum with a log bias. Use the --energy-analogue option in order to\n"
+"do an analogue simulation. The primary direction is randomised uniformly\n"
+"over a solid angle specified by the min and max value of the cosine of the\n"
+"angle theta with the local vertical at the atmosphere entrance. Use the -c,\n"
 "--cos-theta option in order to perform a point estimate instead.\n"
 "\n");
         exit(code);
@@ -1030,7 +1030,8 @@ static void transport_backward(struct ent_context * ctx_ent,
                                 (tau->grammage <
                                     ctx_pumas->grammage_max - FLT_EPSILON)) ||
                             (tau->kinetic + tau_mass >=
-                                energy_cut - FLT_EPSILON))
+                                energy_cut - FLT_EPSILON) ||
+                            (tau->weight <= 0.))
                                 return;
                         if (generation > 1) break;
 
@@ -1103,6 +1104,10 @@ static void transport_backward(struct ent_context * ctx_ent,
                 ent_vertex(
                     physics, ctx_ent, state, medium, ENT_PROCESS_NONE, NULL);
 
+                /* DEBUG */ if (state->weight <= 0.)
+                        fprintf(stderr, "error: null weight (%s:%d)\n",
+                            __FILE__, __LINE__);
+
                 /* Append the effective BMC weight for the transport, in order
                  * to recover a flux convention.
                  */
@@ -1135,6 +1140,7 @@ static void transport_backward(struct ent_context * ctx_ent,
         while ((event != ENT_EVENT_EXIT) &&
             (state->energy < energy_cut - FLT_EPSILON)) {
                 ent_transport(physics, ctx_ent, state, NULL, &event);
+                if (state->weight <= 0.) return;
                 if (longitudinal)
                         memcpy(state->direction, direction,
                             sizeof(state->direction));
@@ -1279,7 +1285,7 @@ int main(int argc, char * argv[])
         double elevation_min = -10., elevation_max = 10.;
         double z_min = 1E-03, z_max = 1E+05;
         double energy_min = 1E+07, energy_max = 1E+12;
-        int energy_spectrum = 1, energy_analog = 0;
+        int energy_spectrum = 1, energy_analogue = 0;
         int pem_sea = 1;
         char * pdf_file = DANTON_DIR "/ent/data/pdf/CT14nnlo_0000.dat";
 
@@ -1300,7 +1306,7 @@ int main(int argc, char * argv[])
                         { "elevation-max", required_argument, NULL, 0 },
                         { "elevation-min", required_argument, NULL, 0 },
                         { "energy", required_argument, NULL, 'e' },
-                        { "energy-analog", no_argument, &energy_analog, 1 },
+                        { "energy-analogue", no_argument, &energy_analogue, 1 },
                         { "energy-cut", required_argument, NULL, 0 },
                         { "energy-max", required_argument, NULL, 0 },
                         { "energy-min", required_argument, NULL, 0 },
@@ -1364,7 +1370,7 @@ int main(int argc, char * argv[])
                                 { &elevation_max, &opt_strtod, &endptr },
                                 { &elevation_min, &opt_strtod, &endptr },
                                 { NULL, NULL, NULL }, /* energy */
-                                { NULL, NULL, NULL }, /* energy-analog */
+                                { NULL, NULL, NULL }, /* energy-analogue */
                                 { &energy_cut, &opt_strtod, &endptr },
                                 { &energy_max, &opt_strtod, &endptr },
                                 { &energy_min, &opt_strtod, &endptr },
@@ -1588,7 +1594,7 @@ int main(int argc, char * argv[])
                         const double st = sqrt(1. - ct * ct);
                         double energy, weight = 1.;
                         if (energy_spectrum) {
-                                if (energy_analog) {
+                                if (energy_analogue) {
                                         const double ei0 = 1. / energy_min;
                                         energy =
                                             1. /
