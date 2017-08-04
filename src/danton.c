@@ -287,6 +287,8 @@ struct generic_state {
                 struct ent_state ent;
                 struct pumas_state pumas;
         } base;
+        int medium;
+        double density;
         double r;
         int is_tau;
         int is_inside;
@@ -300,7 +302,9 @@ struct generic_state {
             struct ent_state * state, double * density)                        \
         {                                                                      \
                 struct generic_state * s = (struct generic_state *)state;      \
-                return MODEL##_model##INDEX(s->r, density);                    \
+                const double step = MODEL##_model##INDEX(s->r, density);       \
+                s->density = *density;                                         \
+                return step;                                                   \
         }
 
 DENSITY(pem, 0)
@@ -328,6 +332,7 @@ DENSITY(space, 0)
                 const double step =                                            \
                     MODEL##_model##INDEX(s->r, &locals->density);              \
                 memset(locals->magnet, 0x0, sizeof(locals->magnet));           \
+                s->density = locals->density;                                  \
                 return step;                                                   \
         }
 
@@ -358,9 +363,9 @@ static int flux_neutrino = 0;
 
 /* Generic medium callback. */
 static double medium(const double * position, const double * direction,
-    int * index, struct generic_state * state)
+    struct generic_state * state)
 {
-        *index = -1;
+        state->medium = -1;
         double step = 0.;
 
         const double r2 = position[0] * position[0] +
@@ -393,7 +398,7 @@ static double medium(const double * position, const double * direction,
         int i;
         for (i = 0; i < sizeof(ri) / sizeof(*ri) - 1; i++) {
                 if (r <= ri[i]) {
-                        *index = i;
+                        state->medium = i;
 
                         /* Outgoing intersection. */
                         const double b = position[0] * direction[0] +
@@ -444,7 +449,6 @@ static struct ent_medium media_ent[] = { { ZR, AR, &density_pem0 },
 static double medium_ent(struct ent_context * context, struct ent_state * state,
     struct ent_medium ** medium_ptr)
 {
-        int index;
         double direction[3];
         if (context->ancestor) {
                 direction[0] = -state->direction[0];
@@ -455,10 +459,10 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
                 direction[1] = state->direction[1];
                 direction[2] = state->direction[2];
         }
-        const double step = medium(
-            state->position, direction, &index, (struct generic_state *)state);
-        if (index >= 0)
-                *medium_ptr = media_ent + index;
+        struct generic_state * g = (struct generic_state *)state;
+        const double step = medium(state->position, direction, g);
+        if (g->medium >= 0)
+                *medium_ptr = media_ent + g->medium;
         else
                 *medium_ptr = NULL;
         return step;
@@ -481,7 +485,6 @@ static struct pumas_medium media_pumas[] = { { 0, &locals_pem0 },
 double medium_pumas(struct pumas_context * context, struct pumas_state * state,
     struct pumas_medium ** medium_ptr)
 {
-        int index;
         double direction[3];
         if (context->forward) {
                 direction[0] = state->direction[0];
@@ -492,10 +495,10 @@ double medium_pumas(struct pumas_context * context, struct pumas_state * state,
                 direction[1] = -state->direction[1];
                 direction[2] = -state->direction[2];
         }
-        const double step = medium(
-            state->position, direction, &index, (struct generic_state *)state);
-        if (index >= 0)
-                *medium_ptr = media_pumas + index;
+        struct generic_state * g = (struct generic_state *)state;
+        const double step = medium(state->position, direction, g);
+        if (g->medium >= 0)
+                *medium_ptr = media_pumas + g->medium;
         else
                 *medium_ptr = NULL;
         return step;
@@ -818,6 +821,8 @@ static void transport_forward(struct ent_context * ctx_ent,
                                 .base.pumas = { charge, kinetic,
                                     product.distance, product.grammage, 0.,
                                     product.weight, .decayed = 0 },
+                                .medium = -1,
+                                .density = 0.,
                                 .r = 0.,
                                 .is_tau = 1,
                                 .is_inside = -1,
@@ -872,10 +877,7 @@ static void transport_forward(struct ent_context * ctx_ent,
                                                 continue;
 
                                         /* Log the decay if in air. */
-                                        int medium_index;
-                                        medium(tau->position, tau->direction,
-                                            &medium_index, &tau_data);
-                                        if (medium_index < 10) continue;
+                                        if (tau_data.medium < 10) continue;
                                         if (nprod == 0) {
                                                 if (!primary_dumped) {
                                                         format_ancestor(
@@ -945,6 +947,13 @@ static void transport_forward(struct ent_context * ctx_ent,
         }
 }
 
+static double ancestor_tau(
+    struct ent_context * context, struct ent_state * state)
+{
+        struct generic_state * g = (struct generic_state *)state;
+        return 1.63E-17 * pow(state->energy, 1.363) * g->density;
+}
+
 /* ancestor callback for ENT. */
 static double ancestor_cb(struct ent_context * context, enum ent_pid ancestor,
     struct ent_state * daughter)
@@ -956,13 +965,13 @@ static double ancestor_cb(struct ent_context * context, enum ent_pid ancestor,
                 if (ancestor == ENT_PID_NU_TAU)
                         return 1.;
                 else if (ancestor == ENT_PID_TAU)
-                        return 1.63E-14 * pow(daughter->energy, 1.363);
+                        return ancestor_tau(context, daughter);
                 return 0.;
         } else if (daughter->pid == ENT_PID_NU_BAR_TAU) {
                 if (ancestor == ENT_PID_NU_BAR_TAU)
                         return 1.;
                 else if (ancestor == ENT_PID_TAU_BAR)
-                        return 1.63E-14 * pow(daughter->energy, 1.363);
+                        return ancestor_tau(context, daughter);
                 return 0.;
         } else if (daughter->pid == ENT_PID_TAU) {
                 if (ancestor == ENT_PID_NU_TAU) return 1.;
@@ -1047,20 +1056,16 @@ static void transport_backward(struct ent_context * ctx_ent,
                         if ((d2 <= 0.) || (sqrt(d2) > -b)) break;
 
                         /* Check that the proposed vertex is **not** in air. */
-                        struct pumas_medium * m;
-                        medium_pumas(ctx_pumas, tau, &m);
-                        if (m->material != media_pumas[10].material) break;
+                        if ((g->medium < 10) || (g->density <= 0.)) break;
 
                         /* If upgoing and in air, randomly recycle the event
                          * by biasing the decay probability at the vertex.
                          * First let us compute the true decay probability.
                          */
-                        struct pumas_locals l;
-                        m->locals(m, tau, &l);
                         const double Pf =
                             sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
                         const double lD = tau_ctau0 * Pf / tau_mass;
-                        const double lB = lambda0 / l.density;
+                        const double lB = lambda0 / g->density;
                         const double pD = lB / (lB + lD);
                         const double pB = lD / (lB + lD); /* For underflow. */
                         if ((pD <= 0.) || (pB <= 0.)) break;
@@ -1103,10 +1108,6 @@ static void transport_backward(struct ent_context * ctx_ent,
                 if (medium == NULL) return;
                 ent_vertex(
                     physics, ctx_ent, state, medium, ENT_PROCESS_NONE, NULL);
-
-                /* DEBUG */ if (state->weight <= 0.)
-                        fprintf(stderr, "error: null weight (%s:%d)\n",
-                            __FILE__, __LINE__);
 
                 /* Append the effective BMC weight for the transport, in order
                  * to recover a flux convention.
@@ -1617,6 +1618,8 @@ int main(int argc, char * argv[])
                                 .base.ent = { projectile, energy, 0., 0.,
                                     weight, { 0., 0., -EARTH_RADIUS - 1E+05 },
                                     { st, 0., ct } },
+                                .medium = -1,
+                                .density = 0.,
                                 .r = 0.,
                                 .is_tau = 0,
                                 .is_inside = -1,
@@ -1696,6 +1699,8 @@ int main(int argc, char * argv[])
                                             weight,
                                             { 0., 0., EARTH_RADIUS + z0 },
                                             { st, 0., ct }, 0 },
+                                        .medium = -1,
+                                        .density = 0.,
                                         .r = 0.,
                                         .is_tau = 1,
                                         .is_inside = -1,
@@ -1713,6 +1718,8 @@ int main(int argc, char * argv[])
                                             0., weight,
                                             { 0., 0., EARTH_RADIUS + z0 },
                                             { st, 0., ct } },
+                                        .medium = -1,
+                                        .density = 0.,
                                         .r = 0.,
                                         .is_tau = 0,
                                         .is_inside = -1,
@@ -1729,6 +1736,8 @@ int main(int argc, char * argv[])
                                             0., weight,
                                             { 0., 0., EARTH_RADIUS + z0 },
                                             { st, 0., ct } },
+                                        .medium = -1,
+                                        .density = 0.,
                                         .r = 0.,
                                         .is_tau = 0,
                                         .is_inside = -1,
