@@ -268,6 +268,7 @@ int main(int argc, char * argv[])
                 fprintf(stderr, "danton: couldn't initialise the library.\n");
                 exit(EXIT_FAILURE);
         }
+        if (!pem_sea) danton_pem_dry();
 
         /* Create a new simulation context. */
         struct danton_context * context = danton_context_create();
@@ -280,7 +281,6 @@ int main(int argc, char * argv[])
         /* Configure the simulation context. */
         context->forward = forward;
         context->longitudinal = longitudinal;
-        context->pem_sea = pem_sea; /* TODO: disable or not. */
         context->decay = decay;
         context->grammage = grammage;
         context->output = output_file;

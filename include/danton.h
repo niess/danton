@@ -62,7 +62,6 @@ struct danton_event {
 struct danton_context {
         int forward;
         int longitudinal;
-        int pem_sea;
         int decay;
         int grammage;
         const char * output;
@@ -77,6 +76,9 @@ int danton_initialise(
     const char * pdf, danton_lock_cb * lock, danton_lock_cb * unlock);
 
 void danton_finalise(void);
+
+/* Replace the sea layer of the PEM with Standard Rock. */
+void danton_pem_dry(void);
 
 struct danton_context * danton_context_create(void);
 void danton_context_destroy(struct danton_context * context);

@@ -1252,6 +1252,13 @@ void danton_finalise(void)
         alouette_finalise();
 }
 
+/* Replace the sea layer of the PEM with standard rock. */
+void danton_pem_dry(void)
+{
+        memcpy(media_ent + 9, media_ent + 8, sizeof(*media_ent));
+        memcpy(media_pumas + 9, media_pumas + 8, sizeof(*media_pumas));
+}
+
 /* Create a new simulation context for DANTON. */
 struct danton_context * danton_context_create(void)
 {
@@ -1287,7 +1294,6 @@ struct danton_context * danton_context_create(void)
         /* Initialise the public API data. */
         context->api.forward = 0;
         context->api.longitudinal = 0;
-        context->api.pem_sea = 1;
         context->api.decay = 1;
         context->api.grammage = 0;
         context->api.output = NULL;
