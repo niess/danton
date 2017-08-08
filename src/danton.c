@@ -53,11 +53,18 @@
 /* Handle for ENT Physic. */
 static struct ent_physics * physics = NULL;
 
+/* Path to the PDF tables. */
+static char * pdf_path = NULL;
+
 /* The tau lepton mass, in GeV / c^2. */
 static double tau_mass;
 
 /* The tau lifetime, in m / c. */
 static double tau_ctau0;
+
+/* Callbacks for locking and unlocking critical sections. */
+static danton_lock_cb * lock = NULL;
+static danton_lock_cb * unlock = NULL;
 
 /* Density according to the Preliminary Earth Model (PEM). */
 static double pem_model0(double r, double * density)
@@ -1205,26 +1212,82 @@ static int load_pumas(void)
         return EXIT_SUCCESS;
 }
 
-/* Initialise the DANTON library. */
-int danton_initialise(
-    const char * pdf, danton_lock_cb * lock, danton_lock_cb * unlock)
+/* Shortcut for dumping an ENT error. */
+#define ERROR_ENT(rc, function)                                                \
+        fprintf(stderr, "error : ");                                           \
+        ent_error_print(stderr, rc, (ent_function_t *)&function, NULL, NULL);  \
+        fprintf(stderr, "\n")
+
+/* Low level routine for initialising the Physics engines. */
+static int initialise_physics(struct danton_context * context)
 {
-        /* Clear the error status. */
-        errno = 0;
+        if (lock != NULL) lock();
+        if (physics != NULL) return EXIT_SUCCESS;
 
         /* Create a new neutrino Physics environment. */
-        ent_physics_create(&physics, pdf);
+        enum ent_return e_rc;
+        const char * pdf;
+        if (pdf_path == NULL)
+                pdf = DANTON_DIR "/ent/data/pdf/CT14nnlo_0000.dat";
+        else
+                pdf = pdf_path;
+        if ((e_rc = ent_physics_create(&physics, pdf)) !=
+            ENT_RETURN_SUCCESS) {
+                ERROR_ENT(e_rc, ent_physics_create);
+                if (unlock != NULL) unlock();
+                return EXIT_FAILURE;
+        }
 
         /* Initialise the PUMAS transport engine. */
-        if (load_pumas() != EXIT_SUCCESS) return EXIT_FAILURE;
+        if (load_pumas() != EXIT_SUCCESS) {
+                if (unlock != NULL) unlock();
+                return EXIT_FAILURE;
+        }
 
         /* Initialise ALOUETTE/TAUOLA. */
         enum alouette_return a_rc;
         if ((a_rc = alouette_initialise(1, NULL)) != ALOUETTE_RETURN_SUCCESS) {
-                fprintf(stderr, "alouette_initialise: %s\n",
-                    alouette_strerror(a_rc));
+                fprintf(stderr, "%s (%d): alouette_initialise, %s\n", __FILE__,
+                    __LINE__, alouette_strerror(a_rc));
+                if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
-        };
+        }
+
+        free(pdf_path);
+        pdf_path = NULL;
+        if (unlock != NULL) unlock();
+        return EXIT_SUCCESS;
+}
+
+/* Initialise the DANTON library. */
+int danton_initialise(
+    const char * pdf, danton_lock_cb * lock_, danton_lock_cb * unlock_)
+{
+        /* Clear the error status. */
+        errno = 0;
+
+        /* Copy the PDF path for later use. */
+        if (pdf != NULL) {
+                if (pdf_path != NULL) free(pdf_path);
+                const int n = strlen(pdf) + 1;
+                pdf_path = malloc(n);
+                if (pdf_path == NULL) {
+                        fprintf(stderr, "%s (%d): could not allocate memory\n",
+                            __FILE__, __LINE__);
+                        return EXIT_FAILURE;
+                }
+                memcpy(pdf_path, pdf, n);
+        }
+
+        /* Check and update the lock callbaks. */
+        if (((lock_ == NULL) && (unlock_ != NULL)) ||
+            ((lock_ != NULL) && (unlock_ == NULL))) {
+                fprintf(stderr, "%s (%d): incomplete (un)lock function(s)\n",
+                    __FILE__, __LINE__);
+                return EXIT_FAILURE;
+        }
+        lock = lock_;
+        unlock = unlock_;
 
         return EXIT_SUCCESS;
 }
@@ -1232,6 +1295,8 @@ int danton_initialise(
 /* Finalise the DANTON library. */
 void danton_finalise(void)
 {
+        free(pdf_path);
+        pdf_path = NULL;
         ent_physics_destroy(&physics);
         pumas_finalise();
         alouette_finalise();
@@ -1367,16 +1432,7 @@ struct danton_context * danton_context_create(void)
         context->ent.distance_max = 0.;
         context->ent.grammage_max = 0.;
 
-        enum pumas_return rc;
-        if ((rc = pumas_context_create(0, &context->pumas)) !=
-            PUMAS_RETURN_SUCCESS) {
-                ERROR_PUMAS(rc, pumas_context_create);
-                free(context);
-                return NULL;
-        }
-        context->pumas->medium = &medium_pumas;
-        context->pumas->random = &random_pumas;
-        context->pumas->user_data = context;
+        context->pumas = NULL;
 
         /* Initialise the public API data. */
         context->api.forward = 0;
@@ -1574,7 +1630,6 @@ int danton_run(struct danton_context * context, long events)
         context_->energy_cut = (context->forward) ?
             context->sampler->energy[0] :
             1E+12; /* TODO: set from the primary. */
-        context_->pumas->kinetic_limit = context_->energy_cut - tau_mass;
 
         /* Temporary hack for the projectile. */
         int projectile = ENT_PID_NU_TAU;
@@ -1602,9 +1657,33 @@ int danton_run(struct danton_context * context, long events)
                 print_header_decay(stream);
         output_close(context_, stream);
 
+        if (!context->grammage) {
+                /* Initialise the Physic engines, if not already done. */
+                if (physics == NULL) {
+                        if (initialise_physics(context) != EXIT_SUCCESS)
+                                return EXIT_FAILURE;
+                }
+                if (context_->pumas == NULL) {
+                        /* Create PUMAS context, if not already done.. */
+                        enum pumas_return rc;
+                        if ((rc = pumas_context_create(0, &context_->pumas)) !=
+                            PUMAS_RETURN_SUCCESS) {
+                                ERROR_PUMAS(rc, pumas_context_create);
+                                return EXIT_FAILURE;
+                        }
+                        context_->pumas->medium = &medium_pumas;
+                        context_->pumas->random = &random_pumas;
+                        context_->pumas->user_data = context_;
+                }
+                context_->pumas->kinetic_limit = context_->energy_cut - tau_mass;
+        }
+
         /* Run the simulation. */
         if (context->forward) {
                 /* Run a bunch of forward Monte-Carlo events. */
+                context_->ent.ancestor = NULL;
+                if (context_->pumas != NULL) context_->pumas->forward = 1;
+
                 long i;
                 for (i = 0; i < events; i++) {
                         const double ct = sample_linear(
@@ -1646,7 +1725,7 @@ int danton_run(struct danton_context * context, long events)
         } else {
                 /* Run a bunch of backward Monte-Carlo events. */
                 context_->ent.ancestor = &ancestor_cb;
-                context_->pumas->forward = 0;
+                if (context_->pumas != NULL) context_->pumas->forward = 0;
 
                 double cos_theta[2];
                 int j;

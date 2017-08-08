@@ -134,7 +134,7 @@ int main(int argc, char * argv[])
         double altitude_min = 1E-03, altitude_max = 1E+05;
         double energy_min = 1E+07, energy_max = 1E+12;
         int pem_sea = 1;
-        char * pdf_file = DANTON_DIR "/ent/data/pdf/CT14nnlo_0000.dat";
+        char * pdf_file = NULL;
         char * output_file = NULL;
 
         /* Parse the optional arguments. */
