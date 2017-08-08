@@ -164,26 +164,6 @@ struct simulation_context {
         struct pumas_context * pumas;
         struct ent_context ent;
 
-        /* Sampling of the final state altitude. */
-        double altitude_min;
-        double altitude_max;
-        int altitude_range;
-
-        /* Sampling of the primary direction, in forward mode. */
-        double cos_theta_min;
-        double cos_theta_max;
-        int cos_theta_range;
-
-        /* Sampling of the final state elevation, in backward mode. */
-        double elevation_min;
-        double elevation_max;
-        int elevation_range;
-
-        /* Sampling of the final state energy. */
-        double energy_min;
-        double energy_max;
-        int energy_range;
-
         /* The lower (upper) energy bound under (above) which all particles are
          * killed.
          */
@@ -191,10 +171,6 @@ struct simulation_context {
 
         /* Flag for the dumping of the primary state. */
         int primary_dumped;
-
-        /* Configuration of the targeted final states. */
-        int target_status[8];
-        double target_weight[8];
 
         /* Flag to check if the neutrino flux is requested. */
         int flux_neutrino;
@@ -308,7 +284,8 @@ static double medium(const double * position, const double * direction,
 
         if (!state->context->api.decay && (state->has_crossed >= 0)) {
                 /* Check the flux boundary in forward MC. */
-                const double rf = EARTH_RADIUS + state->context->altitude_min;
+                const double zi = state->context->api.sampler->altitude[0];
+                const double rf = EARTH_RADIUS + zi;
                 if (state->is_inside < 0)
                         state->is_inside = (r < rf) ? 1 : 0;
                 else if ((state->is_inside && (r >= rf)) ||
@@ -552,7 +529,14 @@ static void copy_neutrino(struct simulation_context * context,
         neutrino->weight = tau->weight;
 }
 
-/* Open the output stream. */
+/* Get or create the output stream. */
+static FILE * output_create(struct simulation_context * context)
+{
+        if (context->api.output == NULL) return stdout;
+        return fopen(context->api.output, "w+");
+}
+
+/* Open the output stream and append to it. */
 static FILE * output_open(struct simulation_context * context)
 {
         if (context->api.output == NULL) return stdout;
@@ -671,6 +655,7 @@ static void transport_forward(struct simulation_context * context,
         if (context->api.longitudinal)
                 memcpy(direction, neutrino->direction, sizeof(direction));
 
+        struct danton_sampler * const sampler = context->api.sampler;
         struct ent_state product;
         enum ent_event event;
         for (;;) {
@@ -810,8 +795,8 @@ static void transport_forward(struct simulation_context * context,
                                                 nu_e_data.cross_count =
                                                     (tau_data.r <=
                                                         EARTH_RADIUS +
-                                                            context
-                                                                ->altitude_min +
+                                                            sampler
+                                                                ->altitude[0] +
                                                             FLT_EPSILON) ?
                                                     1 :
                                                     0;
@@ -829,8 +814,8 @@ static void transport_forward(struct simulation_context * context,
                                                 nu_t_data.cross_count =
                                                     (tau_data.r <=
                                                         EARTH_RADIUS +
-                                                            context
-                                                                ->altitude_min +
+                                                            sampler
+                                                                ->altitude[0] +
                                                             FLT_EPSILON) ?
                                                     1 :
                                                     0;
@@ -1213,11 +1198,11 @@ static int load_pumas(void)
 
         /* Dump the library configuration. */
         stream = fopen(dump, "wb+");
-        if (stream == NULL) exit(EXIT_FAILURE);
+        if (stream == NULL) return EXIT_FAILURE;
         pumas_dump(stream);
         fclose(stream);
 
-        return EXIT_FAILURE;
+        return EXIT_SUCCESS;
 }
 
 /* Initialise the DANTON library. */
@@ -1259,6 +1244,108 @@ void danton_pem_dry(void)
         memcpy(media_pumas + 9, media_pumas + 8, sizeof(*media_pumas));
 }
 
+/* Low level data structure for an event sampler. */
+struct event_sampler {
+        struct danton_sampler api;
+        char endstr;
+        double neutrino_weight;
+        double total_weight;
+        unsigned long hash;
+};
+
+/* Create a new event sampler. */
+struct danton_sampler * danton_sampler_create(void)
+{
+        struct event_sampler * sampler;
+        sampler = malloc(sizeof(*sampler));
+        if (sampler == NULL) {
+                fprintf(stderr, "danton.c (%d): couldn't allocate memory.\n",
+                    __LINE__);
+                return NULL;
+        }
+        memset(sampler, 0x0, sizeof(*sampler));
+        sampler->hash--;
+        return &sampler->api;
+}
+
+/* Destroy an event sampler. */
+void danton_sampler_destroy(struct danton_sampler ** sampler)
+{
+        free(*sampler);
+        *sampler = NULL;
+}
+
+/* Bernstein's djb2 hash function, from http://www.cse.yorku.ca/~oz/hash.html.
+ */
+static unsigned long hash(unsigned char * str)
+{
+        unsigned long hash = 5381;
+        int c;
+
+        while ((c = *str++)) {
+                hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+        }
+        return hash;
+}
+
+/* Update an event sampler. */
+int danton_sampler_update(struct danton_sampler * sampler)
+{
+        struct event_sampler * sampler_ = (struct event_sampler *)sampler;
+
+        /* Check the altitude. */
+        if ((sampler->altitude[0] < 0.) ||
+            (sampler->altitude[0] > sampler->altitude[1])) {
+                fprintf(stderr, "danton: invalid altitude value(s). "
+                                "Call with -h, --help for usage.\n");
+                return EXIT_FAILURE;
+        }
+
+        /* Check cos(theta). TODO: compute it from the elevation data. */
+        if ((sampler->cos_theta[0] < 0.) ||
+            (sampler->cos_theta[0] > sampler->cos_theta[1]) ||
+            (sampler->cos_theta[1] > 1.)) {
+                fprintf(stderr, "danton: invalid cos(theta) value(s). "
+                                "Call with -h, --help for usage.\n");
+                return EXIT_FAILURE;
+        }
+
+        /* Check the elevation angle. */
+        if ((sampler->elevation[0] < -90.) ||
+            (sampler->elevation[0] > sampler->elevation[1]) ||
+            (sampler->elevation[1] > 90.)) {
+                fprintf(stderr, "danton: invalid elevation value(s). "
+                                "Call with -h, --help for usage.\n");
+                return EXIT_FAILURE;
+        }
+
+        /* Check the energy. */
+        if ((sampler->energy[0] < 1E+02) ||
+            (sampler->energy[0] > sampler->energy[1]) ||
+            (sampler->energy[1] < 1E+12)) {
+                fprintf(stderr, "danton: invalid energy values. "
+                                "Call with -h, --help for usage.\n");
+                return EXIT_FAILURE;
+        }
+
+        /* Compute the particle weights. */
+        sampler_->neutrino_weight = 0.;
+        int i;
+        for (i = 0; i < DANTON_PARTICLE_N - 2; i++)
+                sampler_->neutrino_weight +=
+                    (sampler->weight[i] <= 0.) ? 0. : sampler->weight[i];
+        sampler_->total_weight = sampler_->neutrino_weight;
+        if (sampler->weight[DANTON_PARTICLE_TAU_BAR] > 0.)
+                sampler_->total_weight +=
+                    sampler->weight[DANTON_PARTICLE_TAU_BAR];
+        if (sampler->weight[DANTON_PARTICLE_TAU] > 0.)
+                sampler_->total_weight += sampler->weight[DANTON_PARTICLE_TAU];
+
+        /* Update the hash and return. */
+        sampler_->hash = hash((unsigned char *)sampler);
+        return EXIT_SUCCESS;
+}
+
 /* Create a new simulation context for DANTON. */
 struct danton_context * danton_context_create(void)
 {
@@ -1296,27 +1383,8 @@ struct danton_context * danton_context_create(void)
         context->api.longitudinal = 0;
         context->api.decay = 1;
         context->api.grammage = 0;
+        context->api.sampler = NULL;
         context->api.output = NULL;
-
-        /* Sampling of the final state altitude. */
-        context->altitude_min = 0.;
-        context->altitude_max = 0.;
-        context->altitude_range = 0;
-
-        /* Sampling of the primary direction, in forward mode. */
-        context->cos_theta_min = 0.15;
-        context->cos_theta_max = 0.25;
-        context->cos_theta_range = 1;
-
-        /* Sampling of the final state elevation, in backward mode. */
-        context->elevation_min = 1.;
-        context->elevation_max = 0.;
-        context->elevation_range = 0;
-
-        /* Sampling of the final state energy. */
-        context->energy_min = 1E+07;
-        context->energy_max = 1E+12;
-        context->energy_range = 1;
 
         /* The lower (upper) energy bound under (above) which all particles are
          * killed.
@@ -1326,10 +1394,6 @@ struct danton_context * danton_context_create(void)
         /* Flag for the dumping of the primary state. */
         context->primary_dumped = 0;
 
-        /* Configuration of the targeted final states. */
-        memset(context->target_status, 0x0, sizeof(context->target_status));
-        memset(context->target_weight, 0x0, sizeof(context->target_weight));
-
         /* Flag to check if the neutrino flux is requested. */
         context->flux_neutrino = 0;
 
@@ -1337,172 +1401,195 @@ struct danton_context * danton_context_create(void)
 }
 
 /* Destroy a DANTON simulation context. */
-void danton_context_destroy(struct danton_context * context)
+void danton_context_destroy(struct danton_context ** context)
 {
+        if (*context == NULL) return;
         struct simulation_context * context_ =
-            (struct simulation_context *)context;
+            (struct simulation_context *)(*context);
         pumas_context_destroy(&context_->pumas);
         free(context_);
+        *context = NULL;
 }
 
-/* Get the PID corresponding to the given table index. */
-static int index2pid(int index)
+/* Get the PDG number corresponding to the given table index. */
+int danton_particle_pdg(enum danton_particle index)
 {
-#define N_INDICES 8
-        int target_pid[N_INDICES] = { ENT_PID_NU_BAR_TAU, ENT_PID_NU_BAR_MU,
+        int pdg[DANTON_PARTICLE_N] = { ENT_PID_NU_BAR_TAU, ENT_PID_NU_BAR_MU,
                 ENT_PID_NU_BAR_E, ENT_PID_NU_E, ENT_PID_NU_MU, ENT_PID_NU_TAU,
                 ENT_PID_TAU_BAR, ENT_PID_TAU };
-        return target_pid[index];
+        if ((index < 0) || (index >= DANTON_PARTICLE_N)) return 0;
+        return pdg[index];
 }
 
-/* Get the table index corresponding to the given PID. */
-static int pid2index(int pid)
+/* Get the table index corresponding to the given PDG number. */
+enum danton_particle danton_particle_index(int pdg)
 {
-        if (pid > 0) {
-                if (pid == ENT_PID_NU_E)
-                        return 3;
-                else if (pid == ENT_PID_NU_MU)
-                        return 4;
-                else if (pid == ENT_PID_NU_TAU)
-                        return 5;
-                else if (pid == ENT_PID_TAU)
-                        return 7;
+        if (pdg > 0) {
+                if (pdg == ENT_PID_NU_E)
+                        return DANTON_PARTICLE_NU_E;
+                else if (pdg == ENT_PID_NU_MU)
+                        return DANTON_PARTICLE_NU_MU;
+                else if (pdg == ENT_PID_NU_TAU)
+                        return DANTON_PARTICLE_NU_TAU;
+                else if (pdg == ENT_PID_TAU)
+                        return DANTON_PARTICLE_TAU;
         } else {
-                if (pid == ENT_PID_NU_BAR_TAU)
-                        return 0;
-                else if (pid == ENT_PID_NU_BAR_MU)
-                        return 1;
-                else if (pid == ENT_PID_NU_BAR_E)
-                        return 2;
-                else if (pid == ENT_PID_TAU_BAR)
-                        return 6;
+                if (pdg == ENT_PID_NU_BAR_TAU)
+                        return DANTON_PARTICLE_NU_BAR_TAU;
+                else if (pdg == ENT_PID_NU_BAR_MU)
+                        return DANTON_PARTICLE_NU_BAR_MU;
+                else if (pdg == ENT_PID_NU_BAR_E)
+                        return DANTON_PARTICLE_NU_BAR_E;
+                else if (pdg == ENT_PID_TAU_BAR)
+                        return DANTON_PARTICLE_TAU_BAR;
         }
-        return -1;
+        return DANTON_PARTICLE_UNKNOWN;
+}
+
+static double sample_linear(struct simulation_context * context,
+    const double x[2], long i, long n, double * weight)
+{
+        double xi;
+        if (x[0] < x[1]) {
+                const double dx = x[1] - x[0];
+                double u;
+                if ((context->api.grammage) && (n > 0))
+                        u = (n > 1) ? i / (n - 1.) : 0.;
+                else {
+                        u = random_uniform01(context);
+                        if (weight != NULL) *weight *= dx;
+                }
+                xi = dx * u + x[0];
+        } else
+                xi = x[0];
+        return xi;
+}
+
+static double sample_log_or_linear(
+    struct simulation_context * context, double x[2], double * weight)
+{
+        double xi;
+        if (x[0] < x[1]) {
+                if ((x[0] > 0.) || (x[1] < 0.)) {
+                        const double r = log(x[1] / x[0]);
+                        xi = x[0] * exp(r * random_uniform01(context));
+                        if (weight != NULL) *weight *= fabs(r) * xi;
+                } else {
+                        const double dx = x[1] - x[0];
+                        xi = x[0] + dx * random_uniform01(context);
+                        if (weight != NULL) *weight *= dx;
+                }
+        } else
+                xi = x[0];
+        return xi;
 }
 
 /* Run a DANTON simulation. */
 int danton_run(struct danton_context * context, long events)
 {
-        /* Check and configure the context according to the API. */
+        /* Unpack the various objects. */
         struct simulation_context * context_ =
             (struct simulation_context *)context;
+        struct danton_sampler * sampler = context->sampler;
+        struct event_sampler * sampler_ = (struct event_sampler *)sampler;
 
-        const double cmin = context->forward ? 0. : -1.;
-        if (((context_->cos_theta_min < cmin) ||
-                (context_->cos_theta_min > 1.)) ||
-            ((context_->cos_theta_range &&
-                ((context_->cos_theta_min >= context_->cos_theta_max) ||
-                    (context_->cos_theta_max > 1.) ||
-                    (context_->cos_theta_max < cmin))))) {
-                fprintf(stderr, "danton: inconsistent cos(theta) value(s). "
+        /* Check and configure the context according to the API. */
+        if (sampler == NULL) {
+                fprintf(stderr, "danton: no sampler was provided. "
                                 "Call with -h, --help for usage.\n");
                 return EXIT_FAILURE;
         }
-        if ((context_->altitude_min < 0.) ||
-            (context_->altitude_range &&
-                (context_->altitude_min >= context_->altitude_max))) {
-                fprintf(stderr, "danton: inconsistent altitude value(s). "
-                                "Call with -h, --help for usage.\n");
-                return EXIT_FAILURE;
-        }
-        if ((context_->elevation_min < -90.) ||
-            (context_->elevation_min > 90.) ||
-            (context_->elevation_max > 90.) ||
-            (context_->elevation_range &&
-                (context_->elevation_min >= context_->elevation_max))) {
-                fprintf(stderr, "danton: inconsistent elevation value(s). "
-                                "Call with -h, --help for usage.\n");
-                return EXIT_FAILURE;
-        }
-        if (context->forward) {
-                if (context->grammage && !context_->cos_theta_range) events = 1;
-                if (context->grammage && context_->cos_theta_range &&
-                    events < 2) {
-                        fprintf(stderr,
-                            "danton: numbers of bins must be 2 or more. "
-                            "Call with -h, --help for usage.\n");
-                        return EXIT_FAILURE;
-                }
-        } else {
-                if (context->grammage && !context_->elevation_range) events = 1;
-                if (context->grammage && context_->elevation_range &&
-                    events < 2) {
-                        fprintf(stderr,
-                            "danton: numbers of bins must be 2 or more. "
-                            "Call with -h, --help for usage.\n");
-                        return EXIT_FAILURE;
-                }
-        }
-        context_->energy_cut = (context->forward) ?
-            context_->energy_min :
-            1E+12; /* TODO: set from the primary. */
-        if ((context_->energy_cut < 1E+02) || (context_->energy_min < 1E+02)) {
-                fprintf(stderr, "danton: energies must be at least 100 GeV. "
-                                "Call with -h, --help for usage.\n");
-                return EXIT_FAILURE;
-        }
-        context_->pumas->kinetic_limit = context_->energy_cut - tau_mass;
 
-        if (context_->energy_range &&
-            (context_->energy_max <= context_->energy_min)) {
-                fprintf(stderr, "danton: inconsistent energy range. "
+        if (sampler_->hash != hash((unsigned char *)sampler)) {
+                fprintf(stderr, "danton: sampler has not been updated. "
                                 "Call with -h, --help for usage.\n");
                 return EXIT_FAILURE;
         }
-        if (context->decay) {
-                if ((context_->target_status[6] == 0) &&
-                    (context_->target_status[7] == 0)) {
-                        fprintf(stderr, "danton: no tau(s) target to decay. "
-                                        "Call with -h, --help for usage.\n");
-                        return EXIT_FAILURE;
-                }
+
+        if (context->grammage) {
                 if (context->forward) {
-                        int neutrino = 0;
-                        int i;
-                        for (i = 0; i < 6; i++)
-                                neutrino += context_->target_status[i];
-                        if (neutrino) {
+                        if (sampler->cos_theta[0] == sampler->cos_theta[1])
+                                events = 1;
+                        else if (events < 2) {
                                 fprintf(stderr,
-                                    "danton: combining neutrino(s) and tau(s) "
-                                    "sampling is not supported in forward "
-                                    "mode. "
+                                    "danton: numbers of bins must be 2 or "
+                                    "more. "
                                     "Call with -h, --help for usage.\n");
                                 return EXIT_FAILURE;
                         }
-
-                        if (!context_->altitude_range) {
-                                fprintf(stderr, "danton: no altitude range for "
-                                                "tau(s) decays.\n");
+                        context_->flux_neutrino = 1;
+                } else {
+                        if (sampler->elevation[0] == sampler->elevation[1])
+                                events = 1;
+                        else if (events < 2) {
+                                fprintf(stderr,
+                                    "danton: numbers of bins must be 2 or "
+                                    "more. "
+                                    "Call with -h, --help for usage.\n");
                                 return EXIT_FAILURE;
                         }
                 }
         } else {
-        }
+                if (sampler_->total_weight <= 0.) {
+                        fprintf(stderr, "danton: no particle to sample. "
+                                        "Call with -h, --help for usage.\n");
+                        return EXIT_FAILURE;
+                }
+                if (context->forward)
+                        context_->flux_neutrino =
+                            sampler_->neutrino_weight > 0.;
 
-        context_->flux_neutrino = 0;
-        int i;
-        for (i = 0; i < N_INDICES - 2; i++) {
-                if (context_->target_status[i]) {
-                        context_->flux_neutrino = 1;
-                        break;
+                if (context->decay) {
+                        if (sampler_->neutrino_weight ==
+                            sampler_->total_weight) {
+                                fprintf(stderr,
+                                    "danton: no tau(s) target to decay. "
+                                    "Call with -h, --help for usage.\n");
+                                return EXIT_FAILURE;
+                        }
+                        if (context->forward) {
+                                if (sampler_->neutrino_weight > 0.) {
+                                        fprintf(stderr, "danton: combining "
+                                                        "neutrino(s) and "
+                                                        "tau(s) "
+                                                        "sampling is not "
+                                                        "supported in forward "
+                                                        "mode. "
+                                                        "Call with -h, --help "
+                                                        "for usage.\n");
+                                        return EXIT_FAILURE;
+                                }
+
+                                if (sampler->altitude[0] ==
+                                    sampler->altitude[1]) {
+                                        fprintf(stderr,
+                                            "danton: no altitude range for "
+                                            "tau(s) decays.\n");
+                                        return EXIT_FAILURE;
+                                }
+                        }
                 }
         }
+
+        context_->energy_cut = (context->forward) ?
+            context->sampler->energy[0] :
+            1E+12; /* TODO: set from the primary. */
+        context_->pumas->kinetic_limit = context_->energy_cut - tau_mass;
 
         /* Temporary hack for the projectile. */
-        int projectile = 0;
-        for (i = 0; i < N_INDICES; i++) {
-                if (context_->target_status[i]) {
-                        projectile = index2pid(i);
-                        break;
+        int projectile = ENT_PID_NU_TAU;
+        if (!context->grammage) {
+                int j;
+                for (j = 0; j < DANTON_PARTICLE_N; j++) {
+                        if (sampler->weight[j] > 0.) {
+                                projectile = danton_particle_pdg(j);
+                                break;
+                        }
                 }
-        }
-        if (projectile == 0) {
-                fprintf(stderr, "danton: no target particle to sample.\n");
-                return EXIT_FAILURE;
         }
 
         /* Configure the output stream. */
-        FILE * stream = output_open(context_);
+        FILE * stream = output_create(context_);
         if (stream == NULL) {
                 fprintf(stderr, "danton: could not open the output file. "
                                 "Call with -h, --help for usage.\n");
@@ -1520,32 +1607,19 @@ int danton_run(struct danton_context * context, long events)
                 /* Run a bunch of forward Monte-Carlo events. */
                 long i;
                 for (i = 0; i < events; i++) {
-                        double ct;
-                        if (context_->cos_theta_range) {
-                                const double u = context->grammage ?
-                                    i / (events - 1.) :
-                                    random_uniform01(context_);
-                                ct = (context_->cos_theta_max -
-                                         context_->cos_theta_min) *
-                                        u +
-                                    context_->cos_theta_min;
-                        } else
-                                ct = context_->cos_theta_min;
+                        const double ct = sample_linear(
+                            context_, sampler->cos_theta, i, events, NULL);
                         const double st = sqrt(1. - ct * ct);
-                        double energy, weight = 1.;
-                        if (context_->energy_range) {
-                                /* TODO: sample from the primary instead. */
-                                const double r = log(context_->energy_max /
-                                    context_->energy_min);
-                                energy = context_->energy_min *
-                                    exp(r * random_uniform01(context_));
-                                weight = r * context_->energy_max *
-                                    context_->energy_min /
-                                    ((context_->energy_max -
-                                         context_->energy_min) *
-                                             context_->energy_min);
-                        } else
-                                energy = context_->energy_min;
+                        double weight = 1.;
+                        /* TODO: sample from the primary. */
+                        const double energy = sample_log_or_linear(
+                            context_, sampler->energy, &weight);
+                        if (sampler->energy[0] < sampler->energy[1])
+                                weight *= sampler->energy[1] *
+                                    sampler->energy[0] /
+                                    ((sampler->energy[1] - sampler->energy[0]) *
+                                              energy * energy);
+
                         const int crossed = context->decay ? -1 : 0;
                         struct generic_state state = {
                                 .base.ent = { projectile, energy, 0., 0.,
@@ -1574,62 +1648,23 @@ int danton_run(struct danton_context * context, long events)
                 context_->ent.ancestor = &ancestor_cb;
                 context_->pumas->forward = 0;
 
-                double cos_theta_min = 0., cos_theta_max = 1.;
-                cos_theta_min =
-                    cos((90. - context_->elevation_min) * M_PI / 180.);
-                if (context_->elevation_range)
-                        cos_theta_max =
-                            cos((90. - context_->elevation_max) * M_PI / 180.);
+                double cos_theta[2];
+                int j;
+                for (j = 0; j < 2; j++)
+                        cos_theta[j] =
+                            cos((90. - sampler->elevation[j]) * M_PI / 180.);
 
                 long i;
                 for (i = 0; i < events; i++) {
-                        double ct, weight = 1.;
-                        if (context_->elevation_range) {
-                                const double u = context->grammage ?
-                                    i / (events - 1.) :
-                                    random_uniform01(context_);
-
-                                const double dc = cos_theta_max - cos_theta_min;
-                                ct = dc * u + cos_theta_min;
-                                weight *= dc;
-                        } else
-                                ct = cos_theta_min;
+                        double weight = 1.;
+                        const double ct = sample_linear(
+                            context_, cos_theta, i, events, &weight);
                         const double st = sqrt(1. - ct * ct);
-                        double energy;
-                        if (context_->energy_range) {
-                                const double r = log(context_->energy_max /
-                                    context_->energy_min);
-                                energy = context_->energy_min *
-                                    exp(r * random_uniform01(context_));
-                                weight *= r * energy;
-                        } else
-                                energy = context_->energy_min;
-                        double z0;
-                        if (context_->altitude_range) {
-                                if (context_->altitude_min > 0.) {
-                                        const double r =
-                                            log(context_->altitude_max /
-                                                context_->altitude_min);
-                                        z0 = context_->altitude_min *
-                                            exp(r * random_uniform01(context_));
-                                        weight *= r * z0;
-                                } else if (context_->altitude_max < 0.) {
-                                        const double r =
-                                            log(context_->altitude_min /
-                                                context_->altitude_max);
-                                        z0 = context_->altitude_max *
-                                            exp(r * random_uniform01(context_));
-                                        weight *= r * z0;
-                                } else {
-                                        const double dz =
-                                            context_->altitude_max -
-                                            context_->altitude_min;
-                                        z0 = context_->altitude_min +
-                                            dz * random_uniform01(context_);
-                                        weight *= dz;
-                                }
-                        } else
-                                z0 = context_->altitude_min;
+                        const double energy = sample_log_or_linear(
+                            context_, sampler->energy, &weight);
+                        const double z0 = sample_log_or_linear(
+                            context_, sampler->altitude, &weight);
+
                         if (!context->grammage && !context_->flux_neutrino) {
                                 /* This is a particle Monte-Carlo. */
                                 const double charge =
@@ -1654,7 +1689,7 @@ int danton_run(struct danton_context * context, long events)
                                 context_->primary_dumped = 0;
                                 transport_backward(context_, &state, i, 1,
                                     &tau_at_decay, &tau_at_production);
-                        } else if (context->grammage &&
+                        } else if (!context->grammage &&
                             context_->flux_neutrino) {
                                 struct generic_state state = {
                                         .base.ent = { projectile, energy, 0.,
@@ -1694,7 +1729,7 @@ int danton_run(struct danton_context * context, long events)
                                 struct ent_state * state = &g_state.base.ent;
                                 enum ent_event event = ENT_EVENT_NONE;
                                 while (event != ENT_EVENT_EXIT) {
-                                        ent_transport(physics, &context_->ent,
+                                        ent_transport(NULL, &context_->ent,
                                             state, NULL, &event);
                                 }
 
@@ -1704,97 +1739,4 @@ int danton_run(struct danton_context * context, long events)
         }
 
         return EXIT_SUCCESS;
-}
-
-/* API function for setting the altitude for the sampling of the final state. */
-void danton_altitude(struct danton_context * context, double altitude)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->altitude_range = 0;
-        c->altitude_min = altitude;
-}
-
-/* API function for setting an altitude range for the sampling of the final
- * state.
- */
-void danton_altitude_range(
-    struct danton_context * context, double altitude_min, double altitude_max)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->altitude_range = 1;
-        c->altitude_min = altitude_min;
-        c->altitude_max = altitude_max;
-}
-
-/* API function for setting the direction of generation of the primary states,
- * in forward Monte-Carlo.
- */
-void danton_cos_theta(struct danton_context * context, double cos_theta)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->cos_theta_range = 0;
-        c->cos_theta_min = cos_theta;
-}
-
-/* API function for setting the solid angle of generation of the primary states,
- * in forward Monte-Carlo.
- */
-void danton_cos_theta_range(
-    struct danton_context * context, double cos_theta_min, double cos_theta_max)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->cos_theta_range = 1;
-        c->cos_theta_min = cos_theta_min;
-        c->cos_theta_max = cos_theta_max;
-}
-
-/* API function for setting the elevation for the sampling of the final state.
- */
-void danton_elevation(struct danton_context * context, double elevation)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->elevation_range = 0;
-        c->elevation_min = elevation;
-}
-
-/* API function for setting an elevation range for the sampling of the final
- * state.
- */
-void danton_elevation_range(
-    struct danton_context * context, double elevation_min, double elevation_max)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->elevation_range = 1;
-        c->elevation_min = elevation_min;
-        c->elevation_max = elevation_max;
-}
-
-/* API function for setting the energy for the sampling of the final state. */
-void danton_energy(struct danton_context * context, double energy)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->energy_range = 0;
-        c->energy_min = energy;
-}
-
-/* API function for setting an energy range for the sampling of the final
- * state.
- */
-void danton_energy_range(
-    struct danton_context * context, double energy_min, double energy_max)
-{
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->energy_range = 1;
-        c->energy_min = energy_min;
-        c->energy_max = energy_max;
-}
-
-void danton_target_set(struct danton_context * context, int pid, double weight)
-{
-        const int index = pid2index(pid);
-        if (index <= 0) return;
-
-        struct simulation_context * c = (struct simulation_context *)context;
-        c->target_status[index] = 1;
-        c->target_weight[index] = weight;
 }

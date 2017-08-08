@@ -162,7 +162,7 @@ int main(int argc, char * argv[])
                         { "pem-no-sea", no_argument, &pem_sea, 0 },
 
                         /* Control options. */
-                        { "grammage", no_argument, &grammage, 0 },
+                        { "grammage", no_argument, &grammage, 1 },
                         { "help", no_argument, NULL, 'h' },
                         { "output-file", required_argument, NULL, 'o' },
                         { "pdf-file", required_argument, NULL, 0 },
@@ -270,11 +270,36 @@ int main(int argc, char * argv[])
         }
         if (!pem_sea) danton_pem_dry();
 
+        /* Create a sampler. */
+        struct danton_sampler * sampler = danton_sampler_create();
+        if (sampler == NULL) {
+                fprintf(stderr, "danton: could not create the sampler.\n");
+                exit(EXIT_FAILURE);
+        }
+
+        /* Configure the sampler. */
+        sampler->altitude[0] = altitude_min;
+        sampler->altitude[1] = altitude_range ? altitude_max : altitude_min;
+        if (forward) {
+                sampler->cos_theta[0] = cos_theta_min;
+                sampler->cos_theta[1] =
+                    cos_theta_range ? cos_theta_max : cos_theta_min;
+        } else {
+                sampler->elevation[0] = elevation_min;
+                sampler->elevation[1] =
+                    elevation_range ? elevation_max : elevation_min;
+        }
+        sampler->energy[0] = energy_min;
+        sampler->energy[1] = energy_range ? energy_max : energy_min;
+        enum danton_particle index = danton_particle_index(target);
+        sampler->weight[index] = 1.;
+        if (danton_sampler_update(sampler) != EXIT_SUCCESS) exit(EXIT_FAILURE);
+
         /* Create a new simulation context. */
         struct danton_context * context = danton_context_create();
         if (context == NULL) {
                 fprintf(stderr,
-                    "danton: could not create the simulation contetx.\n");
+                    "danton: could not create the simulation context.\n");
                 exit(EXIT_FAILURE);
         }
 
@@ -283,34 +308,14 @@ int main(int argc, char * argv[])
         context->longitudinal = longitudinal;
         context->decay = decay;
         context->grammage = grammage;
+        context->sampler = sampler;
         context->output = output_file;
-        if (forward) {
-                if (cos_theta_range)
-                        danton_cos_theta_range(
-                            context, cos_theta_min, cos_theta_max);
-                else
-                        danton_cos_theta(context, cos_theta_min);
-        } else {
-                if (elevation_range)
-                        danton_elevation_range(
-                            context, elevation_min, elevation_max);
-                else
-                        danton_elevation(context, elevation_min);
-        }
-        if (altitude_range)
-                danton_altitude_range(context, altitude_min, altitude_max);
-        else
-                danton_altitude(context, altitude_min);
-        if (energy_range)
-                danton_energy_range(context, energy_min, energy_max);
-        else
-                danton_energy(context, energy_min);
-        danton_target_set(context, target, 1.);
 
         /* Run the simulation. */
         danton_run(context, n_events);
-        danton_context_destroy(context);
 
         /* Finalise and exit to the OS. */
+        danton_context_destroy(&context);
+        danton_sampler_destroy(&sampler);
         gracefully_exit(EXIT_SUCCESS);
 }

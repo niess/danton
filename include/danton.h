@@ -19,6 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
+/* Data structures for the primary neutrino flux. */
 struct danton_primary;
 
 typedef double danton_primary_cb(
@@ -31,6 +32,31 @@ struct danton_primary {
         double energy_max;
 };
 
+/** Indices of DANTON particles. */
+enum danton_particle {
+        DANTON_PARTICLE_UNKNOWN = -1,
+        DANTON_PARTICLE_NU_BAR_TAU = 0,
+        DANTON_PARTICLE_NU_BAR_MU,
+        DANTON_PARTICLE_NU_BAR_E,
+        DANTON_PARTICLE_NU_E,
+        DANTON_PARTICLE_NU_MU,
+        DANTON_PARTICLE_NU_TAU,
+        DANTON_PARTICLE_TAU_BAR,
+        DANTON_PARTICLE_TAU,
+        /** The total number of indices. */
+        DANTON_PARTICLE_N
+};
+
+/* Handle for managing the events to sample. */
+struct danton_sampler {
+        double altitude[2];
+        double cos_theta[2];
+        double elevation[2];
+        double energy[2];
+        double weight[DANTON_PARTICLE_N];
+};
+
+/* Data structures relative to the sampled event. */
 struct danton_state {
         int pid;
         double energy;
@@ -59,51 +85,42 @@ struct danton_event {
         struct danton_decay * decay;
 };
 
+/* Handle for a simulation context. */
 struct danton_context {
         int forward;
         int longitudinal;
         int decay;
         int grammage;
+        struct danton_sampler * sampler;
         const char * output;
 };
 
+/* Callback for processing a sampled event. */
 typedef void danton_event_cb(
     struct danton_context * context, struct danton_event * event);
 
+/* Generic lock / unlock callback. */
 typedef int danton_lock_cb(void);
 
 int danton_initialise(
     const char * pdf, danton_lock_cb * lock, danton_lock_cb * unlock);
-
 void danton_finalise(void);
 
 /* Replace the sea layer of the PEM with Standard Rock. */
 void danton_pem_dry(void);
 
+/* Get the PDG particle number for a given particle index. */
+int danton_particle_pdg(enum danton_particle particle);
+
+/* Get the DANTON particle index for a given PDG number. */
+enum danton_particle danton_particle_index(int pdg);
+
+struct danton_sampler * danton_sampler_create(void);
+void danton_sampler_destroy(struct danton_sampler ** sampler);
+int danton_sampler_update(struct danton_sampler * sampler);
+
 struct danton_context * danton_context_create(void);
-void danton_context_destroy(struct danton_context * context);
-
-void danton_altitude(struct danton_context * context, double altitude);
-void danton_altitude_range(
-    struct danton_context * context, double altitude_min, double altitude_max);
-
-void danton_energy(struct danton_context * context, double energy);
-void danton_energy_range(
-    struct danton_context * context, double energy_min, double energy_max);
-
-void danton_elevation(struct danton_context * context, double elevation);
-void danton_elevation_range(struct danton_context * context,
-    double elevation_min, double elevation_max);
-
-void danton_cos_theta(struct danton_context * context, double cos_theta);
-void danton_cos_theta_range(struct danton_context * context,
-    double cos_theta_min, double cos_theta_max);
-
-void danton_target_clear(struct danton_context * context);
-void danton_target_set(struct danton_context * context, int pid, double weight);
-void danton_target_unset(struct danton_context * context, int pid);
-int danton_target_active(struct danton_context * context, int pid);
-double danton_target_weight(struct danton_context * context, int pid);
+void danton_context_destroy(struct danton_context ** context);
 
 int danton_run(struct danton_context * context, long events);
 
