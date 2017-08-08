@@ -32,6 +32,7 @@
 
 /* The DANTON API. */
 #include "danton.h"
+#include "danton/recorder/text.h"
 
 /* Finalise and exit to the OS. */
 static void gracefully_exit(int rc)
@@ -295,6 +296,10 @@ int main(int argc, char * argv[])
         sampler->weight[index] = 1.;
         if (danton_sampler_update(sampler) != EXIT_SUCCESS) exit(EXIT_FAILURE);
 
+        /* Create a text recorder. */
+        struct danton_text * text = danton_text_create(output_file);
+        if (text == NULL) exit(EXIT_FAILURE);
+
         /* Create a new simulation context. */
         struct danton_context * context = danton_context_create();
         if (context == NULL) {
@@ -309,13 +314,14 @@ int main(int argc, char * argv[])
         context->decay = decay;
         context->grammage = grammage;
         context->sampler = sampler;
-        context->output = output_file;
+        context->recorder = (struct danton_recorder *)text;
 
         /* Run the simulation. */
         danton_run(context, n_events);
 
         /* Finalise and exit to the OS. */
         danton_context_destroy(&context);
+        danton_text_destroy(&text);
         danton_sampler_destroy(&sampler);
         gracefully_exit(EXIT_SUCCESS);
 }

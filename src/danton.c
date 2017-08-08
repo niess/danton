@@ -162,6 +162,16 @@ static double space_model0(double r, double * density)
         return 0.;
 }
 
+/* Structure for storing the data relative to the sampled events. */
+struct event_record {
+        struct danton_event api;
+        struct danton_state primary;
+        struct danton_state vertex;
+        struct danton_state final;
+        int buffer_size;
+        struct danton_product product[];
+};
+
 /* Container for contextual simulation data. */
 struct simulation_context {
         /* Public API data. */
@@ -171,13 +181,13 @@ struct simulation_context {
         struct pumas_context * pumas;
         struct ent_context ent;
 
+        /* Recorded events. */
+        struct event_record * record;
+
         /* The lower (upper) energy bound under (above) which all particles are
          * killed.
          */
         double energy_cut;
-
-        /* Flag for the dumping of the primary state. */
-        int primary_dumped;
 
         /* Flag to check if the neutrino flux is requested. */
         int flux_neutrino;
@@ -536,120 +546,60 @@ static void copy_neutrino(struct simulation_context * context,
         neutrino->weight = tau->weight;
 }
 
-/* Get or create the output stream. */
-static FILE * output_create(struct simulation_context * context)
+static void record_copy_ent(struct danton_state * dst, struct ent_state * src)
 {
-        if (context->api.output == NULL) return stdout;
-        return fopen(context->api.output, "w+");
+        if (dst == NULL) return;
+        dst->pid = src->pid;
+        dst->energy = src->energy;
+        memcpy(dst->position, src->position, sizeof(dst->position));
+        memcpy(dst->direction, src->direction, sizeof(dst->direction));
 }
 
-/* Open the output stream and append to it. */
-static FILE * output_open(struct simulation_context * context)
+static void record_copy_pumas(
+    struct danton_state * dst, struct pumas_state * src)
 {
-        if (context->api.output == NULL) return stdout;
-        return fopen(context->api.output, "a");
+        if (dst == NULL) return;
+        dst->pid = (src->charge > 0.) ? ENT_PID_TAU_BAR : ENT_PID_TAU;
+        dst->energy = src->kinetic + tau_mass;
+        memcpy(dst->position, src->position, sizeof(dst->position));
+        memcpy(dst->direction, src->direction, sizeof(dst->direction));
 }
 
-/* Close the output stream. */
-static void output_close(struct simulation_context * context, FILE * stream)
+static void record_copy_product(
+    struct simulation_context * context, int pid, double * momentum)
 {
-        if (context->api.output != NULL) fclose(stream);
-}
-
-/* Utility functions for formating the results to the output stream. */
-static void format_ancestor(struct simulation_context * context, long eventid,
-    const struct ent_state * ancestor)
-{
-        FILE * stream = output_open(context);
-        fprintf(stream, "%10ld %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
-                        "%13.3lf %13.3lf %12.5lE\n",
-            eventid + 1, ancestor->pid, ancestor->energy,
-            ancestor->direction[0], ancestor->direction[1],
-            ancestor->direction[2], ancestor->position[0],
-            ancestor->position[1], ancestor->position[2], ancestor->weight);
-        output_close(context, stream);
-}
-
-static void format_tau(struct simulation_context * context, int generation,
-    int pid, const struct pumas_state * production,
-    const struct pumas_state * decay)
-{
-        FILE * stream = output_open(context);
-        fprintf(stream, "%10d %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
-                        "%13.3lf %13.3lf\n",
-            generation, pid, production->kinetic + tau_mass,
-            production->direction[0], production->direction[1],
-            production->direction[2], production->position[0],
-            production->position[1], production->position[2]);
-        fprintf(stream, "%10c %4c %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
-                        "%13.3lf %13.3lf\n",
-            ' ', ' ', decay->kinetic + tau_mass, decay->direction[0],
-            decay->direction[1], decay->direction[2], decay->position[0],
-            decay->position[1], decay->position[2]);
-        output_close(context, stream);
-}
-
-static void format_neutrino(struct simulation_context * context, int generation,
-    const struct ent_state * neutrino)
-{
-        FILE * stream = output_open(context);
-        fprintf(stream, "%10d %4d %12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
-                        "%13.3lf %13.3lf\n",
-            generation, neutrino->pid, neutrino->energy, neutrino->direction[0],
-            neutrino->direction[1], neutrino->direction[2],
-            neutrino->position[0], neutrino->position[1],
-            neutrino->position[2]);
-        output_close(context, stream);
-}
-
-static void format_decay_product(
-    struct simulation_context * context, int pid, const double momentum[3])
-{
-        FILE * stream = output_open(context);
-        fprintf(stream, "%10c %4d %12c %12.5lE %12.5lE %12.5lE\n", ' ', pid,
-            ' ', momentum[0], momentum[1], momentum[2]);
-        output_close(context, stream);
-}
-
-static void format_grammage(
-    struct simulation_context * context, double cos_theta, double grammage)
-{
-        FILE * stream = output_open(context);
-        if (context->api.forward)
-                fprintf(stream, "%12.5lE %12.5lE\n", cos_theta, grammage);
-        else {
-                const double elevation = 90. - acos(cos_theta) * 180. / M_PI;
-                fprintf(stream, "%12.5lf %12.5lE\n", elevation, grammage);
+        /* Manage the memory. */
+        struct event_record * record = context->record;
+        if (record->api.n_products == record->buffer_size) {
+                const int n = 2 * record->buffer_size;
+                record = realloc(
+                    record, sizeof(*record) + n * sizeof(*record->product));
+                if (record == NULL) return;
+                context->record = record;
+                record->buffer_size = n;
         }
-        output_close(context, stream);
+
+        /* Append the decay product to the stack. */
+        struct danton_product * product =
+            record->product + record->api.n_products;
+        product->pid = pid;
+        memcpy(product->momentum, momentum, sizeof(product->momentum));
+        record->api.n_products++;
 }
 
-/* Print the header of the output file. */
-static void print_header_decay(FILE * stream)
+static void record_publish(struct simulation_context * context)
 {
-        fprintf(stream,
-            "    Event   PID    Energy             Direction or "
-            "Momentum                         Position               "
-            "      Weight\n                    (GeV)                "
-            " (1 or GeV/c)                                 (m)\n     "
-            "                           ux or Px     uy or Py    "
-            "uz or Pz         X             Y             Z\n");
-}
+        /* Call the event processor. */
+        context->api.recorder->record_event(
+            context->api.recorder, &context->record->api);
 
-static void print_header_grammage(int forward, FILE * stream)
-{
-        if (forward)
-                fprintf(stream,
-                    "  cos(theta)    Grammage\n                (kg/m^2)\n");
-        else
-                fprintf(stream,
-                    "   elevation    Grammage\n     (deg)      (kg/m^2)\n");
+        /* Reset the record for new data. */
+        context->record->api.n_products = 0;
 }
 
 /* Forward transport routine, recursive. */
 static void transport_forward(struct simulation_context * context,
-    struct ent_state * neutrino, long eventid, int generation,
-    const struct ent_state * ancestor)
+    struct ent_state * neutrino, int generation)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU))
@@ -678,13 +628,12 @@ static void transport_forward(struct simulation_context * context,
                         if (g_state->has_crossed) {
                                 g_state->cross_count++;
                                 if (g_state->cross_count == 2) {
-                                        if (!context->primary_dumped) {
-                                                format_ancestor(
-                                                    context, eventid, ancestor);
-                                                context->primary_dumped = 1;
-                                        }
-                                        format_neutrino(
-                                            context, generation, neutrino);
+                                        context->record->api.generation =
+                                            generation;
+                                        record_copy_ent(
+                                            context->record->api.final,
+                                            neutrino);
+                                        record_publish(context);
                                         break;
                                 } else {
                                         g_state->is_inside = -1;
@@ -731,8 +680,8 @@ static void transport_forward(struct simulation_context * context,
                             sizeof(tau->position));
                         memcpy(&tau->direction, &product.direction,
                             sizeof(tau->direction));
-                        struct pumas_state tau_prod;
-                        memcpy(&tau_prod, tau, sizeof(tau_prod));
+                        context->record->api.vertex = &context->record->vertex;
+                        record_copy_pumas(context->record->api.vertex, tau);
                         pumas_transport(context->pumas, tau);
                         if (tau->decayed) {
                                 /* Tau decay with ALOUETTE/TAUOLA. */
@@ -748,7 +697,7 @@ static void transport_forward(struct simulation_context * context,
                                             ALOUETTE_RETURN_SUCCESS)
                                                 break;
                                 }
-                                int pid, nprod = 0;
+                                int pid;
                                 struct generic_state nu_e_data, nu_t_data;
                                 memset(&nu_e_data, 0x0, sizeof(nu_e_data));
                                 memset(&nu_t_data, 0x0, sizeof(nu_t_data));
@@ -775,22 +724,16 @@ static void transport_forward(struct simulation_context * context,
 
                                         /* Log the decay if in air. */
                                         if (tau_data.medium < 10) continue;
-                                        if (nprod == 0) {
-                                                if (!context->primary_dumped) {
-                                                        format_ancestor(context,
-                                                            eventid, ancestor);
-                                                        context
-                                                            ->primary_dumped =
-                                                            1;
-                                                }
-                                                format_tau(context, generation,
-                                                    product.pid, &tau_prod,
+                                        if (context->record->api.n_products ==
+                                            0)
+                                                record_copy_pumas(
+                                                    context->record->api.final,
                                                     tau);
-                                        }
-                                        format_decay_product(
+                                        record_copy_product(
                                             context, pid, momentum);
-                                        nprod++;
                                 }
+                                if (context->record->api.n_products > 0)
+                                        record_publish(context);
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
@@ -810,8 +753,8 @@ static void transport_forward(struct simulation_context * context,
                                         } else {
                                                 nu_e_data.has_crossed = -1;
                                         }
-                                        transport_forward(context, nu_e,
-                                            eventid, generation, ancestor);
+                                        transport_forward(
+                                            context, nu_e, generation);
                                 }
                                 if (nu_t != NULL) {
                                         nu_t_data.context = context;
@@ -829,17 +772,13 @@ static void transport_forward(struct simulation_context * context,
                                         } else {
                                                 nu_t_data.has_crossed = -1;
                                         }
-                                        transport_forward(context, nu_t,
-                                            eventid, generation, ancestor);
+                                        transport_forward(
+                                            context, nu_t, generation);
                                 }
                         } else if (tau_data.has_crossed == 1) {
-                                if (!context->primary_dumped) {
-                                        format_ancestor(
-                                            context, eventid, ancestor);
-                                        context->primary_dumped = 1;
-                                }
-                                format_tau(context, generation, product.pid,
-                                    &tau_prod, tau);
+                                record_copy_pumas(
+                                    context->record->api.final, tau);
+                                record_publish(context);
                         }
                 }
                 if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
@@ -904,12 +843,18 @@ void polarisation_cb(int pid, const double momentum[3], double * polarisation)
 }
 
 /* Backward transport routine. */
-static void transport_backward(struct simulation_context * context,
-    struct generic_state * current, long eventid, int generation,
-    struct generic_state * final, struct generic_state * tau_at_production)
+static void transport_backward(
+    struct simulation_context * context, struct generic_state * current)
 {
         /* Backup the final state, e.g. the tau at decay. */
-        if (generation == 1) memcpy(final, current, sizeof(* final));
+        if (context->record->api.generation == 1) {
+                if (current->is_tau)
+                        record_copy_pumas(
+                            context->record->api.final, &current->base.pumas);
+                else
+                        record_copy_ent(
+                            context->record->api.final, &current->base.ent);
+        }
 
         struct generic_state g_state;
         struct ent_state * state = NULL;
@@ -918,7 +863,8 @@ static void transport_backward(struct simulation_context * context,
         if (current->is_tau) {
                 /* Apply the BMC weight for the tau decay. */
                 tau = &current->base.pumas;
-                if (context->api.decay || (generation > 1)) {
+                if (context->api.decay ||
+                    (context->record->api.generation > 1)) {
                         const double Pf =
                             sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
                         tau->weight *= tau_mass / (tau_ctau0 * Pf);
@@ -942,7 +888,7 @@ static void transport_backward(struct simulation_context * context,
                                 context->energy_cut - FLT_EPSILON) ||
                             (tau->weight <= 0.))
                                 return;
-                        if (generation > 1) break;
+                        if (context->record->api.generation > 1) break;
 
                         /* Check that the tau is **not** emerging from the
                          * Earth.
@@ -980,10 +926,12 @@ static void transport_backward(struct simulation_context * context,
                                 tau->weight *= pB / (1. - p1);
                 }
 
-                /* Backup the tau state at production. */
-                if (generation == 1)
-                        memcpy(tau_at_production, current,
-                            sizeof(*tau_at_production));
+                /* Let us record the tau state at production. */
+                if (context->record->api.generation == 1) {
+                        context->record->api.vertex = &context->record->vertex;
+                        record_copy_pumas(
+                            context->record->api.vertex, &current->base.pumas);
+                }
 
                 /* Backward generate the production vertex. */
                 enum ent_pid pid =
@@ -1102,75 +1050,55 @@ static void transport_backward(struct simulation_context * context,
                         g->is_inside = -1;
                         g->has_crossed = -1;
                         g->cross_count = 0;
-                        generation++;
-                        transport_backward(context, g, eventid, generation,
-                            final, tau_at_production);
+                        context->record->api.generation++;
+                        transport_backward(context, g);
                         return;
                 }
         }
         if (event != ENT_EVENT_EXIT) return;
         enum ent_pid pid0;
-        if (final->is_tau)
-                pid0 = (final->base.pumas.charge < 0.) ? ENT_PID_NU_TAU :
-                                                         ENT_PID_NU_BAR_TAU;
+        if ((context->record->final.pid % 2) != 0)
+                pid0 = (context->record->final.pid > 0.) ? ENT_PID_NU_TAU :
+                                                           ENT_PID_NU_BAR_TAU;
         else
-                pid0 = final->base.ent.pid;
+                pid0 = context->record->final.pid;
         if (state->pid != pid0) return;
 
-        /* This is a valid event. In flux mode let us dump the tau state and
-         * then return.
+        /* This is a valid event. Let us record the primary and set the
+         * weight.
          */
-        if (!context->api.decay) {
-                /* Log the primary neutrino state. */
-                format_ancestor(context, eventid, state);
+        context->record->api.weight = state->weight;
+        record_copy_ent(context->record->api.primary, state);
 
-                if (context->flux_neutrino) {
-                        /* Log the neutrino final state. */
-                        format_neutrino(context, generation, & final->base.ent);
-                } else {
-                        /* Log the end points of the tau state. */
-                        enum ent_pid pid = (final->base.pumas.charge < 0.) ?
-                            ENT_PID_TAU :
-                            ENT_PID_TAU_BAR;
-                        format_tau(context, generation, pid,
-                            &tau_at_production->base.pumas, & final->base
-                                                                .pumas);
-                }
+        /* In flux mode let us publish the record and then return. */
+        if (!context->api.decay) {
+                record_publish(context);
                 return;
         }
 
         /* In full mode let us perform the tau decay with ALOUETTE/TAUOLA. */
-        enum ent_pid pid =
-            (final->base.pumas.charge < 0.) ? ENT_PID_TAU : ENT_PID_TAU_BAR;
-        const double p = sqrt(final->base.pumas.kinetic *
-            (final->base.pumas.kinetic + 2. * tau_mass));
-        double momentum[3] = { p * final->base.pumas.direction[0],
-                p * final->base.pumas.direction[1],
-                p * final->base.pumas.direction[2] };
+        enum ent_pid pid = context->record->final.pid;
+        const double p = sqrt((context->record->final.energy + tau_mass) *
+            (context->record->final.energy - tau_mass));
+        double momentum[3] = { p * context->record->final.direction[0],
+                p * context->record->final.direction[1],
+                p * context->record->final.direction[2] };
         int trials;
         for (trials = 0; trials < 20; trials++) {
-                if (alouette_decay(pid, momentum,
-                        final->base.pumas.direction) == ALOUETTE_RETURN_SUCCESS)
+                if (alouette_decay(
+                        pid, momentum, context->record->final.direction) ==
+                    ALOUETTE_RETURN_SUCCESS)
                         break;
         }
 
-        int pid1, nprod = 0;
+        int pid1;
         while (alouette_product(&pid1, momentum) == ALOUETTE_RETURN_SUCCESS) {
                 if (abs(pid1 == 12) || (abs(pid1) == 13) || (abs(pid1) == 14) ||
                     (abs(pid1) == 16))
                         continue;
-                if (nprod == 0) {
-                        /* Log the primary neutrino state. */
-                        format_ancestor(context, eventid, state);
-
-                        /* Log the end points of the tau state. */
-                        format_tau(context, generation, pid,
-                            &tau_at_production->base.pumas, & final->base
-                                                                .pumas);
-                }
-                format_decay_product(context, pid1, momentum);
-                nprod++;
+                record_copy_product(context, pid1, momentum);
         }
+        record_publish(context);
 }
 
 /* Shortcut for dumping a PUMAS error. */
@@ -1231,8 +1159,7 @@ static int initialise_physics(struct danton_context * context)
                 pdf = DANTON_DIR "/ent/data/pdf/CT14nnlo_0000.dat";
         else
                 pdf = pdf_path;
-        if ((e_rc = ent_physics_create(&physics, pdf)) !=
-            ENT_RETURN_SUCCESS) {
+        if ((e_rc = ent_physics_create(&physics, pdf)) != ENT_RETURN_SUCCESS) {
                 ERROR_ENT(e_rc, ent_physics_create);
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
@@ -1425,7 +1352,7 @@ struct danton_context * danton_context_create(void)
         /* Initialise the random engine. */
         random_initialise(context);
 
-        /* Initialise the Monte-Carlo contexts. */
+        /* Initialise the Monte-Carlo contexts and the recorder. */
         context->ent.medium = &medium_ent;
         context->ent.random = &random_ent;
         context->ent.ancestor = NULL;
@@ -1433,6 +1360,7 @@ struct danton_context * danton_context_create(void)
         context->ent.grammage_max = 0.;
 
         context->pumas = NULL;
+        context->record = NULL;
 
         /* Initialise the public API data. */
         context->api.forward = 0;
@@ -1440,15 +1368,12 @@ struct danton_context * danton_context_create(void)
         context->api.decay = 1;
         context->api.grammage = 0;
         context->api.sampler = NULL;
-        context->api.output = NULL;
+        context->api.recorder = NULL;
 
         /* The lower (upper) energy bound under (above) which all particles are
          * killed.
          */
         context->energy_cut = -1;
-
-        /* Flag for the dumping of the primary state. */
-        context->primary_dumped = 0;
 
         /* Flag to check if the neutrino flux is requested. */
         context->flux_neutrino = 0;
@@ -1463,6 +1388,7 @@ void danton_context_destroy(struct danton_context ** context)
         struct simulation_context * context_ =
             (struct simulation_context *)(*context);
         pumas_context_destroy(&context_->pumas);
+        free(context_->record);
         free(context_);
         *context = NULL;
 }
@@ -1562,6 +1488,12 @@ int danton_run(struct danton_context * context, long events)
                 return EXIT_FAILURE;
         }
 
+        if (context->recorder == NULL) {
+                fprintf(stderr, "danton: no recorder was provided. "
+                                "Call with -h, --help for usage.\n");
+                return EXIT_FAILURE;
+        }
+
         if (context->grammage) {
                 if (context->forward) {
                         if (sampler->cos_theta[0] == sampler->cos_theta[1])
@@ -1643,20 +1575,6 @@ int danton_run(struct danton_context * context, long events)
                 }
         }
 
-        /* Configure the output stream. */
-        FILE * stream = output_create(context_);
-        if (stream == NULL) {
-                fprintf(stderr, "danton: could not open the output file. "
-                                "Call with -h, --help for usage.\n");
-                exit(EXIT_FAILURE);
-        }
-
-        if (context->grammage)
-                print_header_grammage(context->forward, stream);
-        else
-                print_header_decay(stream);
-        output_close(context_, stream);
-
         if (!context->grammage) {
                 /* Initialise the Physic engines, if not already done. */
                 if (physics == NULL) {
@@ -1675,7 +1593,25 @@ int danton_run(struct danton_context * context, long events)
                         context_->pumas->random = &random_pumas;
                         context_->pumas->user_data = context_;
                 }
-                context_->pumas->kinetic_limit = context_->energy_cut - tau_mass;
+                context_->pumas->kinetic_limit =
+                    context_->energy_cut - tau_mass;
+
+                /* Create the event record, if not already done. */
+                if (context_->record == NULL) {
+                        context_->record = malloc(sizeof(*context_->record) +
+                            10 * sizeof(*context_->record->product));
+                        if (context_->record == NULL) {
+                                fprintf(stderr,
+                                    "%s (%d): could not allocate memory.\n",
+                                    __FILE__, __LINE__);
+                                exit(EXIT_FAILURE);
+                        }
+                }
+
+                /* Configure the event record. TODO: according to options. */
+                context_->record->api.primary = &context_->record->primary;
+                context_->record->api.final = &context_->record->final;
+                context_->record->api.n_products = 0;
         }
 
         /* Run the simulation. */
@@ -1713,14 +1649,20 @@ int danton_run(struct danton_context * context, long events)
                                 .has_crossed = crossed,
                                 .cross_count = 0
                         };
-                        struct ent_state ancestor;
-                        memcpy(&ancestor, &state.base.ent, sizeof(ancestor));
-                        context_->primary_dumped = 0;
-                        transport_forward(context_, (struct ent_state *)&state,
-                            i, 1, &ancestor);
-                        if (context->grammage)
-                                format_grammage(
-                                    context_, ct, state.base.ent.grammage);
+                        context_->record->api.id = i;
+                        context_->record->api.weight = weight;
+                        context_->record->api.vertex = NULL;
+                        record_copy_ent(
+                            context_->record->api.primary, &state.base.ent);
+                        transport_forward(
+                            context_, (struct ent_state *)&state, 1);
+                        if (context->grammage) {
+                                struct danton_grammage g = { 90. -
+                                            acos(ct) / M_PI * 180.,
+                                        state.base.ent.grammage };
+                                context->recorder->record_grammage(
+                                    context->recorder, &g);
+                        }
                 }
         } else {
                 /* Run a bunch of backward Monte-Carlo events. */
@@ -1744,6 +1686,9 @@ int danton_run(struct danton_context * context, long events)
                         const double z0 = sample_log_or_linear(
                             context_, sampler->altitude, &weight);
 
+                        context_->record->api.id = i;
+                        context_->record->api.generation = 1;
+                        context_->record->api.vertex = NULL;
                         if (!context->grammage && !context_->flux_neutrino) {
                                 /* This is a particle Monte-Carlo. */
                                 const double charge =
@@ -1763,11 +1708,7 @@ int danton_run(struct danton_context * context, long events)
                                         .has_crossed = -1,
                                         .cross_count = 0
                                 };
-                                struct generic_state tau_at_decay,
-                                    tau_at_production;
-                                context_->primary_dumped = 0;
-                                transport_backward(context_, &state, i, 1,
-                                    &tau_at_decay, &tau_at_production);
+                                transport_backward(context_, &state);
                         } else if (!context->grammage &&
                             context_->flux_neutrino) {
                                 struct generic_state state = {
@@ -1784,12 +1725,12 @@ int danton_run(struct danton_context * context, long events)
                                         .has_crossed = -1,
                                         .cross_count = 0
                                 };
-                                struct generic_state daughter;
-                                context_->primary_dumped = 0;
-                                transport_backward(
-                                    context_, &state, i, 1, &daughter, NULL);
+                                transport_backward(context_, &state);
                         } else {
-                                /* This is a grammage scan. */
+                                /* This is a grammage scan using a non-
+                                 * interacting neutrino. First let us initialise
+                                 * the neutrino state.
+                                 */
                                 struct generic_state g_state = {
                                         .base.ent = { projectile, energy, 0.,
                                             0., weight,
@@ -1805,6 +1746,7 @@ int danton_run(struct danton_context * context, long events)
                                         .cross_count = 0
                                 };
 
+                                /* Then let us do the transport with ENT. */
                                 struct ent_state * state = &g_state.base.ent;
                                 enum ent_event event = ENT_EVENT_NONE;
                                 while (event != ENT_EVENT_EXIT) {
@@ -1812,7 +1754,12 @@ int danton_run(struct danton_context * context, long events)
                                             state, NULL, &event);
                                 }
 
-                                format_grammage(context_, ct, state->grammage);
+                                /* Finally, let us publish the result. */
+                                struct danton_grammage g = { 90. -
+                                            acos(ct) / M_PI * 180.,
+                                        state->grammage };
+                                context->recorder->record_grammage(
+                                    context->recorder, &g);
                         }
                 }
         }

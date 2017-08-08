@@ -19,6 +19,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
+#ifndef danton_h
+#define danton_h
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifndef DANTON_API
+#define DANTON_API
+#endif
+
 /* Data structures for the primary neutrino flux. */
 struct danton_primary;
 
@@ -69,20 +79,36 @@ struct danton_product {
         double momentum[3];
 };
 
-struct danton_decay {
+struct danton_event {
+        long id;
+        double weight;
+        struct danton_state * primary;
         int generation;
-        struct danton_state at_decay;
-        struct danton_state at_production;
+        struct danton_state * vertex;
+        struct danton_state * final;
         int n_products;
         struct danton_product * product;
 };
 
-struct danton_event {
-        long id;
-        double weight;
-        struct danton_state state;
-        int n_decays;
-        struct danton_decay * decay;
+/* Data structure for storing a grammage computation. */
+struct danton_grammage {
+        double elevation;
+        double value;
+};
+
+/* Callback for recording a sampled event. */
+struct danton_recorder;
+typedef void danton_event_cb(
+    struct danton_recorder * recorder, const struct danton_event * event);
+
+/* Callback for recording a grammage value. */
+typedef void danton_grammage_cb(
+    struct danton_recorder * recorder, const struct danton_grammage * grammage);
+
+/* Generic type for recording the sampled data. */
+struct danton_recorder {
+        danton_event_cb * record_event;
+        danton_grammage_cb * record_grammage;
 };
 
 /* Handle for a simulation context. */
@@ -92,36 +118,37 @@ struct danton_context {
         int decay;
         int grammage;
         struct danton_sampler * sampler;
-        const char * output;
+        struct danton_recorder * recorder;
 };
-
-/* Callback for processing a sampled event. */
-typedef void danton_event_cb(
-    struct danton_context * context, struct danton_event * event);
 
 /* Generic lock / unlock callback. */
 typedef int danton_lock_cb(void);
 
-int danton_initialise(
+DANTON_API int danton_initialise(
     const char * pdf, danton_lock_cb * lock, danton_lock_cb * unlock);
-void danton_finalise(void);
+DANTON_API void danton_finalise(void);
 
 /* Replace the sea layer of the PEM with Standard Rock. */
-void danton_pem_dry(void);
+DANTON_API void danton_pem_dry(void);
 
 /* Get the PDG particle number for a given particle index. */
-int danton_particle_pdg(enum danton_particle particle);
+DANTON_API int danton_particle_pdg(enum danton_particle particle);
 
 /* Get the DANTON particle index for a given PDG number. */
-enum danton_particle danton_particle_index(int pdg);
+DANTON_API enum danton_particle danton_particle_index(int pdg);
 
-struct danton_sampler * danton_sampler_create(void);
-void danton_sampler_destroy(struct danton_sampler ** sampler);
-int danton_sampler_update(struct danton_sampler * sampler);
+DANTON_API struct danton_sampler * danton_sampler_create(void);
+DANTON_API void danton_sampler_destroy(struct danton_sampler ** sampler);
+DANTON_API int danton_sampler_update(struct danton_sampler * sampler);
 
-struct danton_context * danton_context_create(void);
-void danton_context_destroy(struct danton_context ** context);
+DANTON_API struct danton_context * danton_context_create(void);
+DANTON_API void danton_context_destroy(struct danton_context ** context);
 
-int danton_run(struct danton_context * context, long events);
+DANTON_API int danton_run(struct danton_context * context, long events);
 
-const char * danton_error(struct danton_context * context);
+DANTON_API const char * danton_error(struct danton_context * context);
+
+#ifdef __cplusplus
+}
+#endif
+#endif
