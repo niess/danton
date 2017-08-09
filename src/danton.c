@@ -1056,13 +1056,14 @@ static void transport_backward(
                 }
         }
         if (event != ENT_EVENT_EXIT) return;
-        enum ent_pid pid0;
-        if ((context->record->final.pid % 2) != 0)
-                pid0 = (context->record->final.pid > 0.) ? ENT_PID_NU_TAU :
-                                                           ENT_PID_NU_BAR_TAU;
-        else
-                pid0 = context->record->final.pid;
-        if (state->pid != pid0) return;
+
+        /* Let us sample the primary flux. */
+        enum danton_particle index = danton_particle_index(state->pid);
+        struct danton_primary * primary = context->api.primary[index];
+        if (primary == NULL) return;
+        const double flux = primary->flux(primary, state->energy);
+        if (flux <= 0.) return;
+        state->weight *= flux;
 
         /* This is a valid event. Let us record the primary and set the
          * weight.
@@ -1229,6 +1230,13 @@ void danton_finalise(void)
         alouette_finalise();
 }
 
+/* Destroy any memory flat object. */
+void danton_destroy(void ** any)
+{
+        free(*any);
+        *any = NULL;
+}
+
 /* Replace the sea layer of the PEM with standard rock. */
 void danton_pem_dry(void)
 {
@@ -1258,13 +1266,6 @@ struct danton_sampler * danton_sampler_create(void)
         memset(sampler, 0x0, sizeof(*sampler));
         sampler->hash--;
         return &sampler->api;
-}
-
-/* Destroy an event sampler. */
-void danton_sampler_destroy(struct danton_sampler ** sampler)
-{
-        free(*sampler);
-        *sampler = NULL;
 }
 
 /* Bernstein's djb2 hash function, from http://www.cse.yorku.ca/~oz/hash.html.
@@ -1314,7 +1315,7 @@ int danton_sampler_update(struct danton_sampler * sampler)
         /* Check the energy. */
         if ((sampler->energy[0] < 1E+02) ||
             (sampler->energy[0] > sampler->energy[1]) ||
-            (sampler->energy[1] < 1E+12)) {
+            (sampler->energy[1] > 1E+12)) {
                 fprintf(stderr, "danton: invalid energy values. "
                                 "Call with -h, --help for usage.\n");
                 return EXIT_FAILURE;
@@ -1323,7 +1324,7 @@ int danton_sampler_update(struct danton_sampler * sampler)
         /* Compute the particle weights. */
         sampler_->neutrino_weight = 0.;
         int i;
-        for (i = 0; i < DANTON_PARTICLE_N - 2; i++)
+        for (i = 0; i < DANTON_PARTICLE_N_NU; i++)
                 sampler_->neutrino_weight +=
                     (sampler->weight[i] <= 0.) ? 0. : sampler->weight[i];
         sampler_->total_weight = sampler_->neutrino_weight;
@@ -1367,6 +1368,9 @@ struct danton_context * danton_context_create(void)
         context->api.longitudinal = 0;
         context->api.decay = 1;
         context->api.grammage = 0;
+        int i;
+        for (i = 0; i < DANTON_PARTICLE_N_NU; i++)
+                context->api.primary[i] = NULL;
         context->api.sampler = NULL;
         context->api.recorder = NULL;
 
@@ -1559,10 +1563,6 @@ int danton_run(struct danton_context * context, long events)
                 }
         }
 
-        context_->energy_cut = (context->forward) ?
-            context->sampler->energy[0] :
-            1E+12; /* TODO: set from the primary. */
-
         /* Temporary hack for the projectile. */
         int projectile = ENT_PID_NU_TAU;
         if (!context->grammage) {
@@ -1576,6 +1576,30 @@ int danton_run(struct danton_context * context, long events)
         }
 
         if (!context->grammage) {
+                /* Check that there is a valid primary flux. */
+                int is_primary = 0;
+                int j;
+                struct danton_primary ** p;
+                for (j = 0, p = context->primary; j < DANTON_PARTICLE_N_NU;
+                     j++, p++) {
+                        if (*p != NULL) {
+                                is_primary = 1;
+                                if ((*p)->energy[0] > (*p)->energy[1]) {
+                                        fprintf(stderr,
+                                            "danton: invalid energy range for "
+                                            "primary flux (pid = %d). "
+                                            "Call with -h, --help for usage.\n",
+                                            danton_particle_pdg(j));
+                                        return EXIT_FAILURE;
+                                }
+                        }
+                }
+                if (!is_primary) {
+                        fprintf(stderr, "danton: no primary flux. "
+                                        "Call with -h, --help for usage.\n");
+                        return EXIT_FAILURE;
+                }
+
                 /* Initialise the Physic engines, if not already done. */
                 if (physics == NULL) {
                         if (initialise_physics(context) != EXIT_SUCCESS)
@@ -1593,8 +1617,6 @@ int danton_run(struct danton_context * context, long events)
                         context_->pumas->random = &random_pumas;
                         context_->pumas->user_data = context_;
                 }
-                context_->pumas->kinetic_limit =
-                    context_->energy_cut - tau_mass;
 
                 /* Create the event record, if not already done. */
                 if (context_->record == NULL) {
@@ -1616,29 +1638,70 @@ int danton_run(struct danton_context * context, long events)
 
         /* Run the simulation. */
         if (context->forward) {
+                /* Check the primary flux and pre-compute some sampling
+                 * parameters.
+                 */
+                double primary_p[DANTON_PARTICLE_N_NU];
+                int j;
+                struct danton_primary ** p;
+                for (j = 0, p = context->primary; j < DANTON_PARTICLE_N_NU;
+                     j++, p++) {
+                        double d;
+                        if (*p == NULL)
+                                d = 0.;
+                        else {
+                                d = (*p)->flux(*p, 0.);
+                                if (d < 0.) d = 0.;
+                        }
+                        if (j == 0)
+                                primary_p[0] = d;
+                        else
+                                primary_p[j] = primary_p[j - 1] + d;
+                }
+                if (primary_p[DANTON_PARTICLE_N_NU - 1] <= 0.) {
+                        fprintf(stderr, "danton: null primary flux. "
+                                        "Call with -h, --help for usage.\n");
+                        return EXIT_FAILURE;
+                }
+
                 /* Run a bunch of forward Monte-Carlo events. */
                 context_->ent.ancestor = NULL;
                 if (context_->pumas != NULL) context_->pumas->forward = 1;
+                context_->energy_cut = context->sampler->energy[0];
+                context_->pumas->kinetic_limit =
+                    context_->energy_cut - tau_mass;
 
                 long i;
                 for (i = 0; i < events; i++) {
+                        /* Sample the primary direction uniformly. */
                         const double ct = sample_linear(
                             context_, sampler->cos_theta, i, events, NULL);
                         const double st = sqrt(1. - ct * ct);
-                        double weight = 1.;
-                        /* TODO: sample from the primary. */
-                        const double energy = sample_log_or_linear(
-                            context_, sampler->energy, &weight);
-                        if (sampler->energy[0] < sampler->energy[1])
-                                weight *= sampler->energy[1] *
-                                    sampler->energy[0] /
-                                    ((sampler->energy[1] - sampler->energy[0]) *
-                                              energy * energy);
 
+                        /* Sample the primary flavour and its energy. */
+                        int j;
+                        double weight = 0., energy;
+                        while (weight == 0.) {
+                                const double u = random_uniform01(context_) *
+                                    primary_p[DANTON_PARTICLE_N_NU - 1];
+                                struct danton_primary ** p;
+                                for (j = 0, p = context->primary;
+                                     j < DANTON_PARTICLE_N_NU - 1; j++, p++)
+                                        if (u <= primary_p[j]) break;
+                                weight = 1.;
+                                energy = sample_log_or_linear(
+                                    context_, (*p)->energy, &weight);
+                                if ((weight > 0.) &&
+                                    ((*p)->energy[0] < (*p)->energy[1]))
+                                        weight *= (*p)->flux(*p, energy);
+                        }
+                        const int pid = danton_particle_pdg(j);
+
+                        /* Configure the primary state. */
                         const int crossed = context->decay ? -1 : 0;
                         struct generic_state state = {
-                                .base.ent = { projectile, energy, 0., 0.,
-                                    weight, { 0., 0., -EARTH_RADIUS - 1E+05 },
+                                .base.ent = { pid, energy, 0., 0., weight,
+                                    { 0., 0., -EARTH_RADIUS - 1E+05 },
                                     { st, 0., ct } },
                                 .context = context_,
                                 .medium = -1,
@@ -1649,13 +1712,21 @@ int danton_run(struct danton_context * context, long events)
                                 .has_crossed = crossed,
                                 .cross_count = 0
                         };
+
+                        /* Initialise the event record. */
                         context_->record->api.id = i;
                         context_->record->api.weight = weight;
                         context_->record->api.vertex = NULL;
                         record_copy_ent(
                             context_->record->api.primary, &state.base.ent);
+
+                        /* Do the Monte-Carlo simulation. */
                         transport_forward(
                             context_, (struct ent_state *)&state, 1);
+
+                        /* Publish the grammage results, if this is a grammage
+                         * mode. TODO: erase, i.e. switch to a dedicated mode.
+                         */
                         if (context->grammage) {
                                 struct danton_grammage g = { 90. -
                                             acos(ct) / M_PI * 180.,
@@ -1667,10 +1738,22 @@ int danton_run(struct danton_context * context, long events)
         } else {
                 /* Run a bunch of backward Monte-Carlo events. */
                 context_->ent.ancestor = &ancestor_cb;
-                if (context_->pumas != NULL) context_->pumas->forward = 0;
+                context_->energy_cut = context->sampler->energy[1];
+                int j;
+                struct danton_primary ** p;
+                for (j = 0, p = context->primary; j < DANTON_PARTICLE_N_NU;
+                     j++, p++) {
+                        if ((*p != NULL) &&
+                            ((*p)->energy[1] > context_->energy_cut))
+                                context_->energy_cut = (*p)->energy[1];
+                }
+                if (context_->pumas != NULL) {
+                        context_->pumas->forward = 0;
+                        context_->pumas->kinetic_limit =
+                            context_->energy_cut - tau_mass;
+                }
 
                 double cos_theta[2];
-                int j;
                 for (j = 0; j < 2; j++)
                         cos_theta[j] =
                             cos((90. - sampler->elevation[j]) * M_PI / 180.);

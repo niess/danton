@@ -32,6 +32,8 @@
 
 /* The DANTON API. */
 #include "danton.h"
+#include "danton/primary/discrete.h"
+#include "danton/primary/powerlaw.h"
 #include "danton/recorder/text.h"
 
 /* Finalise and exit to the OS. */
@@ -248,7 +250,7 @@ int main(int argc, char * argv[])
                 }
         }
 
-        /* Set the primary. */
+        /* Set the target particle to sample. */
         int target;
         if (!grammage) {
                 /* Parse and check the mandatory arguments. */
@@ -293,12 +295,24 @@ int main(int argc, char * argv[])
         sampler->energy[0] = energy_min;
         sampler->energy[1] = energy_range ? energy_max : energy_min;
         enum danton_particle index = danton_particle_index(target);
+        if (forward) {
+                if (index == DANTON_PARTICLE_NU_TAU)
+                        index = DANTON_PARTICLE_TAU;
+                else if (index == DANTON_PARTICLE_NU_BAR_TAU)
+                        index = DANTON_PARTICLE_TAU_BAR;
+                else {
+                        fprintf(stderr, "danton: invalid particle id (%d).\n",
+                            target);
+                        exit(EXIT_FAILURE);
+                }
+        }
         sampler->weight[index] = 1.;
         if (danton_sampler_update(sampler) != EXIT_SUCCESS) exit(EXIT_FAILURE);
 
         /* Create a text recorder. */
-        struct danton_text * text = danton_text_create(output_file);
-        if (text == NULL) exit(EXIT_FAILURE);
+        struct danton_recorder * recorder =
+            (struct danton_recorder *)danton_text_create(output_file);
+        if (recorder == NULL) exit(EXIT_FAILURE);
 
         /* Create a new simulation context. */
         struct danton_context * context = danton_context_create();
@@ -314,14 +328,39 @@ int main(int argc, char * argv[])
         context->decay = decay;
         context->grammage = grammage;
         context->sampler = sampler;
-        context->recorder = (struct danton_recorder *)text;
+        context->recorder = recorder;
+
+        /* Create the primary. */
+        index = danton_particle_index(target);
+        if (!forward) {
+                if (index == DANTON_PARTICLE_TAU)
+                        index = DANTON_PARTICLE_NU_TAU;
+                else if (index == DANTON_PARTICLE_TAU_BAR)
+                        index = DANTON_PARTICLE_NU_BAR_TAU;
+                else {
+                        fprintf(stderr, "danton: invalid particle id (%d).\n",
+                            target);
+                        exit(EXIT_FAILURE);
+                }
+        }
+        if (energy_range)
+                context->primary[index] =
+                    (struct danton_primary *)danton_powerlaw_create(
+                        energy_min, energy_max, -2., 1.);
+        else
+                context->primary[index] =
+                    (struct danton_primary *)danton_discrete_create(
+                        energy_min, 1.);
 
         /* Run the simulation. */
         danton_run(context, n_events);
 
         /* Finalise and exit to the OS. */
+        int j;
+        for (j = 0; j < DANTON_PARTICLE_N_NU; j++)
+                danton_destroy((void **)&context->primary[j]);
         danton_context_destroy(&context);
-        danton_text_destroy(&text);
-        danton_sampler_destroy(&sampler);
+        danton_destroy((void **)&recorder);
+        danton_destroy((void **)&sampler);
         gracefully_exit(EXIT_SUCCESS);
 }

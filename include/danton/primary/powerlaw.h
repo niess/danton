@@ -19,8 +19,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
-#ifndef danton_text_h
-#define danton_text_h
+#ifndef danton_powerlaw_h
+#define danton_powerlaw_h
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,19 +31,16 @@ extern "C" {
 
 #include "danton.h"
 
-enum danton_text_mode {
-        DANTON_TEXT_MODE_APPEND = 0,
-        DANTON_TEXT_MODE_CREATE,
-        DANTON_TEXT_MODE_N
+struct danton_powerlaw {
+        struct danton_primary base;
+        double exponent;
+        double weight;
 };
 
-struct danton_text {
-        struct danton_recorder base;
-        enum danton_text_mode mode;
-};
+DANTON_API struct danton_powerlaw * danton_powerlaw_create(
+    double energy_min, double energy_max, double exponent, double weight);
 
-DANTON_API struct danton_text * danton_text_create(const char * path);
-DANTON_API int danton_text_check(struct danton_recorder * recorder);
+DANTON_API int danton_powerlaw_check(struct danton_primary * primary);
 
 #ifdef __cplusplus
 }

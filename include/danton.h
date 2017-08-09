@@ -29,19 +29,6 @@ extern "C" {
 #define DANTON_API
 #endif
 
-/* Data structures for the primary neutrino flux. */
-struct danton_primary;
-
-typedef double danton_primary_cb(
-    struct danton_primary * primary, double energy);
-
-struct danton_primary {
-        danton_primary_cb * flux;
-        int pid;
-        double energy_min;
-        double energy_max;
-};
-
 /** Indices of DANTON particles. */
 enum danton_particle {
         DANTON_PARTICLE_UNKNOWN = -1,
@@ -51,10 +38,23 @@ enum danton_particle {
         DANTON_PARTICLE_NU_E,
         DANTON_PARTICLE_NU_MU,
         DANTON_PARTICLE_NU_TAU,
-        DANTON_PARTICLE_TAU_BAR,
+        /** The total number of neutrino indices. */
+        DANTON_PARTICLE_N_NU,
+        DANTON_PARTICLE_TAU_BAR = DANTON_PARTICLE_N_NU,
         DANTON_PARTICLE_TAU,
         /** The total number of indices. */
         DANTON_PARTICLE_N
+};
+
+/* Data structures for the primary neutrino flux. */
+struct danton_primary;
+
+typedef double danton_primary_cb(
+    struct danton_primary * primary, double energy);
+
+struct danton_primary {
+        danton_primary_cb * flux;
+        double energy[2];
 };
 
 /* Handle for managing the events to sample. */
@@ -117,6 +117,7 @@ struct danton_context {
         int longitudinal;
         int decay;
         int grammage;
+        struct danton_primary * primary[DANTON_PARTICLE_N_NU];
         struct danton_sampler * sampler;
         struct danton_recorder * recorder;
 };
@@ -127,6 +128,7 @@ typedef int danton_lock_cb(void);
 DANTON_API int danton_initialise(
     const char * pdf, danton_lock_cb * lock, danton_lock_cb * unlock);
 DANTON_API void danton_finalise(void);
+DANTON_API void danton_destroy(void ** any);
 
 /* Replace the sea layer of the PEM with Standard Rock. */
 DANTON_API void danton_pem_dry(void);
@@ -138,7 +140,6 @@ DANTON_API int danton_particle_pdg(enum danton_particle particle);
 DANTON_API enum danton_particle danton_particle_index(int pdg);
 
 DANTON_API struct danton_sampler * danton_sampler_create(void);
-DANTON_API void danton_sampler_destroy(struct danton_sampler ** sampler);
 DANTON_API int danton_sampler_update(struct danton_sampler * sampler);
 
 DANTON_API struct danton_context * danton_context_create(void);

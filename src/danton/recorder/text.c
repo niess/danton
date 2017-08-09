@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The DANTOn API. */
+/* The DANTON API. */
 #include "danton.h"
 #include "danton/recorder/text.h"
 
@@ -215,9 +215,9 @@ struct danton_text * danton_text_create(const char * path)
         return &text->api;
 }
 
-/* API function for properly destroying a text recorder. */
-void danton_text_destroy(struct danton_text ** text)
+/* API function for checking for a text recorder type. */
+int danton_text_check(struct danton_recorder * recorder)
 {
-        free(*text);
-        *text = NULL;
+        return ((recorder->record_event == &record_event) &&
+            (recorder->record_grammage == &record_grammage));
 }
