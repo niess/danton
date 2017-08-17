@@ -55,10 +55,18 @@ static double flux(struct danton_primary * primary, double energy)
 struct danton_powerlaw * danton_powerlaw_create(
     double energy_min, double energy_max, double exponent, double weight)
 {
+        /* Check the arguments. */
+        if ((energy_min <= 0.) || (energy_min >= energy_max) || (weight < 0.)) {
+                danton_error_push(NULL,
+                    "%s (%d): invalid argument(s) (%.5lE, %.5lE).", __FILE__,
+                    __LINE__);
+                return NULL;
+        }
+
         /* Allocate the memory for the new power law spectrum. */
         struct danton_powerlaw * powerlaw;
         if ((powerlaw = malloc(sizeof(*powerlaw))) == NULL) {
-                danton_error_push(NULL, "%s (%d): could not allocate memory\n",
+                danton_error_push(NULL, "%s (%d): could not allocate memory.",
                     __FILE__, __LINE__);
                 return NULL;
         }
@@ -69,8 +77,6 @@ struct danton_powerlaw * danton_powerlaw_create(
         powerlaw->base.energy[1] = energy_max;
         powerlaw->exponent = exponent;
         powerlaw->weight = weight;
-
-        /* TODO: check the arguments. */
 
         return powerlaw;
 }

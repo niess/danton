@@ -471,7 +471,7 @@ static void random_initialise(struct simulation_context * context)
         return;
 error:
         danton_error_push(&context->api,
-            "%s (%d): could not Initialise PRNG from %s.\n", __FILE__, __LINE__,
+            "%s (%d): could not Initialise PRNG from %s.", __FILE__, __LINE__,
             urandom);
         exit(EXIT_FAILURE);
 }
@@ -617,7 +617,7 @@ static int transport_forward(struct simulation_context * context,
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
             (abs(neutrino->pid) != ENT_PID_NU_TAU)) {
-                danton_error_push(&context->api, "%s (%s): invalid pid (%d)\n",
+                danton_error_push(&context->api, "%s (%s): invalid pid (%d).",
                     __FILE__, __LINE__, neutrino->pid);
                 return EXIT_FAILURE;
         }
@@ -1132,7 +1132,7 @@ static int transport_backward(
 
 /* Shortcut for dumping a PUMAS error. */
 #define ERROR_PUMAS(context, rc, function)                                     \
-        danton_error_push(context, "%s (%d): error in %s, `%s`\n", __FILE__,   \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
             __LINE__, pumas_error_function((pumas_function_t *)&function),     \
             pumas_error_string(rc))
 
@@ -1171,7 +1171,7 @@ static int load_pumas(struct danton_context * context)
 
 /* Shortcut for dumping an ENT error. */
 #define ERROR_ENT(context, rc, function)                                       \
-        danton_error_push(context, "%s (%d): error in %s, `%s`\n", __FILE__,   \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
             __LINE__, ent_error_function((ent_function_t *)function),          \
             ent_error_string(rc))
 
@@ -1203,7 +1203,7 @@ static int initialise_physics(struct danton_context * context)
         /* Initialise ALOUETTE/TAUOLA. */
         enum alouette_return a_rc;
         if ((a_rc = alouette_initialise(1, NULL)) != ALOUETTE_RETURN_SUCCESS) {
-                danton_error_push(context, "%s (%d): alouette_initialise, %s\n",
+                danton_error_push(context, "%s (%d): alouette_initialise, %s.",
                     __FILE__, __LINE__, alouette_strerror(a_rc));
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
@@ -1229,7 +1229,7 @@ int danton_initialise(
                 pdf_path = malloc(n);
                 if (pdf_path == NULL) {
                         danton_error_push(NULL,
-                            "%s (%d): could not allocate memory\n", __FILE__,
+                            "%s (%d): could not allocate memory.", __FILE__,
                             __LINE__);
                         return EXIT_FAILURE;
                 }
@@ -1240,7 +1240,7 @@ int danton_initialise(
         if (((lock_ == NULL) && (unlock_ != NULL)) ||
             ((lock_ != NULL) && (unlock_ == NULL))) {
                 danton_error_push(NULL,
-                    "%s (%d): incomplete (un)lock function(s)\n", __FILE__,
+                    "%s (%d): incomplete (un)lock function(s).", __FILE__,
                     __LINE__);
                 return EXIT_FAILURE;
         }
@@ -1289,7 +1289,7 @@ struct danton_sampler * danton_sampler_create(void)
         struct event_sampler * sampler;
         sampler = malloc(sizeof(*sampler));
         if (sampler == NULL) {
-                danton_error_push(NULL, "%s (%d): could not allocate memory.\n",
+                danton_error_push(NULL, "%s (%d): could not allocate memory.",
                     __FILE__, __LINE__);
                 return NULL;
         }
@@ -1319,7 +1319,7 @@ int danton_sampler_update(struct danton_sampler * sampler)
         /* Check the altitude. */
         if ((sampler->altitude[0] < 0.) ||
             (sampler->altitude[0] > sampler->altitude[1])) {
-                danton_error_push(NULL, "%s (%d): invalid altitude value(s).\n",
+                danton_error_push(NULL, "%s (%d): invalid altitude value(s).",
                     __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
@@ -1328,9 +1328,8 @@ int danton_sampler_update(struct danton_sampler * sampler)
         if ((sampler->cos_theta[0] < 0.) ||
             (sampler->cos_theta[0] > sampler->cos_theta[1]) ||
             (sampler->cos_theta[1] > 1.)) {
-                danton_error_push(NULL,
-                    "%s (%d): invalid cos(theta) value(s).\n", __FILE__,
-                    __LINE__);
+                danton_error_push(NULL, "%s (%d): invalid cos(theta) value(s).",
+                    __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
 
@@ -1338,9 +1337,8 @@ int danton_sampler_update(struct danton_sampler * sampler)
         if ((sampler->elevation[0] < -90.) ||
             (sampler->elevation[0] > sampler->elevation[1]) ||
             (sampler->elevation[1] > 90.)) {
-                danton_error_push(NULL,
-                    "%s (%d): invalid elevation value(s).\n", __FILE__,
-                    __LINE__);
+                danton_error_push(NULL, "%s (%d): invalid elevation value(s).",
+                    __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
 
@@ -1348,7 +1346,7 @@ int danton_sampler_update(struct danton_sampler * sampler)
         if ((sampler->energy[0] < 1E+02) ||
             (sampler->energy[0] > sampler->energy[1]) ||
             (sampler->energy[1] > 1E+12)) {
-                danton_error_push(NULL, "%s (%d): invalid energy values.\n",
+                danton_error_push(NULL, "%s (%d): invalid energy values.",
                     __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
@@ -1377,7 +1375,7 @@ struct danton_context * danton_context_create(void)
         struct simulation_context * context;
         context = malloc(sizeof(*context));
         if (context == NULL) {
-                danton_error_push(NULL, "%s (%d): could not allocate memory.\n",
+                danton_error_push(NULL, "%s (%d): could not allocate memory.",
                     __FILE__, __LINE__);
                 return NULL;
         }
@@ -1515,25 +1513,25 @@ int danton_run(struct danton_context * context, long events)
 
         /* Check and configure the context according to the API. */
         if (sampler == NULL) {
-                danton_error_push(context,
-                    "%s (%d): no sampler was provided.\n", __FILE__, __LINE__);
+                danton_error_push(context, "%s (%d): no sampler was provided.",
+                    __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
 
         if (sampler_->hash != hash((unsigned char *)sampler)) {
                 danton_error_push(context,
-                    "%s (%d): sampler has not been updated.\n", __FILE__,
+                    "%s (%d): sampler has not been updated.", __FILE__,
                     __LINE__);
                 return EXIT_FAILURE;
         }
 
         if (context->recorder == NULL) {
-                danton_error_push(context,
-                    "%s (%d): no recorder was provided.\n", __FILE__, __LINE__);
+                danton_error_push(context, "%s (%d): no recorder was provided.",
+                    __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
         if ((context->mode < 0) || (context->mode >= DANTON_MODE_N)) {
-                danton_error_push(context, "%s (%d): invalid run mode (%d).\n",
+                danton_error_push(context, "%s (%d): invalid run mode (%d).",
                     __FILE__, __LINE__, context->mode);
                 return EXIT_FAILURE;
         }
@@ -1544,14 +1542,14 @@ int danton_run(struct danton_context * context, long events)
                 else if (events < 2) {
                         danton_error_push(context,
                             "%s (%d): numbers of bins must be 2 or "
-                            "more.\n",
+                            "more.",
                             __FILE__, __LINE__);
                         return EXIT_FAILURE;
                 }
         } else {
                 if (sampler_->total_weight <= 0.) {
                         danton_error_push(context,
-                            "%s (%d): no particle to sample.\n", __FILE__,
+                            "%s (%d): no particle to sample.", __FILE__,
                             __LINE__);
                         return EXIT_FAILURE;
                 }
@@ -1563,7 +1561,7 @@ int danton_run(struct danton_context * context, long events)
                         if (sampler_->neutrino_weight ==
                             sampler_->total_weight) {
                                 danton_error_push(context,
-                                    "%s (%d): no tau(s) target to decay.\n",
+                                    "%s (%d): no tau(s) target to decay.",
                                     __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
@@ -1575,7 +1573,7 @@ int danton_run(struct danton_context * context, long events)
                                             "tau(s) "
                                             "sampling is not "
                                             "supported in forward "
-                                            "mode.\n",
+                                            "mode.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
                                 }
@@ -1584,7 +1582,7 @@ int danton_run(struct danton_context * context, long events)
                                     sampler->altitude[1]) {
                                         danton_error_push(context,
                                             "%s (%d): no altitude range for "
-                                            "tau(s) decays.\n",
+                                            "tau(s) decays.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
                                 }
@@ -1616,7 +1614,7 @@ int danton_run(struct danton_context * context, long events)
                                 if ((*p)->energy[0] > (*p)->energy[1]) {
                                         danton_error_push(context,
                                             "%s (%d): invalid energy range for "
-                                            "primary flux (pid = %d).\n",
+                                            "primary flux (pid = %d).",
                                             __FILE__, __LINE__,
                                             danton_particle_pdg(j));
                                         return EXIT_FAILURE;
@@ -1624,8 +1622,8 @@ int danton_run(struct danton_context * context, long events)
                         }
                 }
                 if (!is_primary) {
-                        danton_error_push(context,
-                            "%s (%d): no primary flux.\n", __FILE__, __LINE__);
+                        danton_error_push(context, "%s (%d): no primary flux.",
+                            __FILE__, __LINE__);
                         return EXIT_FAILURE;
                 }
 
@@ -1653,7 +1651,7 @@ int danton_run(struct danton_context * context, long events)
                             10 * sizeof(*context_->record->product));
                         if (context_->record == NULL) {
                                 danton_error_push(context,
-                                    "%s (%d): could not allocate memory.\n",
+                                    "%s (%d): could not allocate memory.",
                                     __FILE__, __LINE__);
                                 exit(EXIT_FAILURE);
                         }
@@ -1689,8 +1687,7 @@ int danton_run(struct danton_context * context, long events)
                 }
                 if (primary_p[DANTON_PARTICLE_N_NU - 1] <= 0.) {
                         danton_error_push(context,
-                            "%s (%d): null primary flux.\n", __FILE__,
-                            __LINE__);
+                            "%s (%d): null primary flux.", __FILE__, __LINE__);
                         return EXIT_FAILURE;
                 }
 

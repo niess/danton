@@ -36,7 +36,7 @@ struct danton_discrete;
 DANTON_API struct danton_discrete * danton_discrete_create(
     double energy, double weight);
 
-DANTON_API void danton_discrete_set(
+DANTON_API int danton_discrete_set(
     struct danton_discrete * discrete, double energy, double weight);
 DANTON_API void danton_discrete_get(
     const struct danton_discrete * discrete, double * energy, double * weight);

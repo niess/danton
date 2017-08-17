@@ -46,12 +46,18 @@ static double flux(struct danton_primary * primary, double energy)
 }
 
 /* API function for setting the parameters of a discrete spectrum. */
-void danton_discrete_set(
+int danton_discrete_set(
     struct danton_discrete * discrete, double energy, double weight)
 {
-        /* TODO: check the parameter values. */
+        if ((energy <= 0.) || (weight < 0.)) {
+                danton_error_push(NULL,
+                    "%s (%d): invalid argument(s) (%.5lE, %.5lE).", __FILE__,
+                    __LINE__);
+                return EXIT_FAILURE;
+        }
         discrete->base.energy[0] = discrete->base.energy[1] = energy;
         discrete->weight = weight;
+        return EXIT_SUCCESS;
 }
 
 /* API function for getting the parameters of a discrete spectrum. */
@@ -68,7 +74,7 @@ struct danton_discrete * danton_discrete_create(double energy, double weight)
         /* Allocate the memory for the new discrete spectrum. */
         struct danton_discrete * discrete;
         if ((discrete = malloc(sizeof(*discrete))) == NULL) {
-                danton_error_push(NULL, "%s (%d): could not allocate memory\n",
+                danton_error_push(NULL, "%s (%d): could not allocate memory.",
                     __FILE__, __LINE__);
                 return NULL;
         }
