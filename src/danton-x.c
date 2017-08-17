@@ -322,10 +322,13 @@ int main(int argc, char * argv[])
         }
 
         /* Configure the simulation context. */
-        context->forward = forward;
+        if (grammage)
+                context->mode = DANTON_MODE_GRAMMAGE;
+        else
+                context->mode =
+                    (forward) ? DANTON_MODE_FORWARD : DANTON_MODE_BACKWARD;
         context->longitudinal = longitudinal;
         context->decay = decay;
-        context->grammage = grammage;
         context->sampler = sampler;
         context->recorder = recorder;
 

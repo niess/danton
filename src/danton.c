@@ -1399,10 +1399,9 @@ struct danton_context * danton_context_create(void)
         context->error.data[0] = 0;
 
         /* Initialise the public API data. */
-        context->api.forward = 0;
+        context->api.mode = DANTON_MODE_BACKWARD;
         context->api.longitudinal = 0;
         context->api.decay = 1;
-        context->api.grammage = 0;
         int i;
         for (i = 0; i < DANTON_PARTICLE_N_NU; i++)
                 context->api.primary[i] = NULL;
@@ -1474,7 +1473,7 @@ static double sample_linear(struct simulation_context * context,
         if (x[0] < x[1]) {
                 const double dx = x[1] - x[0];
                 double u;
-                if ((context->api.grammage) && (n > 0))
+                if ((context->api.mode == DANTON_MODE_GRAMMAGE) && (n > 0))
                         u = (n > 1) ? i / (n - 1.) : 0.;
                 else {
                         u = random_uniform01(context);
@@ -1533,29 +1532,21 @@ int danton_run(struct danton_context * context, long events)
                     "%s (%d): no recorder was provided.\n", __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
+        if ((context->mode < 0) || (context->mode >= DANTON_MODE_N)) {
+                danton_error_push(context, "%s (%d): invalid run mode (%d).\n",
+                    __FILE__, __LINE__, context->mode);
+                return EXIT_FAILURE;
+        }
 
-        if (context->grammage) {
-                if (context->forward) {
-                        if (sampler->cos_theta[0] == sampler->cos_theta[1])
-                                events = 1;
-                        else if (events < 2) {
-                                danton_error_push(context,
-                                    "%s (%d): numbers of bins must be 2 or "
-                                    "more.\n",
-                                    __FILE__, __LINE__);
-                                return EXIT_FAILURE;
-                        }
-                        context_->flux_neutrino = 1;
-                } else {
-                        if (sampler->elevation[0] == sampler->elevation[1])
-                                events = 1;
-                        else if (events < 2) {
-                                danton_error_push(context,
-                                    "%s (%d): numbers of bins must be 2 or "
-                                    "more.\n",
-                                    __FILE__, __LINE__);
-                                return EXIT_FAILURE;
-                        }
+        if (context->mode == DANTON_MODE_GRAMMAGE) {
+                if (sampler->elevation[0] == sampler->elevation[1])
+                        events = 1;
+                else if (events < 2) {
+                        danton_error_push(context,
+                            "%s (%d): numbers of bins must be 2 or "
+                            "more.\n",
+                            __FILE__, __LINE__);
+                        return EXIT_FAILURE;
                 }
         } else {
                 if (sampler_->total_weight <= 0.) {
@@ -1564,7 +1555,7 @@ int danton_run(struct danton_context * context, long events)
                             __LINE__);
                         return EXIT_FAILURE;
                 }
-                if (context->forward)
+                if (context->mode == DANTON_MODE_FORWARD)
                         context_->flux_neutrino =
                             sampler_->neutrino_weight > 0.;
 
@@ -1576,7 +1567,7 @@ int danton_run(struct danton_context * context, long events)
                                     __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
-                        if (context->forward) {
+                        if (context->mode == DANTON_MODE_FORWARD) {
                                 if (sampler_->neutrino_weight > 0.) {
                                         danton_error_push(context,
                                             "%s (%d): combining "
@@ -1601,9 +1592,9 @@ int danton_run(struct danton_context * context, long events)
                 }
         }
 
-        /* Temporary hack for the projectile. */
+        /* Temporary hack for the projectile. TODO: erase. */
         int projectile = ENT_PID_NU_TAU;
-        if (!context->grammage) {
+        if (context->mode != DANTON_MODE_GRAMMAGE) {
                 int j;
                 for (j = 0; j < DANTON_PARTICLE_N; j++) {
                         if (sampler->weight[j] > 0.) {
@@ -1613,7 +1604,7 @@ int danton_run(struct danton_context * context, long events)
                 }
         }
 
-        if (!context->grammage) {
+        if (context->mode != DANTON_MODE_GRAMMAGE) {
                 /* Check that there is a valid primary flux. */
                 int is_primary = 0;
                 int j;
@@ -1675,7 +1666,7 @@ int danton_run(struct danton_context * context, long events)
         }
 
         /* Run the simulation. */
-        if (context->forward) {
+        if (context->mode == DANTON_MODE_FORWARD) {
                 /* Check the primary flux and pre-compute some sampling
                  * parameters.
                  */
@@ -1763,18 +1754,6 @@ int danton_run(struct danton_context * context, long events)
                         if (transport_forward(context_,
                                 (struct ent_state *)&state, 1) != EXIT_SUCCESS)
                                 return EXIT_FAILURE;
-
-                        /* Publish the grammage results, if this is a grammage
-                         * mode. TODO: erase, i.e. switch to a dedicated mode.
-                         */
-                        if (context->grammage) {
-                                struct danton_grammage g = { 90. -
-                                            acos(ct) / M_PI * 180.,
-                                        state.base.ent.grammage };
-                                if (context->recorder->record_grammage(context,
-                                        context->recorder, &g) != EXIT_SUCCESS)
-                                        return EXIT_FAILURE;
-                        }
                 }
         } else {
                 /* Run a bunch of backward Monte-Carlo events. */
@@ -1813,7 +1792,8 @@ int danton_run(struct danton_context * context, long events)
                         context_->record->api.id = i;
                         context_->record->api.generation = 1;
                         context_->record->api.vertex = NULL;
-                        if (!context->grammage && !context_->flux_neutrino) {
+                        if ((context->mode != DANTON_MODE_GRAMMAGE) &&
+                            !context_->flux_neutrino) {
                                 /* This is a particle Monte-Carlo. */
                                 const double charge =
                                     (projectile > 0) ? -1. : 1.;
@@ -1835,7 +1815,7 @@ int danton_run(struct danton_context * context, long events)
                                 if (transport_backward(context_, &state) !=
                                     EXIT_SUCCESS)
                                         return EXIT_FAILURE;
-                        } else if (!context->grammage &&
+                        } else if ((context->mode != DANTON_MODE_GRAMMAGE) &&
                             context_->flux_neutrino) {
                                 struct generic_state state = {
                                         .base.ent = { projectile, energy, 0.,

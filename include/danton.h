@@ -112,12 +112,20 @@ struct danton_recorder {
         danton_grammage_cb * record_grammage;
 };
 
+/* Available run modes. */
+enum danton_mode {
+        DANTON_MODE_BACKWARD = 0,
+        DANTON_MODE_FORWARD,
+        DANTON_MODE_GRAMMAGE,
+        /** The total number of run modes. */
+        DANTON_MODE_N
+};
+
 /* Handle for a simulation context. */
 struct danton_context {
-        int forward;
+        enum danton_mode mode;
         int longitudinal;
         int decay;
-        int grammage;
         struct danton_primary * primary[DANTON_PARTICLE_N_NU];
         struct danton_sampler * sampler;
         struct danton_recorder * recorder;
