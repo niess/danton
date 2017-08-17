@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <float.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -172,6 +173,14 @@ struct event_record {
         struct danton_product product[];
 };
 
+/* Container for error message(s). */
+struct error_stack {
+        int count;
+        int size;
+#define ERROR_SIZE 512
+        char data[ERROR_SIZE];
+};
+
 /* Container for contextual simulation data. */
 struct simulation_context {
         /* Public API data. */
@@ -198,6 +207,8 @@ struct simulation_context {
                 int index;
                 unsigned long data[MT_PERIOD];
         } random_mt;
+
+        struct error_stack error;
 };
 
 /* Get the full simulation context from the PUMAS' one. */
@@ -459,8 +470,9 @@ static void random_initialise(struct simulation_context * context)
 
         return;
 error:
-        fprintf(
-            stderr, "danton: could not Initialise PRNG from %s.\n", urandom);
+        danton_error_push(&context->api,
+            "%s (%d): could not Initialise PRNG from %s.\n", __FILE__, __LINE__,
+            urandom);
         exit(EXIT_FAILURE);
 }
 
@@ -587,23 +599,28 @@ static void record_copy_product(
         record->api.n_products++;
 }
 
-static void record_publish(struct simulation_context * context)
+static int record_publish(struct simulation_context * context)
 {
         /* Call the event processor. */
-        context->api.recorder->record_event(
-            context->api.recorder, &context->record->api);
+        int rc = context->api.recorder->record_event(
+            &context->api, context->api.recorder, &context->record->api);
 
         /* Reset the record for new data. */
         context->record->api.n_products = 0;
+
+        return rc;
 }
 
 /* Forward transport routine, recursive. */
-static void transport_forward(struct simulation_context * context,
+static int transport_forward(struct simulation_context * context,
     struct ent_state * neutrino, int generation)
 {
         if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
-            (abs(neutrino->pid) != ENT_PID_NU_TAU))
-                return;
+            (abs(neutrino->pid) != ENT_PID_NU_TAU)) {
+                danton_error_push(&context->api, "%s (%s): invalid pid (%d)\n",
+                    __FILE__, __LINE__, neutrino->pid);
+                return EXIT_FAILURE;
+        }
 
         /* Backup the initial direction if the transverse transport is
          * disabled.
@@ -633,7 +650,9 @@ static void transport_forward(struct simulation_context * context,
                                         record_copy_ent(
                                             context->record->api.final,
                                             neutrino);
-                                        record_publish(context);
+                                        if (record_publish(context) !=
+                                            EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
                                         break;
                                 } else {
                                         g_state->is_inside = -1;
@@ -733,7 +752,9 @@ static void transport_forward(struct simulation_context * context,
                                             context, pid, momentum);
                                 }
                                 if (context->record->api.n_products > 0)
-                                        record_publish(context);
+                                        if (record_publish(context) !=
+                                            EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
@@ -753,8 +774,9 @@ static void transport_forward(struct simulation_context * context,
                                         } else {
                                                 nu_e_data.has_crossed = -1;
                                         }
-                                        transport_forward(
-                                            context, nu_e, generation);
+                                        if (transport_forward(context, nu_e,
+                                                generation) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
                                 }
                                 if (nu_t != NULL) {
                                         nu_t_data.context = context;
@@ -772,19 +794,23 @@ static void transport_forward(struct simulation_context * context,
                                         } else {
                                                 nu_t_data.has_crossed = -1;
                                         }
-                                        transport_forward(
-                                            context, nu_t, generation);
+                                        if (transport_forward(context, nu_t,
+                                                generation) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
                                 }
                         } else if (tau_data.has_crossed == 1) {
                                 record_copy_pumas(
                                     context->record->api.final, tau);
-                                record_publish(context);
+                                if (record_publish(context) != EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
                         }
                 }
                 if ((neutrino->pid != ENT_PID_NU_BAR_E) &&
                     (abs(neutrino->pid) != ENT_PID_NU_TAU))
                         break;
         }
+
+        return EXIT_SUCCESS;
 }
 
 static double ancestor_tau(
@@ -843,7 +869,7 @@ void polarisation_cb(int pid, const double momentum[3], double * polarisation)
 }
 
 /* Backward transport routine. */
-static void transport_backward(
+static int transport_backward(
     struct simulation_context * context, struct generic_state * current)
 {
         /* Backup the final state, e.g. the tau at decay. */
@@ -887,7 +913,7 @@ static void transport_backward(
                             (tau->kinetic + tau_mass >=
                                 context->energy_cut - FLT_EPSILON) ||
                             (tau->weight <= 0.))
-                                return;
+                                return EXIT_SUCCESS;
                         if (context->record->api.generation > 1) break;
 
                         /* Check that the tau is **not** emerging from the
@@ -954,7 +980,7 @@ static void transport_backward(
 
                 struct ent_medium * medium;
                 medium_ent(&context->ent, state, &medium);
-                if (medium == NULL) return;
+                if (medium == NULL) return EXIT_SUCCESS;
                 ent_vertex(physics, &context->ent, state, medium,
                     ENT_PROCESS_NONE, NULL);
 
@@ -990,7 +1016,7 @@ static void transport_backward(
         while ((event != ENT_EVENT_EXIT) &&
             (state->energy < context->energy_cut - FLT_EPSILON)) {
                 ent_transport(physics, &context->ent, state, NULL, &event);
-                if (state->weight <= 0.) return;
+                if (state->weight <= 0.) return EXIT_SUCCESS;
                 if (context->api.longitudinal)
                         memcpy(state->direction, direction,
                             sizeof(state->direction));
@@ -1014,12 +1040,13 @@ static void transport_backward(
                         if ((alouette_product(&pid1, momentum) !=
                                 ALOUETTE_RETURN_SUCCESS) ||
                             (abs(pid1) != ENT_PID_TAU))
-                                return;
+                                return EXIT_SUCCESS;
                         const double p12 = momentum[0] * momentum[0] +
                             momentum[1] * momentum[1] +
                             momentum[2] * momentum[2];
                         const double E1 = sqrt(p12 + tau_mass * tau_mass);
-                        if (E1 >= context->energy_cut - FLT_EPSILON) return;
+                        if (E1 >= context->energy_cut - FLT_EPSILON)
+                                return EXIT_SUCCESS;
 
                         /* Update the tau state and start again the BMC
                          * transport.
@@ -1051,18 +1078,17 @@ static void transport_backward(
                         g->has_crossed = -1;
                         g->cross_count = 0;
                         context->record->api.generation++;
-                        transport_backward(context, g);
-                        return;
+                        return transport_backward(context, g);
                 }
         }
-        if (event != ENT_EVENT_EXIT) return;
+        if (event != ENT_EVENT_EXIT) return EXIT_SUCCESS;
 
         /* Let us sample the primary flux. */
         enum danton_particle index = danton_particle_index(state->pid);
         struct danton_primary * primary = context->api.primary[index];
-        if (primary == NULL) return;
+        if (primary == NULL) return EXIT_SUCCESS;
         const double flux = primary->flux(primary, state->energy);
-        if (flux <= 0.) return;
+        if (flux <= 0.) return EXIT_SUCCESS;
         state->weight *= flux;
 
         /* This is a valid event. Let us record the primary and set the
@@ -1073,8 +1099,9 @@ static void transport_backward(
 
         /* In flux mode let us publish the record and then return. */
         if (!context->api.decay) {
-                record_publish(context);
-                return;
+                if (record_publish(context) != EXIT_SUCCESS)
+                        return EXIT_FAILURE;
+                return EXIT_SUCCESS;
         }
 
         /* In full mode let us perform the tau decay with ALOUETTE/TAUOLA. */
@@ -1099,17 +1126,18 @@ static void transport_backward(
                         continue;
                 record_copy_product(context, pid1, momentum);
         }
-        record_publish(context);
+        if (record_publish(context) != EXIT_SUCCESS) return EXIT_FAILURE;
+        return EXIT_SUCCESS;
 }
 
 /* Shortcut for dumping a PUMAS error. */
-#define ERROR_PUMAS(rc, function)                                              \
-        fprintf(stderr, "error : ");                                           \
-        pumas_error_print(stderr, rc, (pumas_function_t *)&function, NULL);    \
-        fprintf(stderr, "\n")
+#define ERROR_PUMAS(context, rc, function)                                     \
+        danton_error_push(context, "%s (%d): error in %s, `%s`\n", __FILE__,   \
+            __LINE__, pumas_error_function((pumas_function_t *)&function),     \
+            pumas_error_string(rc))
 
 /* Loader for PUMAS. */
-static int load_pumas(void)
+static int load_pumas(struct danton_context * context)
 {
         const enum pumas_particle particle = PUMAS_PARTICLE_TAU;
         const char * dump = "materials.b";
@@ -1120,7 +1148,7 @@ static int load_pumas(void)
                 enum pumas_return rc;
                 if ((rc = pumas_load(stream)) != PUMAS_RETURN_SUCCESS) {
                         fclose(stream);
-                        ERROR_PUMAS(rc, pumas_load);
+                        ERROR_PUMAS(context, rc, pumas_load);
                         return EXIT_FAILURE;
                 }
                 fclose(stream);
@@ -1142,10 +1170,10 @@ static int load_pumas(void)
 }
 
 /* Shortcut for dumping an ENT error. */
-#define ERROR_ENT(rc, function)                                                \
-        fprintf(stderr, "error : ");                                           \
-        ent_error_print(stderr, rc, (ent_function_t *)&function, NULL, NULL);  \
-        fprintf(stderr, "\n")
+#define ERROR_ENT(context, rc, function)                                       \
+        danton_error_push(context, "%s (%d): error in %s, `%s`\n", __FILE__,   \
+            __LINE__, ent_error_function((ent_function_t *)function),          \
+            ent_error_string(rc))
 
 /* Low level routine for initialising the Physics engines. */
 static int initialise_physics(struct danton_context * context)
@@ -1161,13 +1189,13 @@ static int initialise_physics(struct danton_context * context)
         else
                 pdf = pdf_path;
         if ((e_rc = ent_physics_create(&physics, pdf)) != ENT_RETURN_SUCCESS) {
-                ERROR_ENT(e_rc, ent_physics_create);
+                ERROR_ENT(context, e_rc, ent_physics_create);
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
         }
 
         /* Initialise the PUMAS transport engine. */
-        if (load_pumas() != EXIT_SUCCESS) {
+        if (load_pumas(context) != EXIT_SUCCESS) {
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
         }
@@ -1175,8 +1203,8 @@ static int initialise_physics(struct danton_context * context)
         /* Initialise ALOUETTE/TAUOLA. */
         enum alouette_return a_rc;
         if ((a_rc = alouette_initialise(1, NULL)) != ALOUETTE_RETURN_SUCCESS) {
-                fprintf(stderr, "%s (%d): alouette_initialise, %s\n", __FILE__,
-                    __LINE__, alouette_strerror(a_rc));
+                danton_error_push(context, "%s (%d): alouette_initialise, %s\n",
+                    __FILE__, __LINE__, alouette_strerror(a_rc));
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
         }
@@ -1200,8 +1228,9 @@ int danton_initialise(
                 const int n = strlen(pdf) + 1;
                 pdf_path = malloc(n);
                 if (pdf_path == NULL) {
-                        fprintf(stderr, "%s (%d): could not allocate memory\n",
-                            __FILE__, __LINE__);
+                        danton_error_push(NULL,
+                            "%s (%d): could not allocate memory\n", __FILE__,
+                            __LINE__);
                         return EXIT_FAILURE;
                 }
                 memcpy(pdf_path, pdf, n);
@@ -1210,8 +1239,9 @@ int danton_initialise(
         /* Check and update the lock callbaks. */
         if (((lock_ == NULL) && (unlock_ != NULL)) ||
             ((lock_ != NULL) && (unlock_ == NULL))) {
-                fprintf(stderr, "%s (%d): incomplete (un)lock function(s)\n",
-                    __FILE__, __LINE__);
+                danton_error_push(NULL,
+                    "%s (%d): incomplete (un)lock function(s)\n", __FILE__,
+                    __LINE__);
                 return EXIT_FAILURE;
         }
         lock = lock_;
@@ -1259,8 +1289,8 @@ struct danton_sampler * danton_sampler_create(void)
         struct event_sampler * sampler;
         sampler = malloc(sizeof(*sampler));
         if (sampler == NULL) {
-                fprintf(stderr, "danton.c (%d): couldn't allocate memory.\n",
-                    __LINE__);
+                danton_error_push(NULL, "%s (%d): could not allocate memory.\n",
+                    __FILE__, __LINE__);
                 return NULL;
         }
         memset(sampler, 0x0, sizeof(*sampler));
@@ -1289,8 +1319,8 @@ int danton_sampler_update(struct danton_sampler * sampler)
         /* Check the altitude. */
         if ((sampler->altitude[0] < 0.) ||
             (sampler->altitude[0] > sampler->altitude[1])) {
-                fprintf(stderr, "danton: invalid altitude value(s). "
-                                "Call with -h, --help for usage.\n");
+                danton_error_push(NULL, "%s (%d): invalid altitude value(s).\n",
+                    __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
 
@@ -1298,8 +1328,9 @@ int danton_sampler_update(struct danton_sampler * sampler)
         if ((sampler->cos_theta[0] < 0.) ||
             (sampler->cos_theta[0] > sampler->cos_theta[1]) ||
             (sampler->cos_theta[1] > 1.)) {
-                fprintf(stderr, "danton: invalid cos(theta) value(s). "
-                                "Call with -h, --help for usage.\n");
+                danton_error_push(NULL,
+                    "%s (%d): invalid cos(theta) value(s).\n", __FILE__,
+                    __LINE__);
                 return EXIT_FAILURE;
         }
 
@@ -1307,8 +1338,9 @@ int danton_sampler_update(struct danton_sampler * sampler)
         if ((sampler->elevation[0] < -90.) ||
             (sampler->elevation[0] > sampler->elevation[1]) ||
             (sampler->elevation[1] > 90.)) {
-                fprintf(stderr, "danton: invalid elevation value(s). "
-                                "Call with -h, --help for usage.\n");
+                danton_error_push(NULL,
+                    "%s (%d): invalid elevation value(s).\n", __FILE__,
+                    __LINE__);
                 return EXIT_FAILURE;
         }
 
@@ -1316,8 +1348,8 @@ int danton_sampler_update(struct danton_sampler * sampler)
         if ((sampler->energy[0] < 1E+02) ||
             (sampler->energy[0] > sampler->energy[1]) ||
             (sampler->energy[1] > 1E+12)) {
-                fprintf(stderr, "danton: invalid energy values. "
-                                "Call with -h, --help for usage.\n");
+                danton_error_push(NULL, "%s (%d): invalid energy values.\n",
+                    __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
 
@@ -1345,8 +1377,8 @@ struct danton_context * danton_context_create(void)
         struct simulation_context * context;
         context = malloc(sizeof(*context));
         if (context == NULL) {
-                fprintf(stderr, "danton.c (%d): couldn't allocate memory.\n",
-                    __LINE__);
+                danton_error_push(NULL, "%s (%d): could not allocate memory.\n",
+                    __FILE__, __LINE__);
                 return NULL;
         }
 
@@ -1362,6 +1394,9 @@ struct danton_context * danton_context_create(void)
 
         context->pumas = NULL;
         context->record = NULL;
+        context->error.count = 0;
+        context->error.size = 0;
+        context->error.data[0] = 0;
 
         /* Initialise the public API data. */
         context->api.forward = 0;
@@ -1481,20 +1516,21 @@ int danton_run(struct danton_context * context, long events)
 
         /* Check and configure the context according to the API. */
         if (sampler == NULL) {
-                fprintf(stderr, "danton: no sampler was provided. "
-                                "Call with -h, --help for usage.\n");
+                danton_error_push(context,
+                    "%s (%d): no sampler was provided.\n", __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
 
         if (sampler_->hash != hash((unsigned char *)sampler)) {
-                fprintf(stderr, "danton: sampler has not been updated. "
-                                "Call with -h, --help for usage.\n");
+                danton_error_push(context,
+                    "%s (%d): sampler has not been updated.\n", __FILE__,
+                    __LINE__);
                 return EXIT_FAILURE;
         }
 
         if (context->recorder == NULL) {
-                fprintf(stderr, "danton: no recorder was provided. "
-                                "Call with -h, --help for usage.\n");
+                danton_error_push(context,
+                    "%s (%d): no recorder was provided.\n", __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
 
@@ -1503,10 +1539,10 @@ int danton_run(struct danton_context * context, long events)
                         if (sampler->cos_theta[0] == sampler->cos_theta[1])
                                 events = 1;
                         else if (events < 2) {
-                                fprintf(stderr,
-                                    "danton: numbers of bins must be 2 or "
-                                    "more. "
-                                    "Call with -h, --help for usage.\n");
+                                danton_error_push(context,
+                                    "%s (%d): numbers of bins must be 2 or "
+                                    "more.\n",
+                                    __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
                         context_->flux_neutrino = 1;
@@ -1514,17 +1550,18 @@ int danton_run(struct danton_context * context, long events)
                         if (sampler->elevation[0] == sampler->elevation[1])
                                 events = 1;
                         else if (events < 2) {
-                                fprintf(stderr,
-                                    "danton: numbers of bins must be 2 or "
-                                    "more. "
-                                    "Call with -h, --help for usage.\n");
+                                danton_error_push(context,
+                                    "%s (%d): numbers of bins must be 2 or "
+                                    "more.\n",
+                                    __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
                 }
         } else {
                 if (sampler_->total_weight <= 0.) {
-                        fprintf(stderr, "danton: no particle to sample. "
-                                        "Call with -h, --help for usage.\n");
+                        danton_error_push(context,
+                            "%s (%d): no particle to sample.\n", __FILE__,
+                            __LINE__);
                         return EXIT_FAILURE;
                 }
                 if (context->forward)
@@ -1534,29 +1571,30 @@ int danton_run(struct danton_context * context, long events)
                 if (context->decay) {
                         if (sampler_->neutrino_weight ==
                             sampler_->total_weight) {
-                                fprintf(stderr,
-                                    "danton: no tau(s) target to decay. "
-                                    "Call with -h, --help for usage.\n");
+                                danton_error_push(context,
+                                    "%s (%d): no tau(s) target to decay.\n",
+                                    __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
                         if (context->forward) {
                                 if (sampler_->neutrino_weight > 0.) {
-                                        fprintf(stderr, "danton: combining "
-                                                        "neutrino(s) and "
-                                                        "tau(s) "
-                                                        "sampling is not "
-                                                        "supported in forward "
-                                                        "mode. "
-                                                        "Call with -h, --help "
-                                                        "for usage.\n");
+                                        danton_error_push(context,
+                                            "%s (%d): combining "
+                                            "neutrino(s) and "
+                                            "tau(s) "
+                                            "sampling is not "
+                                            "supported in forward "
+                                            "mode.\n",
+                                            __FILE__, __LINE__);
                                         return EXIT_FAILURE;
                                 }
 
                                 if (sampler->altitude[0] ==
                                     sampler->altitude[1]) {
-                                        fprintf(stderr,
-                                            "danton: no altitude range for "
-                                            "tau(s) decays.\n");
+                                        danton_error_push(context,
+                                            "%s (%d): no altitude range for "
+                                            "tau(s) decays.\n",
+                                            __FILE__, __LINE__);
                                         return EXIT_FAILURE;
                                 }
                         }
@@ -1585,18 +1623,18 @@ int danton_run(struct danton_context * context, long events)
                         if (*p != NULL) {
                                 is_primary = 1;
                                 if ((*p)->energy[0] > (*p)->energy[1]) {
-                                        fprintf(stderr,
-                                            "danton: invalid energy range for "
-                                            "primary flux (pid = %d). "
-                                            "Call with -h, --help for usage.\n",
+                                        danton_error_push(context,
+                                            "%s (%d): invalid energy range for "
+                                            "primary flux (pid = %d).\n",
+                                            __FILE__, __LINE__,
                                             danton_particle_pdg(j));
                                         return EXIT_FAILURE;
                                 }
                         }
                 }
                 if (!is_primary) {
-                        fprintf(stderr, "danton: no primary flux. "
-                                        "Call with -h, --help for usage.\n");
+                        danton_error_push(context,
+                            "%s (%d): no primary flux.\n", __FILE__, __LINE__);
                         return EXIT_FAILURE;
                 }
 
@@ -1610,7 +1648,7 @@ int danton_run(struct danton_context * context, long events)
                         enum pumas_return rc;
                         if ((rc = pumas_context_create(0, &context_->pumas)) !=
                             PUMAS_RETURN_SUCCESS) {
-                                ERROR_PUMAS(rc, pumas_context_create);
+                                ERROR_PUMAS(context, rc, pumas_context_create);
                                 return EXIT_FAILURE;
                         }
                         context_->pumas->medium = &medium_pumas;
@@ -1623,7 +1661,7 @@ int danton_run(struct danton_context * context, long events)
                         context_->record = malloc(sizeof(*context_->record) +
                             10 * sizeof(*context_->record->product));
                         if (context_->record == NULL) {
-                                fprintf(stderr,
+                                danton_error_push(context,
                                     "%s (%d): could not allocate memory.\n",
                                     __FILE__, __LINE__);
                                 exit(EXIT_FAILURE);
@@ -1659,8 +1697,9 @@ int danton_run(struct danton_context * context, long events)
                                 primary_p[j] = primary_p[j - 1] + d;
                 }
                 if (primary_p[DANTON_PARTICLE_N_NU - 1] <= 0.) {
-                        fprintf(stderr, "danton: null primary flux. "
-                                        "Call with -h, --help for usage.\n");
+                        danton_error_push(context,
+                            "%s (%d): null primary flux.\n", __FILE__,
+                            __LINE__);
                         return EXIT_FAILURE;
                 }
 
@@ -1721,8 +1760,9 @@ int danton_run(struct danton_context * context, long events)
                             context_->record->api.primary, &state.base.ent);
 
                         /* Do the Monte-Carlo simulation. */
-                        transport_forward(
-                            context_, (struct ent_state *)&state, 1);
+                        if (transport_forward(context_,
+                                (struct ent_state *)&state, 1) != EXIT_SUCCESS)
+                                return EXIT_FAILURE;
 
                         /* Publish the grammage results, if this is a grammage
                          * mode. TODO: erase, i.e. switch to a dedicated mode.
@@ -1731,8 +1771,9 @@ int danton_run(struct danton_context * context, long events)
                                 struct danton_grammage g = { 90. -
                                             acos(ct) / M_PI * 180.,
                                         state.base.ent.grammage };
-                                context->recorder->record_grammage(
-                                    context->recorder, &g);
+                                if (context->recorder->record_grammage(context,
+                                        context->recorder, &g) != EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
                         }
                 }
         } else {
@@ -1791,7 +1832,9 @@ int danton_run(struct danton_context * context, long events)
                                         .has_crossed = -1,
                                         .cross_count = 0
                                 };
-                                transport_backward(context_, &state);
+                                if (transport_backward(context_, &state) !=
+                                    EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
                         } else if (!context->grammage &&
                             context_->flux_neutrino) {
                                 struct generic_state state = {
@@ -1808,7 +1851,9 @@ int danton_run(struct danton_context * context, long events)
                                         .has_crossed = -1,
                                         .cross_count = 0
                                 };
-                                transport_backward(context_, &state);
+                                if (transport_backward(context_, &state) !=
+                                    EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
                         } else {
                                 /* This is a grammage scan using a non-
                                  * interacting neutrino. First let us initialise
@@ -1841,11 +1886,67 @@ int danton_run(struct danton_context * context, long events)
                                 struct danton_grammage g = { 90. -
                                             acos(ct) / M_PI * 180.,
                                         state->grammage };
-                                context->recorder->record_grammage(
-                                    context->recorder, &g);
+                                if (context->recorder->record_grammage(context,
+                                        context->recorder, &g) != EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
                         }
                 }
         }
 
         return EXIT_SUCCESS;
+}
+
+/* Global error buffer. */
+static struct error_stack g_error = { 0, 0, "" };
+
+/* Helper function for getting the relevant error stack. */
+static struct error_stack * error_stack_get(struct danton_context * context)
+{
+        if (context == NULL)
+                return &g_error;
+        else {
+                struct simulation_context * c =
+                    (struct simulation_context *)context;
+                return &c->error;
+        }
+}
+
+/* API function for getting the number of error(s) in the stack. */
+int danton_error_count(struct danton_context * context)
+{
+        struct error_stack * error = error_stack_get(context);
+        return error->count;
+}
+
+/* API function for pushing an error message to the stack. */
+int danton_error_push(struct danton_context * context, const char * format, ...)
+{
+        struct error_stack * error = error_stack_get(context);
+        const int left = ERROR_SIZE - error->size;
+
+        va_list args;
+        va_start(args, format);
+        const int n = vsnprintf(error->data + error->size, left, format, args);
+        va_end(args);
+        if (n >= left) return EXIT_FAILURE;
+        error->size += n + 1;
+        error->count++;
+        return EXIT_SUCCESS;
+}
+
+/* API function for getting the last error message from the stack. */
+const char * danton_error_pop(struct danton_context * context)
+{
+        struct error_stack * error = error_stack_get(context);
+        if (error->size == 0) return NULL;
+
+        char * s;
+        int n;
+        for (s = error->data + error->size - 2, n = error->size - 2;
+             (n > 0) && (*s != 0); s--, n--)
+                ;
+        if (n > 0) s++, n++;
+        error->size = n;
+        error->count--;
+        return s;
 }

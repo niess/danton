@@ -97,12 +97,13 @@ struct danton_grammage {
 };
 
 /* Callback for recording a sampled event. */
+struct danton_context;
 struct danton_recorder;
-typedef void danton_event_cb(
+typedef int danton_event_cb(struct danton_context * context,
     struct danton_recorder * recorder, const struct danton_event * event);
 
 /* Callback for recording a grammage value. */
-typedef void danton_grammage_cb(
+typedef int danton_grammage_cb(struct danton_context * context,
     struct danton_recorder * recorder, const struct danton_grammage * grammage);
 
 /* Generic type for recording the sampled data. */
@@ -147,7 +148,10 @@ DANTON_API void danton_context_destroy(struct danton_context ** context);
 
 DANTON_API int danton_run(struct danton_context * context, long events);
 
-DANTON_API const char * danton_error(struct danton_context * context);
+DANTON_API int danton_error_count(struct danton_context * context);
+DANTON_API const char * danton_error_pop(struct danton_context * context);
+DANTON_API int danton_error_push(
+    struct danton_context * context, const char * format, ...);
 
 #ifdef __cplusplus
 }

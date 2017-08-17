@@ -58,7 +58,7 @@ struct danton_powerlaw * danton_powerlaw_create(
         /* Allocate the memory for the new power law spectrum. */
         struct danton_powerlaw * powerlaw;
         if ((powerlaw = malloc(sizeof(*powerlaw))) == NULL) {
-                fprintf(stderr, "%s (%d): could not allocate memory\n",
+                danton_error_push(NULL, "%s (%d): could not allocate memory\n",
                     __FILE__, __LINE__);
                 return NULL;
         }

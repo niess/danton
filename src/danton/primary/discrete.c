@@ -68,7 +68,7 @@ struct danton_discrete * danton_discrete_create(double energy, double weight)
         /* Allocate the memory for the new discrete spectrum. */
         struct danton_discrete * discrete;
         if ((discrete = malloc(sizeof(*discrete))) == NULL) {
-                fprintf(stderr, "%s (%d): could not allocate memory\n",
+                danton_error_push(NULL, "%s (%d): could not allocate memory\n",
                     __FILE__, __LINE__);
                 return NULL;
         }

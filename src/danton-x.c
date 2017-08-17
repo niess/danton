@@ -268,7 +268,7 @@ int main(int argc, char * argv[])
 
         /* Initialise DANTON. */
         if (danton_initialise(pdf_file, NULL, NULL) != EXIT_SUCCESS) {
-                fprintf(stderr, "danton: couldn't initialise the library.\n");
+                fprintf(stderr, "%s", danton_error_pop(NULL));
                 exit(EXIT_FAILURE);
         }
         if (!pem_sea) danton_pem_dry();
@@ -276,7 +276,7 @@ int main(int argc, char * argv[])
         /* Create a sampler. */
         struct danton_sampler * sampler = danton_sampler_create();
         if (sampler == NULL) {
-                fprintf(stderr, "danton: could not create the sampler.\n");
+                fprintf(stderr, "%s", danton_error_pop(NULL));
                 exit(EXIT_FAILURE);
         }
 
@@ -317,8 +317,7 @@ int main(int argc, char * argv[])
         /* Create a new simulation context. */
         struct danton_context * context = danton_context_create();
         if (context == NULL) {
-                fprintf(stderr,
-                    "danton: could not create the simulation context.\n");
+                fprintf(stderr, "%s", danton_error_pop(NULL));
                 exit(EXIT_FAILURE);
         }
 
@@ -353,7 +352,8 @@ int main(int argc, char * argv[])
                         energy_min, 1.);
 
         /* Run the simulation. */
-        danton_run(context, n_events);
+        if (danton_run(context, n_events) != EXIT_SUCCESS)
+                fprintf(stderr, "%s", danton_error_pop(context));
 
         /* Finalise and exit to the OS. */
         int j;

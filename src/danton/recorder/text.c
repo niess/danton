@@ -36,15 +36,17 @@ struct text_recorder {
 };
 
 /* Create or append to the output stream. */
-static FILE * output_open(struct text_recorder * text)
+static FILE * output_open(
+    struct danton_context * context, struct text_recorder * text)
 {
         if (text->path[0] == 0x0) return stdout;
         const char * mode =
             (text->api.mode == DANTON_TEXT_MODE_CREATE) ? "w+" : "a+";
         FILE * stream = fopen(text->path, mode);
         if (stream == NULL) {
-                fprintf(stderr, "%s (%d): could not open file %s\n", __FILE__,
-                    __LINE__, text->path);
+                danton_error_push(context,
+                    "%s (%d): could not open file `%s`\n", __FILE__, __LINE__,
+                    text->path);
                 return NULL;
         }
         return stream;
@@ -114,15 +116,15 @@ static void format_grammage(
 }
 
 /* Callback for recording an event. */
-static void record_event(
+static int record_event(struct danton_context * context,
     struct danton_recorder * recorder, const struct danton_event * event)
 {
         /* Unpack the text recorder object. */
         struct text_recorder * text = (struct text_recorder *)recorder;
 
         /* Open the output stream. */
-        FILE * stream = output_open(text);
-        if (stream == NULL) return; /* TODO: return an error. */
+        FILE * stream = output_open(context, text);
+        if (stream == NULL) return EXIT_FAILURE;
 
         /* Print the header if the file is new. */
         if (text->api.mode == DANTON_TEXT_MODE_CREATE) {
@@ -162,18 +164,20 @@ static void record_event(
 
         /* Close the output stream. */
         output_close(text, stream);
+
+        return EXIT_SUCCESS;
 }
 
 /* Callback for recording a grammage point. */
-static void record_grammage(
+static int record_grammage(struct danton_context * context,
     struct danton_recorder * recorder, const struct danton_grammage * grammage)
 {
         /* Unpack the text recorder object. */
         struct text_recorder * text = (struct text_recorder *)recorder;
 
         /* Open the output stream. */
-        FILE * stream = output_open(text);
-        if (stream == NULL) return; /* TODO: return an error. */
+        FILE * stream = output_open(context, text);
+        if (stream == NULL) return EXIT_FAILURE;
 
         /* Print the header if the file is new. */
         if (text->api.mode == DANTON_TEXT_MODE_CREATE) {
@@ -188,6 +192,8 @@ static void record_grammage(
 
         /* Close the output stream. */
         output_close(text, stream);
+
+        return EXIT_SUCCESS;
 }
 
 /* API function for creating a new text recorder. */
@@ -197,7 +203,7 @@ struct danton_text * danton_text_create(const char * path)
         const int n = (path == NULL) ? 1 : strlen(path) + 1;
         struct text_recorder * text;
         if ((text = malloc(sizeof(*text) + n)) == NULL) {
-                fprintf(stderr, "%s (%d): could not allocate memory\n",
+                danton_error_push(NULL, "%s (%d): could not allocate memory\n",
                     __FILE__, __LINE__);
                 return NULL;
         }

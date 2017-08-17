@@ -16,7 +16,7 @@ clean:
 
 bin/danton: src/danton-x.c lib/libdanton.so
 	@mkdir -p bin
-	@gcc -o $@ $(CFLAGS) $(INCLUDE) $< lib/libdanton.so $(LIBS)
+	@gcc -o $@ $(CFLAGS) $(INCLUDE) $< -Llib -ldanton $(LIBS)
 
 lib/libdanton.so: $(DANTON_SRC) $(DANTON_INC) lib
 	@gcc -o $@ $(CFLAGS) $(INCLUDE) -fPIC -Iinclude -shared $(DANTON_SRC) $(LIBS)
