@@ -60,7 +60,6 @@ struct danton_primary {
 /* Handle for managing the events to sample. */
 struct danton_sampler {
         double altitude[2];
-        double cos_theta[2];
         double elevation[2];
         double energy[2];
         double weight[DANTON_PARTICLE_N];

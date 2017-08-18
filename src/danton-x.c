@@ -57,9 +57,6 @@ static void exit_with_help(int code)
 "      --altitude=Z           switch to a point estimate at an altitude of Z\n"
 "      --altitude-max=Z       set the maximum decay altitude to Z [1E+05]\n"
 "      --altitude-min=Z       set the minimum decay altitude to Z [1E-03]\n"
-"  -c, --cos-theta=C          switch to a point estimate with cos(theta)=C\n"
-"      --cos-theta-max=C      set the maximum value of cos(theta) to C [0.25]\n"
-"      --cos-theta-min=C      set the minimum value of cos(theta) to C [0.15]\n"
 "      --decay-disable        disable the final tau decays and switch to a\n"
 "                               flux sampling\n"
 "      --elevation=A          switch to a point estimate at an elevation\n"
@@ -93,9 +90,8 @@ static void exit_with_help(int code)
 "\n"
 "The default behaviour is to randomise the primary neutrino energy over a\n"
 "1/E^2 spectrum with a log bias. The primary direction is randomised uniformly\n"
-"over a solid angle specified by the min and max value of the cosine of the\n"
-"angle theta with the local vertical at the atmosphere entrance. Use the -c,\n"
-"--cos-theta option in order to perform a point estimate instead.\n"
+"over a solid angle specified by the min and max value of the elevation\n"
+"angle.\n"
 "\n");
         exit(code);
         // clang-format on
@@ -130,9 +126,7 @@ int main(int argc, char * argv[])
         /* Set the input arguments. */
         int n_events = 1000;
         int longitudinal = 0, grammage = 0, decay = 1, forward = 0;
-        int cos_theta_range = 1, elevation_range = 1, altitude_range = 1,
-            energy_range = 1;
-        double cos_theta_min = 0.15, cos_theta_max = 0.25;
+        int elevation_range = 1, altitude_range = 1, energy_range = 1;
         double elevation_min = -10., elevation_max = 10.;
         double altitude_min = 1E-03, altitude_max = 1E+05;
         double energy_min = 1E+07, energy_max = 1E+12;
@@ -143,16 +137,13 @@ int main(int argc, char * argv[])
         /* Parse the optional arguments. */
         for (;;) {
                 /* Short options. */
-                const char * short_options = "c:e:hn:o:";
+                const char * short_options = "e:hn:o:";
 
                 /* Long options. */
                 struct option long_options[] = { /* Configuration options. */
                         { "altitude", required_argument, NULL, 0 },
                         { "altitude-max", required_argument, NULL, 0 },
                         { "altitude-min", required_argument, NULL, 0 },
-                        { "cos-theta", required_argument, NULL, 'c' },
-                        { "cos-theta-max", required_argument, NULL, 0 },
-                        { "cos-theta-min", required_argument, NULL, 0 },
                         { "decay-disable", no_argument, &decay, 0 },
                         { "elevation", required_argument, NULL, 0 },
                         { "elevation-max", required_argument, NULL, 0 },
@@ -181,10 +172,7 @@ int main(int argc, char * argv[])
                 if (c == -1)
                         break; /* No more options to parse. */
                 else if (c > 0) {
-                        if (c == 'c') {
-                                cos_theta_range = 0;
-                                cos_theta_min = strtod(optarg, &endptr);
-                        } else if (c == 'e') {
+                        if (c == 'e') {
                                 energy_range = 0;
                                 energy_min = strtod(optarg, &endptr);
                         } else if (c == 'h')
@@ -207,9 +195,6 @@ int main(int argc, char * argv[])
                                 { &altitude_min, &opt_strtod, &endptr },
                                 { &altitude_max, &opt_strtod, &endptr },
                                 { &altitude_min, &opt_strtod, &endptr },
-                                { NULL, NULL, NULL }, /* cos-theta */
-                                { &cos_theta_max, &opt_strtod, &endptr },
-                                { &cos_theta_min, &opt_strtod, &endptr },
                                 { NULL, NULL, NULL }, /* decay-disable */
                                 { &elevation_min, &opt_strtod, &endptr },
                                 { &elevation_max, &opt_strtod, &endptr },
@@ -283,15 +268,8 @@ int main(int argc, char * argv[])
         /* Configure the sampler. */
         sampler->altitude[0] = altitude_min;
         sampler->altitude[1] = altitude_range ? altitude_max : altitude_min;
-        if (forward) {
-                sampler->cos_theta[0] = cos_theta_min;
-                sampler->cos_theta[1] =
-                    cos_theta_range ? cos_theta_max : cos_theta_min;
-        } else {
-                sampler->elevation[0] = elevation_min;
-                sampler->elevation[1] =
-                    elevation_range ? elevation_max : elevation_min;
-        }
+        sampler->elevation[0] = elevation_min;
+        sampler->elevation[1] = elevation_range ? elevation_max : elevation_min;
         sampler->energy[0] = energy_min;
         sampler->energy[1] = energy_range ? energy_max : energy_min;
         enum danton_particle index = danton_particle_index(target);
@@ -307,7 +285,10 @@ int main(int argc, char * argv[])
                 }
         }
         sampler->weight[index] = 1.;
-        if (danton_sampler_update(sampler) != EXIT_SUCCESS) exit(EXIT_FAILURE);
+        if (danton_sampler_update(sampler) != EXIT_SUCCESS) {
+                fprintf(stderr, "%s\n", danton_error_pop(NULL));
+                exit(EXIT_FAILURE);
+        }
 
         /* Create a text recorder. */
         struct danton_recorder * recorder =

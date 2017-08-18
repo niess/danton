@@ -751,10 +751,13 @@ static int transport_forward(struct simulation_context * context,
                                         record_copy_product(
                                             context, pid, momentum);
                                 }
-                                if (context->record->api.n_products > 0)
+                                if (context->record->api.n_products > 0) {
+                                        context->record->api.generation =
+                                            generation;
                                         if (record_publish(context) !=
                                             EXIT_SUCCESS)
                                                 return EXIT_FAILURE;
+                                }
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
@@ -801,6 +804,7 @@ static int transport_forward(struct simulation_context * context,
                         } else if (tau_data.has_crossed == 1) {
                                 record_copy_pumas(
                                     context->record->api.final, tau);
+                                context->record->api.generation = generation;
                                 if (record_publish(context) != EXIT_SUCCESS)
                                         return EXIT_FAILURE;
                         }
@@ -1278,6 +1282,7 @@ void danton_pem_dry(void)
 struct event_sampler {
         struct danton_sampler api;
         char endstr;
+        double cos_theta[2];
         double neutrino_weight;
         double total_weight;
         unsigned long hash;
@@ -1324,15 +1329,6 @@ int danton_sampler_update(struct danton_sampler * sampler)
                 return EXIT_FAILURE;
         }
 
-        /* Check cos(theta). TODO: compute it from the elevation data. */
-        if ((sampler->cos_theta[0] < 0.) ||
-            (sampler->cos_theta[0] > sampler->cos_theta[1]) ||
-            (sampler->cos_theta[1] > 1.)) {
-                danton_error_push(NULL, "%s (%d): invalid cos(theta) value(s).",
-                    __FILE__, __LINE__);
-                return EXIT_FAILURE;
-        }
-
         /* Check the elevation angle. */
         if ((sampler->elevation[0] < -90.) ||
             (sampler->elevation[0] > sampler->elevation[1]) ||
@@ -1351,9 +1347,28 @@ int danton_sampler_update(struct danton_sampler * sampler)
                 return EXIT_FAILURE;
         }
 
+        /* Compute the incidence angle, for forward mode. */
+        double ael[2] = { fabs(sampler->elevation[1]),
+                fabs(sampler->elevation[0]) };
+        if (ael[0] < ael[1]) {
+                const double tmp = ael[0];
+                ael[0] = ael[1];
+                ael[1] = tmp;
+        }
+        int i;
+        for (i = 0; i < 2; i++) {
+                const double R0 = EARTH_RADIUS + 1E+05;
+                const double s1 = sin((90. - ael[i]) * M_PI / 180.);
+                const double s0 =
+                    s1 * (EARTH_RADIUS + sampler->altitude[i]) / R0;
+                if (s0 > 1.)
+                        sampler_->cos_theta[1 - i] = 0.;
+                else
+                        sampler_->cos_theta[1 - i] = cos(asin(s0));
+        }
+
         /* Compute the particle weights. */
         sampler_->neutrino_weight = 0.;
-        int i;
         for (i = 0; i < DANTON_PARTICLE_N_NU; i++)
                 sampler_->neutrino_weight +=
                     (sampler->weight[i] <= 0.) ? 0. : sampler->weight[i];
@@ -1702,7 +1717,7 @@ int danton_run(struct danton_context * context, long events)
                 for (i = 0; i < events; i++) {
                         /* Sample the primary direction uniformly. */
                         const double ct = sample_linear(
-                            context_, sampler->cos_theta, i, events, NULL);
+                            context_, sampler_->cos_theta, i, events, NULL);
                         const double st = sqrt(1. - ct * ct);
 
                         /* Sample the primary flavour and its energy. */
@@ -1725,7 +1740,7 @@ int danton_run(struct danton_context * context, long events)
                         const int pid = danton_particle_pdg(j);
 
                         /* Configure the primary state. */
-                        const int crossed = context->decay ? -1 : 0;
+                        const int crossed = context_->flux_neutrino ? 0 : -1;
                         struct generic_state state = {
                                 .base.ent = { pid, energy, 0., 0., weight,
                                     { 0., 0., -EARTH_RADIUS - 1E+05 },
