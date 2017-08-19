@@ -2,8 +2,8 @@
  * Copyright (C) 2017 Université Clermont Auvergne, CNRS/IN2P3, LPC
  * Author: Valentin NIESS (niess@in2p3.fr)
  *
- * This software is a C99 executable dedicated to the sampling of decaying
- * taus from ultra high energy neutrinos.
+ * This software is a C99 executable simulating the coupled transport of ultra
+ * high energy taus and neutrinos through the Earth, by Monte-Carlo.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -71,17 +71,20 @@ static void exit_with_help(int code)
         // clang-format off
         fprintf(stderr,
 "Usage: danton [DATACARD.JSON]\n"
-"Simulate taus decaying in the Earth atmosphere, originating from neutrinos.\n"
+"Simulate the coupled transport of ultra high energy taus and neutrinos\n"
+"through the Earth, by Monte-Carlo.\n"
 "\n"
-"Root options:\n"
-"  events         [integer]           The number of Monte-Carlo events to run.\n"
-"  output-file    [string,null]       The number of Monte-Carlo events to run.\n"
+"Data card:\n"
+"Syntax and examples available from https://github.com/niess/danton.\n"
 "\n"
-"Particle sampler options:\n"
-"  altitude       [float,float[2]]    The number of Monte-Carlo events to run.\n"
-"  elevation      [float,float[2]]    The number of Monte-Carlo events to run.\n"
-"  energy         [float,float[2]]    The number of Monte-Carlo events to run.\n"
-"\n");
+"Exit status:\n"
+" %d  if OK,\n"
+" %d  if an error occurred.\n"
+"\n"
+"License: GNU LGPLv3\n"
+"Copyright (C) 2017 Université Clermont Auvergne, CNRS/IN2P3, LPC.\n"
+"Author: Valentin NIESS (niess@in2p3.fr)\n"
+"\n", EXIT_SUCCESS, EXIT_FAILURE);
         exit(code);
         // clang-format on
 }
@@ -103,6 +106,7 @@ static const char * string_value_error = "%s (%d): value error in file `%s` "
                                          "while parsing field `%s`. Expected "
                                          "%s (%s).\n";
 
+/* Helper macro for a memory error. */
 #define MEMORY_ERROR                                                           \
         {                                                                      \
                 fprintf(stderr, string_memory_error, __FILE__, __LINE__);      \
@@ -158,7 +162,8 @@ static void card_load(char * path)
         }
 }
 
-static int json_require_object(void)
+/* Get the next token in the JSON card as a dictionary header. */
+static int json_get_object(void)
 {
         jsmntok_t * token = card.tokens + card.cursor++;
         if (token->type != JSMN_OBJECT) {
@@ -171,6 +176,7 @@ static int json_require_object(void)
         return token->size;
 }
 
+/* Get the next token in the JSON card as a string. */
 static const char * json_get_string(void)
 {
         jsmntok_t * token = card.tokens + card.cursor++;
@@ -186,6 +192,7 @@ static const char * json_get_string(void)
         return s;
 }
 
+/* Get the next token in the JSON card as an integer. */
 static int json_get_int(const char * field)
 {
         jsmntok_t * token = card.tokens + card.cursor++;
@@ -206,6 +213,7 @@ static int json_get_int(const char * field)
         return (int)l;
 }
 
+/* Get the next token in the JSON card as a boolean. */
 static int json_get_bool(const char * field)
 {
         jsmntok_t * token = card.tokens + card.cursor++;
@@ -228,6 +236,7 @@ static int json_get_bool(const char * field)
         return -1; /* For compiler warning ... */
 }
 
+/* Get the next token in the JSON card as a double. */
 static double json_get_double(const char * field)
 {
         jsmntok_t * token = card.tokens + card.cursor++;
@@ -248,6 +257,9 @@ static double json_get_double(const char * field)
         return d;
 }
 
+/* Get the next token in the JSON card as a double or as an array of
+ * two doubles.
+ */
 static void json_get_range(const char * field, double * range)
 {
         jsmntok_t * token = card.tokens + card.cursor;
@@ -264,6 +276,7 @@ static void json_get_range(const char * field, double * range)
                 range[0] = range[1] = json_get_double(field);
 }
 
+/* Update the event recorder according to the data card. */
 static void card_update_recorder(void)
 {
         const char * output_file = json_get_string();
@@ -273,6 +286,7 @@ static void card_update_recorder(void)
         if (context->recorder == NULL) gracefully_exit(EXIT_FAILURE);
 }
 
+/* Update DANTON's run mode according to the data card. */
 static void card_update_mode(void)
 {
         const char * s = json_get_string();
@@ -294,6 +308,7 @@ static void card_update_mode(void)
 static const char * particle_name[DANTON_PARTICLE_N] = { "nu_tau~", "nu_mu~",
         "nu_e~", "nu_e", "nu_mu", "nu_tau", "tau~", "tau" };
 
+/* Get a particle name from the card and convert it to a DANTON index. */
 static enum danton_particle card_get_particle(enum danton_particle index_max)
 {
         const char * particle = json_get_string();
@@ -307,6 +322,7 @@ static enum danton_particle card_get_particle(enum danton_particle index_max)
         return DANTON_PARTICLE_UNKNOWN; /* For warnings ... */
 }
 
+/* Update the sampler according to the data card. */
 static void card_update_sampler(void)
 {
         /* Create and initialise the sampler if required. */
@@ -338,7 +354,7 @@ static void card_update_sampler(void)
                 else if (strcmp(tag, "energy") == 0)
                         json_get_range(tag, sampler->energy);
                 else if (strcmp(tag, "weight") == 0) {
-                        const int size_j = json_require_object();
+                        const int size_j = json_get_object();
                         int j;
                         for (j = 0; j < size_j; j++) {
                                 const int k =
@@ -353,13 +369,14 @@ static void card_update_sampler(void)
         }
 }
 
+/* Update the primary flux with a power law model. */
 static struct danton_primary * card_update_primary_powerlaw(void)
 {
         /* Parse the model parameters. */
         double energy[2] = { 1E+06, 1E+12 };
         double weight = 1.;
         double exponent = -2.;
-        const int size = json_require_object();
+        const int size = json_get_object();
         int i;
         for (i = 0; i < size; i++) {
                 const char * field = json_get_string();
@@ -387,12 +404,13 @@ static struct danton_primary * card_update_primary_powerlaw(void)
         return primary;
 }
 
+/* Update the primary flux with a discrete model. */
 static struct danton_primary * card_update_primary_discrete(void)
 {
         /* Parse the model parameters. */
         double energy = 1E+12;
         double weight = 1.;
-        const int size = json_require_object();
+        const int size = json_get_object();
         int i;
         for (i = 0; i < size; i++) {
                 const char * field = json_get_string();
@@ -417,6 +435,7 @@ static struct danton_primary * card_update_primary_discrete(void)
         return primary;
 }
 
+/* Update the primary flux according to the data card. */
 static void card_update_primary(void)
 {
         const int size = card.tokens[card.cursor++].size;
@@ -460,13 +479,14 @@ static void card_update_primary(void)
         }
 }
 
+/* Update the Earth model according to the data card. */
 static int card_update_pem(void)
 {
         /* Default Earth configuration. */
         int pem_sea = 1;
 
         /* Parse the data card. */
-        const int size = json_require_object();
+        const int size = json_get_object();
         int i;
         for (i = 0; i < size; i++) {
                 const char * field = json_get_string();
@@ -485,7 +505,7 @@ static int card_update_pem(void)
 static void card_update(int * n_events, int * pem_sea)
 {
         /* Check that the root is a dictionary. */
-        json_require_object();
+        json_get_object();
 
         /* Loop over the fields. */
         while (card.cursor < card.n_tokens) {

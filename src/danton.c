@@ -2,8 +2,8 @@
  * Copyright (C) 2017 Université Clermont Auvergne, CNRS/IN2P3, LPC
  * Author: Valentin NIESS (niess@in2p3.fr)
  *
- * This software is a C99 executable dedicated to the sampling of decaying
- * taus from ultra high energy neutrinos.
+ * This software is a C99 library for the simulation of the coupled transport
+ * of ultra high energy taus and neutrinos through the Earth, by Monte-Carlo.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -523,12 +523,14 @@ static double random_uniform01(struct simulation_context * context)
         return y * (1.0 / 4294967295.0);
 }
 
+/* Encapsulation of the random engine for PUMAS. */
 double random_pumas(struct pumas_context * context)
 {
         struct simulation_context * c = pumas2context(context);
         return random_uniform01(c);
 }
 
+/* Encapsulation of the random engine for ENT. */
 double random_ent(struct ent_context * context)
 {
         struct simulation_context * c = ent2context(context);
@@ -558,6 +560,7 @@ static void copy_neutrino(struct simulation_context * context,
         neutrino->weight = tau->weight;
 }
 
+/* Copy an ENT state to the event record. */
 static void record_copy_ent(struct danton_state * dst, struct ent_state * src)
 {
         if (dst == NULL) return;
@@ -567,6 +570,7 @@ static void record_copy_ent(struct danton_state * dst, struct ent_state * src)
         memcpy(dst->direction, src->direction, sizeof(dst->direction));
 }
 
+/* Copy a PUMAS state to the event record. */
 static void record_copy_pumas(
     struct danton_state * dst, struct pumas_state * src)
 {
@@ -577,6 +581,7 @@ static void record_copy_pumas(
         memcpy(dst->direction, src->direction, sizeof(dst->direction));
 }
 
+/* Copy an ALOUETTE decay product to the event record. */
 static void record_copy_product(
     struct simulation_context * context, int pid, double * momentum)
 {
@@ -599,6 +604,7 @@ static void record_copy_product(
         record->api.n_products++;
 }
 
+/* Publish the event record to the recorder. */
 static int record_publish(struct simulation_context * context)
 {
         /* Check and prune the products. */
@@ -826,6 +832,7 @@ static int transport_forward(struct simulation_context * context,
         return EXIT_SUCCESS;
 }
 
+/* Ancestor callback for taus. */
 static double ancestor_tau(
     struct ent_context * context, struct ent_state * state)
 {
@@ -833,7 +840,9 @@ static double ancestor_tau(
         return 1.63E-17 * pow(state->energy, 1.363) * g->density;
 }
 
-/* Ancestor callback for ENT. */
+/* Main ancestor callback, for ENT backward sampling of interaction
+ * processes.
+ */
 static double ancestor_cb(struct ent_context * context, enum ent_pid ancestor,
     struct ent_state * daughter)
 {
@@ -862,8 +871,8 @@ static double ancestor_cb(struct ent_context * context, enum ent_pid ancestor,
                 return 0.;
 }
 
-/* Polarisation callback for ALOUETTE. A 100% longitudinal polarisation is
- * assumed.
+/* Polarisation callback for ALOUETTE in backward mode. A 100% longitudinal
+ * polarisation is assumed.
  */
 void polarisation_cb(int pid, const double momentum[3], double * polarisation)
 {
@@ -1488,6 +1497,7 @@ enum danton_particle danton_particle_index(int pdg)
         return DANTON_PARTICLE_UNKNOWN;
 }
 
+/* Sample a parameter uniformly over a range. */
 static double sample_linear(struct simulation_context * context,
     const double x[2], long i, long n, double * weight)
 {
@@ -1507,6 +1517,7 @@ static double sample_linear(struct simulation_context * context,
         return xi;
 }
 
+/* Sample a parameter log-uniformly over a range. */
 static double sample_log_or_linear(
     struct simulation_context * context, double x[2], double * weight)
 {
