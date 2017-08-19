@@ -1,0 +1,14 @@
+{
+        "events" : 10,
+        "output-file" : null,
+
+        "mode" : "grammage",
+        "longitudinal" : true,
+
+        "earth-model" : { "sea" : true },
+
+        "particle-sampler" : {
+                "altitude" : 0,
+                "elevation" : [0.1, 90.0]
+        }
+}

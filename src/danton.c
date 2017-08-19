@@ -1824,10 +1824,12 @@ int danton_run(struct danton_context * context, long events)
                         const double z0 = sample_log_or_linear(
                             context_, sampler->altitude, &weight);
 
-                        context_->record->api.id = i;
-                        context_->record->api.generation = 1;
-                        context_->record->api.vertex = NULL;
-                        context_->record->api.n_products = 0;
+                        if (context->mode != DANTON_MODE_GRAMMAGE) {
+                                context_->record->api.id = i;
+                                context_->record->api.generation = 1;
+                                context_->record->api.vertex = NULL;
+                                context_->record->api.n_products = 0;
+                        }
                         if ((context->mode != DANTON_MODE_GRAMMAGE) &&
                             !context_->flux_neutrino) {
                                 /* This is a particle Monte-Carlo. */
