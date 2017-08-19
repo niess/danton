@@ -601,12 +601,21 @@ static void record_copy_product(
 
 static int record_publish(struct simulation_context * context)
 {
+        /* Check and prune the products. */
+        struct event_record * record = context->record;
+        if (context->api.decay && (record->api.n_products == 0))
+                return EXIT_SUCCESS;
+        if (record->api.n_products > 0)
+                record->api.product = record->product;
+        else
+                record->api.product = NULL;
+
         /* Call the event processor. */
         int rc = context->api.recorder->record_event(
-            &context->api, context->api.recorder, &context->record->api);
+            &context->api, context->api.recorder, &record->api);
 
         /* Reset the record for new data. */
-        context->record->api.n_products = 0;
+        record->api.n_products = 0;
 
         return rc;
 }
@@ -1189,7 +1198,7 @@ static int initialise_physics(struct danton_context * context)
         enum ent_return e_rc;
         const char * pdf;
         if (pdf_path == NULL)
-                pdf = DANTON_DIR "/ent/data/pdf/CT14nnlo_0000.dat";
+                pdf = DANTON_DIR "/modules/ent/data/pdf/CT14nnlo_0000.dat";
         else
                 pdf = pdf_path;
         if ((e_rc = ent_physics_create(&physics, pdf)) != ENT_RETURN_SUCCESS) {
@@ -1662,20 +1671,22 @@ int danton_run(struct danton_context * context, long events)
 
                 /* Create the event record, if not already done. */
                 if (context_->record == NULL) {
+                        const int buffer_size = 10;
                         context_->record = malloc(sizeof(*context_->record) +
-                            10 * sizeof(*context_->record->product));
+                            buffer_size * sizeof(*context_->record->product));
                         if (context_->record == NULL) {
                                 danton_error_push(context,
                                     "%s (%d): could not allocate memory.",
                                     __FILE__, __LINE__);
                                 exit(EXIT_FAILURE);
                         }
+                        context_->record->buffer_size = buffer_size;
+                        context_->record->api.vertex = NULL;
                 }
 
                 /* Configure the event record. TODO: according to options. */
                 context_->record->api.primary = &context_->record->primary;
                 context_->record->api.final = &context_->record->final;
-                context_->record->api.n_products = 0;
         }
 
         /* Run the simulation. */
@@ -1759,6 +1770,7 @@ int danton_run(struct danton_context * context, long events)
                         context_->record->api.id = i;
                         context_->record->api.weight = weight;
                         context_->record->api.vertex = NULL;
+                        context_->record->api.n_products = 0;
                         record_copy_ent(
                             context_->record->api.primary, &state.base.ent);
 
@@ -1804,6 +1816,7 @@ int danton_run(struct danton_context * context, long events)
                         context_->record->api.id = i;
                         context_->record->api.generation = 1;
                         context_->record->api.vertex = NULL;
+                        context_->record->api.n_products = 0;
                         if ((context->mode != DANTON_MODE_GRAMMAGE) &&
                             !context_->flux_neutrino) {
                                 /* This is a particle Monte-Carlo. */

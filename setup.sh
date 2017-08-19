@@ -6,11 +6,11 @@ danton_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Set the path for dynamic libraries.
 lib_dir=$danton_dir/lib
 [[ "$LD_LIBRARY_PATH" =~ "${lib_dir}" ]] || export LD_LIBRARY_PATH=${lib_dir}:$LD_LIBRARY_PATH
-lib_dir=$danton_dir/ent/lib
+lib_dir=$danton_dir/modules/ent/lib
 [[ "$LD_LIBRARY_PATH" =~ "${lib_dir}" ]] || export LD_LIBRARY_PATH=${lib_dir}:$LD_LIBRARY_PATH
-lib_dir=$danton_dir/pumas/lib
+lib_dir=$danton_dir/modules/pumas/lib
 [[ "$LD_LIBRARY_PATH" =~ "${lib_dir}" ]] || export LD_LIBRARY_PATH=${lib_dir}:$LD_LIBRARY_PATH
-lib_dir=$danton_dir/alouette/lib
+lib_dir=$danton_dir/modules/alouette/lib
 [[ "$LD_LIBRARY_PATH" =~ "${lib_dir}" ]] || export LD_LIBRARY_PATH=${lib_dir}:$LD_LIBRARY_PATH
 
 # Set the materials.
@@ -24,4 +24,3 @@ bin_dir=$danton_dir/bin
 # Set the PYTHONPATH For python module.
 python_dir=$danton_dir/lib/python
 [[ "$PYTHONPATH" =~ "${python_dir}" ]] || export PYTHONPATH=${python_dir}:$PYTHONPATH
-

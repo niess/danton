@@ -1,11 +1,13 @@
 DANTON_DIR := $(abspath .)
-CFLAGS := -O2 -std=c99 -pedantic -Wall -DDANTON_DIR="\"$(DANTON_DIR)\""
-INCLUDE := -Iinclude -Ient/include -Ipumas/include -Ialouette/include
-LIBS := -Lent/lib -lent -Lpumas/lib -lpumas -Lalouette/lib -lalouette -lm
+CFLAGS := -O2 -std=c99 -pedantic -Wall
+INCLUDE := -Iinclude -Imodules/ent/include -Imodules/pumas/include \
+	-Imodules/alouette/include -Imodules/jsmn
+LIBS := -Lmodules/ent/lib -lent -Lmodules/pumas/lib -lpumas \
+	-Lmodules/alouette/lib -lalouette -lm -Lmodules/jsmn -ljsmn
 DANTON_SRC := src/danton.c src/danton/recorder/text.c \
-    src/danton/primary/discrete.c src/danton/primary/powerlaw.c
+	src/danton/primary/discrete.c src/danton/primary/powerlaw.c
 DANTON_INC := include/danton.h include/danton/recorder/text.h \
-    include/danton/primary/discrete.h include/danton/primary/powerlaw.h
+	include/danton/primary/discrete.h include/danton/primary/powerlaw.h
 
 .PHONY: bin clean lib libclean
 
@@ -19,14 +21,19 @@ bin/danton: src/danton-x.c lib/libdanton.so
 	@gcc -o $@ $(CFLAGS) $(INCLUDE) $< -Llib -ldanton $(LIBS)
 
 lib/libdanton.so: $(DANTON_SRC) $(DANTON_INC) lib
-	@gcc -o $@ $(CFLAGS) $(INCLUDE) -fPIC -Iinclude -shared $(DANTON_SRC) $(LIBS)
+	@gcc -o $@ $(CFLAGS) -DDANTON_DIR="\"$(DANTON_DIR)\"" $(INCLUDE) -fPIC \
+		-Iinclude -shared $(DANTON_SRC) $(LIBS)
+
+export CFLAGS
 
 lib:
-	@make -C "pumas"
-	@make -C "ent"
-	@make -C "alouette"
+	@make -C "modules/pumas"
+	@make -C "modules/ent"
+	@make -C "modules/alouette"
+	@make -C "modules/jsmn"
 
 libclean:
-	@make -C "pumas" clean
-	@make -C "ent" clean
-	@make -C "alouette" clean
+	@make -C "modules/pumas" clean
+	@make -C "modules/ent" clean
+	@make -C "modules/alouette" clean
+	@make -C "modules/jsmn" clean

@@ -1,9 +1,12 @@
 [submodule "ent"]
-	path = ent
+	path = modules/ent
 	url = https://github.com/niess/ent.git
 [submodule "alouette"]
-	path = alouette
+	path = modules/alouette
 	url = https://gitlab.in2p3.fr/niess/alouette.git
 [submodule "pumas"]
-	path = pumas
+	path = modules/pumas
 	url = https://github.com/niess/pumas.git
+[submodule "jsmn"]
+	path = modules/jsmn
+	url = https://github.com/zserge/jsmn.git
