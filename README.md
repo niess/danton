@@ -88,5 +88,5 @@ weight          float                The weight of the primary, i.e. the integra
 ```
 
 ## License
-The sources are under the **GNU GPLv3** license. See the provided `LICENSE`
-file.
+The sources are under the **GNU LGPLv3** license. See the provided
+[LICENSE](LICENSE) and [COPYING.LESSER](COPYING.LESSER) files.
