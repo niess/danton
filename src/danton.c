@@ -366,8 +366,8 @@ static double medium(const double * position, const double * direction,
 }
 
 /* Media table for ENT. */
-#define ZR 13.
-#define AR 26.
+#define ZR 11.
+#define AR 22.
 #define ZW 10.
 #define AW 18.
 #define ZA 7.32
@@ -1679,6 +1679,7 @@ int danton_run(struct danton_context * context, long events)
                         context_->pumas->random = &random_pumas;
                         context_->pumas->user_data = context_;
                 }
+                context_->pumas->longitudinal = context->longitudinal;
 
                 /* Create the event record, if not already done. */
                 if (context_->record == NULL) {
