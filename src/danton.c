@@ -1207,7 +1207,7 @@ static int initialise_physics(struct danton_context * context)
         enum ent_return e_rc;
         const char * pdf;
         if (pdf_path == NULL)
-                pdf = DANTON_DIR "/modules/ent/data/pdf/CT14nnlo_0000.dat";
+                pdf = PDF_DIR "/CT14nnlo_0000.dat";
         else
                 pdf = pdf_path;
         if ((e_rc = ent_physics_create(&physics, pdf)) != ENT_RETURN_SUCCESS) {

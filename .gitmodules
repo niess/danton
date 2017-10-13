@@ -1,12 +1,12 @@
 [submodule "ent"]
-	path = modules/ent
+	path = deps/ent
 	url = https://github.com/niess/ent.git
 [submodule "alouette"]
-	path = modules/alouette
+	path = deps/alouette
 	url = https://github.com/niess/alouette.git
 [submodule "pumas"]
-	path = modules/pumas
+	path = deps/pumas
 	url = https://github.com/niess/pumas.git
 [submodule "jsmn"]
-	path = modules/jsmn
+	path = deps/jsmn
 	url = https://github.com/zserge/jsmn.git
