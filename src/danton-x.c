@@ -502,7 +502,7 @@ static int card_update_pem(void)
 }
 
 /* Update DANTON's configuration according to the content of the data card. */
-static void card_update(int * n_events, int * pem_sea)
+static void card_update(int * n_events, int * n_requested, int * pem_sea)
 {
         /* Check that the root is a dictionary. */
         json_get_object();
@@ -512,6 +512,8 @@ static void card_update(int * n_events, int * pem_sea)
                 const char * tag = json_get_string();
                 if (strcmp(tag, "events") == 0)
                         *n_events = json_get_int(tag);
+                else if (strcmp(tag, "requested") == 0)
+                        *n_requested = json_get_int(tag);
                 else if (strcmp(tag, "output-file") == 0)
                         card_update_recorder();
                 else if (strcmp(tag, "mode") == 0)
@@ -558,8 +560,8 @@ int main(int argc, char * argv[])
         card_load(argv[1]);
 
         /* Set the input arguments from the JSON card. */
-        int n_events = 10000, pem_sea = 1;
-        card_update(&n_events, &pem_sea);
+        int n_events = 10000, n_requested = 0, pem_sea = 1;
+        card_update(&n_events, &n_requested, &pem_sea);
 
         /* Configure the Earth model. */
         if (!pem_sea) danton_pem_dry();
@@ -571,7 +573,7 @@ int main(int argc, char * argv[])
         }
 
         /* Run the simulation. */
-        if (danton_run(context, n_events) != EXIT_SUCCESS)
+        if (danton_run(context, n_events, n_requested) != EXIT_SUCCESS)
                 fprintf(stderr, "%s\n", danton_error_pop(context));
 
         /* Finalise and exit to the OS. */

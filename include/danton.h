@@ -353,14 +353,17 @@ DANTON_API void danton_context_destroy(struct danton_context ** context);
 /**
  * Run a Monte-Carlo simulation or a grammage scan.
  *
- * @param  context  The simulation context to use.
- * @param  events   The number of Monte-carlo events or scan points.
- * @return          `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @param  context      The simulation context to use.
+ * @param  events       The maximum number of Monte-carlo events or scan points.
+ * @param  requested    The number of requested events to log.
+ * @return              `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * Depending on the context *mode* a Monte-Carlo simulation or a grammage
- * scan is done.
+ * scan is done. Note that setting *requested* to zero or less ignores this
+ * option, resulting in all events to be processed.
  */
-DANTON_API int danton_run(struct danton_context * context, long events);
+DANTON_API int danton_run(
+    struct danton_context * context, long events, long requested);
 
 /**
  * Get the current number of unprocessed errors.

@@ -604,6 +604,9 @@ static void record_copy_product(
         record->api.n_products++;
 }
 
+/* Counter for the number of published events. */
+static long n_published = 0;
+
 /* Publish the event record to the recorder. */
 static int record_publish(struct simulation_context * context)
 {
@@ -622,6 +625,9 @@ static int record_publish(struct simulation_context * context)
 
         /* Reset the record for new data. */
         record->api.n_products = 0;
+
+        /* Update the event count. */
+        n_published++;
 
         return rc;
 }
@@ -1538,7 +1544,7 @@ static double sample_log_or_linear(
 }
 
 /* Run a DANTON simulation. */
-int danton_run(struct danton_context * context, long events)
+int danton_run(struct danton_context * context, long events, long requested)
 {
         /* Unpack the various objects. */
         struct simulation_context * context_ =
@@ -1701,6 +1707,11 @@ int danton_run(struct danton_context * context, long events)
                 context_->record->api.final = &context_->record->final;
         }
 
+        /* Configure the event count. */
+        if ((context->mode == DANTON_MODE_GRAMMAGE) || (requested <= 0))
+            requested = events;
+        n_published = 0;
+
         /* Run the simulation. */
         if (context->mode == DANTON_MODE_FORWARD) {
                 /* Check the primary flux and pre-compute some sampling
@@ -1737,10 +1748,10 @@ int danton_run(struct danton_context * context, long events)
                     context_->energy_cut - tau_mass;
 
                 long i;
-                for (i = 0; i < events; i++) {
+                for (i = 0; (i < events) && (n_published < requested); i++) {
                         /* Sample the primary direction uniformly. */
                         const double ct = sample_linear(
-                            context_, sampler_->cos_theta, i, events, NULL);
+                            context_, sampler_->cos_theta, i, 0, NULL);
                         const double st = sqrt(1. - ct * ct);
 
                         /* Sample the primary flavour and its energy. */
@@ -1815,7 +1826,7 @@ int danton_run(struct danton_context * context, long events)
                             cos((90. - sampler->elevation[j]) * M_PI / 180.);
 
                 long i;
-                for (i = 0; i < events; i++) {
+                for (i = 0; (i < events) && (n_published < requested); i++) {
                         double weight = 1.;
                         const double ct = sample_linear(
                             context_, cos_theta, i, events, &weight);
