@@ -459,11 +459,10 @@ static void random_initialise(struct simulation_context * context)
         context->random_mt.data[0] = seed & 0xffffffffUL;
         int j;
         for (j = 1; j < MT_PERIOD; j++) {
-                context->random_mt.data[j] =
-                    (1812433253UL *
-                            (context->random_mt.data[j - 1] ^
-                                (context->random_mt.data[j - 1] >> 30)) +
-                        j);
+                context->random_mt.data[j] = (1812433253UL *
+                        (context->random_mt.data[j - 1] ^
+                            (context->random_mt.data[j - 1] >> 30)) +
+                    j);
                 context->random_mt.data[j] &= 0xffffffffUL;
         }
         context->random_mt.index = MT_PERIOD;
@@ -1709,7 +1708,7 @@ int danton_run(struct danton_context * context, long events, long requested)
 
         /* Configure the event count. */
         if ((context->mode == DANTON_MODE_GRAMMAGE) || (requested <= 0))
-            requested = events;
+                requested = events;
         n_published = 0;
 
         /* Run the simulation. */

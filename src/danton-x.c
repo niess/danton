@@ -33,28 +33,26 @@
 #include "danton/primary/powerlaw.h"
 #include "danton/recorder/text.h"
 
-/* Jasmine, for parsing the data card in JSON format. */
-#include "jsmn.h"
+/* Jasmine with some tea, for parsing the data card in JSON format. */
+#include "jsmn-tea.h"
 
 /* Handle for the simulation context. */
 static struct danton_context * context = NULL;
 
-/* Container for the parsing of the data card. */
-static struct {
-        jsmn_parser parser;
-        int cursor;
-        int n_tokens;
-        char * path;
-        jsmntok_t * tokens;
-        char * buffer;
-} card = { { 0, 0, 0 }, 0, 0, NULL, NULL, NULL };
+/* Handle for parsing JSON card(s). */
+static struct jsmn_tea * tea = NULL;
+
+/* Handle for handling errors. */
+static struct roar_handler handler = { NULL, NULL, NULL, NULL };
+
+/* Path of the current card. */
+static const char * card_path = NULL;
 
 /* Finalise and exit to the OS. */
-static void gracefully_exit(int rc)
+static int gracefully_exit(int rc)
 {
         /* Finalise and exit to the OS. */
-        free(card.tokens);
-        free(card.buffer);
+        jsmn_tea_destroy(&tea);
         int i;
         for (i = 0; i < DANTON_PARTICLE_N_NU; i++)
                 danton_destroy((void **)&context->primary[i]);
@@ -63,6 +61,21 @@ static void gracefully_exit(int rc)
         danton_context_destroy(&context);
         danton_finalise();
         exit(rc);
+}
+
+/* Post-error callback. */
+int handle_post_error(
+    struct roar_handler * handler, roar_function_t * referent, int code)
+{
+        /* Finalise and exit to the OS. */
+        return gracefully_exit(EXIT_FAILURE);
+}
+
+/* Callback for catching errors. */
+int catch_error(
+    struct roar_handler * handler, roar_function_t * referent, int code)
+{
+        return EXIT_SUCCESS;
 }
 
 /* Show help and exit. */
@@ -89,197 +102,33 @@ static void exit_with_help(int code)
         // clang-format on
 }
 
-/* Some recurrent error messages. */
-static const char * string_json_error =
-    "%s (%d): invalid JSON file `%s` (%d).\n";
-static const char * string_key_error =
-    "%s (%d): invalid key `%s` in JSON file `%s`.\n";
-static const char * string_memory_error =
-    "%s (%d): could not allocate memory.\n";
-static const char * string_particle_error =
-    "%s (%d): invalid particle name `%s` in file `%s`\n";
-static const char * string_size_error =
-    "%s (%d): invalid array size (%d != %d) for field `%s` in file `s`.\n";
-static const char * string_type_error =
-    "%s (%d): unexpected type (%d : %s) in JSON file `%s`.\n";
-static const char * string_value_error = "%s (%d): value error in file `%s` "
-                                         "while parsing field `%s`. Expected "
-                                         "%s (%s).\n";
-
-/* Helper macro for a memory error. */
-#define MEMORY_ERROR                                                           \
-        {                                                                      \
-                fprintf(stderr, string_memory_error, __FILE__, __LINE__);      \
-                exit(EXIT_FAILURE);                                            \
-        }
-
-/* Load a data card from a file and parse the JSON tokens. */
-static void card_load(char * path)
-{
-        size_t card_size;
-        FILE * stream = fopen(path, "rb");
-        if (stream == NULL) {
-                fprintf(stderr, "%s (%d): could not open file `%s`.\n",
-                    __FILE__, __LINE__, path);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        fseek(stream, 0, SEEK_END);
-        card_size = ftell(stream);
-        rewind(stream);
-        card.buffer = malloc((card_size + 1) * sizeof(*card.buffer));
-        if (card.buffer == NULL) MEMORY_ERROR
-        const int nread =
-            fread(card.buffer, sizeof(*card.buffer), card_size, stream);
-        fclose(stream);
-        if (nread != card_size) {
-                fprintf(stderr, "%s (%d): error while reading file `%s`.\n",
-                    __FILE__, __LINE__, path);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        card.buffer[card_size] = 0;
-        card.path = path;
-
-        /* Parse the JSON data card. 1st let us check the number of tokens.*/
-        jsmn_init(&card.parser);
-        card.n_tokens =
-            jsmn_parse(&card.parser, card.buffer, card_size, card.tokens, 0);
-        if (card.n_tokens <= 0) {
-                fprintf(stderr, string_json_error, __FILE__, __LINE__,
-                    card.path, card.n_tokens);
-                gracefully_exit(EXIT_FAILURE);
-        }
-
-        /* Then let us allocate the tokens array and parse the file again. */
-        card.tokens = malloc(card.n_tokens * sizeof(*card.tokens));
-        if (card.tokens == NULL) MEMORY_ERROR
-        jsmn_init(&card.parser);
-        const int jrc = jsmn_parse(
-            &card.parser, card.buffer, card_size, card.tokens, card.n_tokens);
-        if (jrc < 0) {
-                fprintf(stderr, string_json_error, __FILE__, __LINE__,
-                    card.path, jrc);
-                gracefully_exit(EXIT_FAILURE);
-        }
-}
-
-/* Get the next token in the JSON card as a dictionary header. */
-static int json_get_object(void)
-{
-        jsmntok_t * token = card.tokens + card.cursor++;
-        if (token->type != JSMN_OBJECT) {
-                card.buffer[token->end] = 0;
-                const char * s = card.buffer + token->start;
-                fprintf(stderr, string_type_error, __FILE__, __LINE__,
-                    token->type, s, card.path);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        return token->size;
-}
-
-/* Get the next token in the JSON card as a string. */
-static const char * json_get_string(void)
-{
-        jsmntok_t * token = card.tokens + card.cursor++;
-        card.buffer[token->end] = 0;
-        const char * s = card.buffer + token->start;
-        if ((token->type == JSMN_PRIMITIVE) && (strcmp(s, "null") == 0))
-                return NULL;
-        if (token->type != JSMN_STRING) {
-                fprintf(stderr, string_type_error, __FILE__, __LINE__,
-                    token->type, s, card.path);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        return s;
-}
-
-/* Get the next token in the JSON card as an integer. */
-static int json_get_int(const char * field)
-{
-        jsmntok_t * token = card.tokens + card.cursor++;
-        card.buffer[token->end] = 0;
-        const char * s = card.buffer + token->start;
-        if (token->type != JSMN_PRIMITIVE) {
-                fprintf(stderr, string_type_error, __FILE__, __LINE__,
-                    token->type, s, card.path);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        char * endptr;
-        long l = strtol(s, &endptr, 0);
-        if (*endptr != 0) {
-                fprintf(stderr, string_value_error, __FILE__, __LINE__,
-                    card.path, field, "an integer", s);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        return (int)l;
-}
-
-/* Get the next token in the JSON card as a boolean. */
-static int json_get_bool(const char * field)
-{
-        jsmntok_t * token = card.tokens + card.cursor++;
-        card.buffer[token->end] = 0;
-        const char * s = card.buffer + token->start;
-        if (token->type != JSMN_PRIMITIVE) {
-                fprintf(stderr, string_type_error, __FILE__, __LINE__,
-                    token->type, s, card.path);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        if (strcmp(s, "true") == 0)
-                return 1;
-        else if (strcmp(s, "false") == 0)
-                return 0;
-        else {
-                fprintf(stderr, string_value_error, __FILE__, __LINE__,
-                    card.path, field, "a boolean", s);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        return -1; /* For compiler warning ... */
-}
-
-/* Get the next token in the JSON card as a double. */
-static double json_get_double(const char * field)
-{
-        jsmntok_t * token = card.tokens + card.cursor++;
-        card.buffer[token->end] = 0;
-        const char * s = card.buffer + token->start;
-        if (token->type != JSMN_PRIMITIVE) {
-                fprintf(stderr, string_type_error, __FILE__, __LINE__,
-                    token->type, s, card.path);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        char * endptr;
-        double d = strtod(s, &endptr);
-        if (*endptr != 0) {
-                fprintf(stderr, string_value_error, __FILE__, __LINE__,
-                    card.path, field, "a floating number", s);
-                gracefully_exit(EXIT_FAILURE);
-        }
-        return d;
-}
-
 /* Get the next token in the JSON card as a double or as an array of
  * two doubles.
  */
-static void json_get_range(const char * field, double * range)
+static void card_get_range(const char * field, double * range)
 {
-        jsmntok_t * token = card.tokens + card.cursor;
-        if (token->type == JSMN_ARRAY) {
-                if (token->size != 2) {
-                        fprintf(stderr, string_size_error, __FILE__, __LINE__,
-                            token->size, 2, field, card.path);
-                        gracefully_exit(EXIT_FAILURE);
-                }
-                card.cursor++;
-                range[0] = json_get_double(field);
-                range[1] = json_get_double(field);
-        } else
-                range[0] = range[1] = json_get_double(field);
+        handler.pre = &catch_error;
+        int size;
+        int rc = jsmn_tea_next_array(tea, &size);
+        handler.pre = NULL;
+        if (rc < 0) {
+                jsmn_tea_next_number(tea, JSMN_TEA_TYPE_DOUBLE, range);
+                range[1] = range[0];
+        } else if (size != 2) {
+                ROAR_ERRNO_FORMAT(&handler, &card_get_range, EINVAL,
+                    "[%s #%d] invalid array size for field `%s`", card_path,
+                    tea->index, field);
+        } else {
+                jsmn_tea_next_number(tea, JSMN_TEA_TYPE_DOUBLE, range);
+                jsmn_tea_next_number(tea, JSMN_TEA_TYPE_DOUBLE, range + 1);
+        }
 }
 
 /* Update the event recorder according to the data card. */
 static void card_update_recorder(void)
 {
-        const char * output_file = json_get_string();
+        char * output_file;
+        jsmn_tea_next_string(tea, 0, &output_file);
         danton_destroy((void **)&context->recorder);
         context->recorder =
             (struct danton_recorder *)danton_text_create(output_file);
@@ -289,7 +138,8 @@ static void card_update_recorder(void)
 /* Update DANTON's run mode according to the data card. */
 static void card_update_mode(void)
 {
-        const char * s = json_get_string();
+        char * s;
+        jsmn_tea_next_string(tea, 0, &s);
         if (strcmp(s, "backward") == 0)
                 context->mode = DANTON_MODE_BACKWARD;
         else if (strcmp(s, "forward") == 0)
@@ -297,10 +147,8 @@ static void card_update_mode(void)
         else if (strcmp(s, "grammage") == 0)
                 context->mode = DANTON_MODE_GRAMMAGE;
         else {
-                fprintf(stderr, "%s (%d): invalid mode `%s` in "
-                                "JSON file `%s`.\n",
-                    __FILE__, __LINE__, s, card.path);
-                gracefully_exit(EXIT_FAILURE);
+                ROAR_ERRNO_FORMAT(&handler, &card_update_mode, EINVAL,
+                    "[%s #%d] invalid mode `%s`", card_path, tea->index, s);
         }
 }
 
@@ -311,15 +159,15 @@ static const char * particle_name[DANTON_PARTICLE_N] = { "nu_tau~", "nu_mu~",
 /* Get a particle name from the card and convert it to a DANTON index. */
 static enum danton_particle card_get_particle(enum danton_particle index_max)
 {
-        const char * particle = json_get_string();
+        char * particle;
+        jsmn_tea_next_string(tea, 1, &particle);
         enum danton_particle index;
         for (index = 0; index < index_max; index++) {
                 if (strcmp(particle, particle_name[index]) == 0) return index;
         }
-        fprintf(stderr, string_particle_error, __FILE__, __LINE__, particle,
-            card.path);
-        gracefully_exit(EXIT_FAILURE);
-        return DANTON_PARTICLE_UNKNOWN; /* For warnings ... */
+        return ROAR_ERRNO_FORMAT(&handler, &card_get_particle, EINVAL,
+            "[%s #%d] invalid particle name `%s`", card_path, tea->index,
+            particle);
 }
 
 /* Update the sampler according to the data card. */
@@ -330,8 +178,8 @@ static void card_update_sampler(void)
         if (context->sampler == NULL) {
                 sampler = danton_sampler_create();
                 if (sampler == NULL) {
-                        fprintf(stderr, "%s\n", danton_error_pop(NULL));
-                        gracefully_exit(EXIT_FAILURE);
+                        ROAR_ERRWP_MESSAGE(&handler, &card_update_sampler, -1,
+                            "danton error", danton_error_pop(NULL));
                 }
                 sampler->altitude[0] = 1E-03;
                 sampler->altitude[1] = 1E+04;
@@ -343,28 +191,28 @@ static void card_update_sampler(void)
         } else
                 sampler = context->sampler;
 
-        const int size = card.tokens[card.cursor++].size;
         int i;
-        for (i = 0; i < size; i++) {
-                const char * tag = json_get_string();
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
+                char * tag;
+                jsmn_tea_next_string(tea, 1, &tag);
                 if (strcmp(tag, "altitude") == 0)
-                        json_get_range(tag, sampler->altitude);
+                        card_get_range(tag, sampler->altitude);
                 else if (strcmp(tag, "elevation") == 0)
-                        json_get_range(tag, sampler->elevation);
+                        card_get_range(tag, sampler->elevation);
                 else if (strcmp(tag, "energy") == 0)
-                        json_get_range(tag, sampler->energy);
+                        card_get_range(tag, sampler->energy);
                 else if (strcmp(tag, "weight") == 0) {
-                        const int size_j = json_get_object();
                         int j;
-                        for (j = 0; j < size_j; j++) {
+                        for (jsmn_tea_next_object(tea, &j); j; j--) {
                                 const int k =
                                     card_get_particle(DANTON_PARTICLE_N);
-                                sampler->weight[k] = json_get_double(tag);
+                                jsmn_tea_next_number(tea, JSMN_TEA_TYPE_DOUBLE,
+                                    sampler->weight + k);
                         }
                 } else {
-                        fprintf(stderr, string_key_error, __FILE__, __LINE__,
-                            tag, card.path);
-                        gracefully_exit(EXIT_FAILURE);
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
+                            EINVAL, "[%s #%d] invalid key `%s`", card_path,
+                            tea->index, tag);
                 }
         }
 }
@@ -376,20 +224,22 @@ static struct danton_primary * card_update_primary_powerlaw(void)
         double energy[2] = { 1E+06, 1E+12 };
         double weight = 1.;
         double exponent = -2.;
-        const int size = json_get_object();
         int i;
-        for (i = 0; i < size; i++) {
-                const char * field = json_get_string();
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
+                char * field;
+                jsmn_tea_next_string(tea, 1, &field);
                 if (strcmp(field, "energy") == 0)
-                        json_get_range(field, energy);
+                        card_get_range(field, energy);
                 else if (strcmp(field, "exponent") == 0)
-                        exponent = json_get_double(field);
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &exponent);
                 else if (strcmp(field, "weight") == 0)
-                        weight = json_get_double(field);
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &weight);
                 else {
-                        fprintf(stderr, string_key_error, __FILE__, __LINE__,
-                            "power-law", card.path);
-                        gracefully_exit(EXIT_FAILURE);
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
+                            EINVAL, "[%s #%d] invalid key `%s`", card_path,
+                            tea->index, field);
                 }
         }
 
@@ -398,8 +248,8 @@ static struct danton_primary * card_update_primary_powerlaw(void)
             (struct danton_primary *)danton_powerlaw_create(
                 energy[0], energy[1], exponent, weight);
         if (primary == NULL) {
-                fprintf(stderr, "%s\n", danton_error_pop(NULL));
-                gracefully_exit(EXIT_FAILURE);
+                ROAR_ERRWP_MESSAGE(&handler, &card_update_primary_powerlaw, -1,
+                    "danton error", danton_error_pop(NULL));
         }
         return primary;
 }
@@ -410,18 +260,20 @@ static struct danton_primary * card_update_primary_discrete(void)
         /* Parse the model parameters. */
         double energy = 1E+12;
         double weight = 1.;
-        const int size = json_get_object();
         int i;
-        for (i = 0; i < size; i++) {
-                const char * field = json_get_string();
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
+                char * field;
+                jsmn_tea_next_string(tea, 1, &field);
                 if (strcmp(field, "energy") == 0)
-                        energy = json_get_double(field);
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &energy);
                 else if (strcmp(field, "weight") == 0)
-                        weight = json_get_double(field);
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &weight);
                 else {
-                        fprintf(stderr, string_key_error, __FILE__, __LINE__,
-                            "discrete", card.path);
-                        gracefully_exit(EXIT_FAILURE);
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
+                            EINVAL, "[%s #%d] invalid key `%s`", card_path,
+                            tea->index, field);
                 }
         }
 
@@ -429,8 +281,8 @@ static struct danton_primary * card_update_primary_discrete(void)
         struct danton_primary * primary =
             (struct danton_primary *)danton_discrete_create(energy, weight);
         if (primary == NULL) {
-                fprintf(stderr, "%s\n", danton_error_pop(NULL));
-                gracefully_exit(EXIT_FAILURE);
+                ROAR_ERRWP_MESSAGE(&handler, &card_update_primary_discrete, -1,
+                    "danton error", danton_error_pop(NULL));
         }
         return primary;
 }
@@ -438,31 +290,27 @@ static struct danton_primary * card_update_primary_discrete(void)
 /* Update the primary flux according to the data card. */
 static void card_update_primary(void)
 {
-        const int size = card.tokens[card.cursor++].size;
         int i;
-        for (i = 0; i < size; i++) {
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
                 /* Parse the particle index. */
                 const int index = card_get_particle(DANTON_PARTICLE_N_NU);
 
                 /* Check that one has a length 2 array. */
-                jsmntok_t * token = card.tokens + card.cursor;
-                if (token->type != JSMN_ARRAY) {
-                        fprintf(stderr, string_type_error, __FILE__, __LINE__,
-                            token->type, particle_name[index], card.path);
-                        gracefully_exit(EXIT_FAILURE);
+                int size;
+                jsmn_tea_next_array(tea, &size);
+                if (size != 2) {
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_primary,
+                            EINVAL,
+                            "[%s #%d] invalid array size for field `%s`",
+                            card_path, tea->index, particle_name[index]);
                 }
-                if (token->size != 2) {
-                        fprintf(stderr, string_size_error, __FILE__, __LINE__,
-                            token->size, 2, particle_name[index], card.path);
-                        gracefully_exit(EXIT_FAILURE);
-                }
-                card.cursor++;
 
                 /* Clear any existing model. */
                 danton_destroy((void **)&context->primary[index]);
 
                 /* Parse the primary model.  */
-                const char * model = json_get_string();
+                char * model;
+                jsmn_tea_next_string(tea, 0, &model);
                 if (strcmp(model, "power-law") == 0)
                         context->primary[index] =
                             card_update_primary_powerlaw();
@@ -470,11 +318,11 @@ static void card_update_primary(void)
                         context->primary[index] =
                             card_update_primary_discrete();
                 else {
-                        fprintf(stderr, "%s (%d): invalid primary model `%s` "
-                                        "for particle `%s` in file `%s`.\n",
-                            __FILE__, __LINE__, model, particle_name[index],
-                            card.path);
-                        gracefully_exit(EXIT_FAILURE);
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_primary,
+                            EINVAL,
+                            "[%s #%d] invalid primary model `%s` for particle "
+                            "`%s`",
+                            card_path, tea->index, model, particle_name[index]);
                 }
         }
 }
@@ -486,16 +334,16 @@ static int card_update_pem(void)
         int pem_sea = 1;
 
         /* Parse the data card. */
-        const int size = json_get_object();
         int i;
-        for (i = 0; i < size; i++) {
-                const char * field = json_get_string();
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
+                char * field;
+                jsmn_tea_next_string(tea, 1, &field);
                 if (strcmp(field, "sea") == 0)
-                        pem_sea = json_get_bool(field);
+                        jsmn_tea_next_bool(tea, &pem_sea);
                 else {
-                        fprintf(stderr, string_key_error, __FILE__, __LINE__,
-                            "earth-model", card.path);
-                        gracefully_exit(EXIT_FAILURE);
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
+                            EINVAL, "[%s #%d] invalid key `%s`", card_path,
+                            tea->index, field);
                 }
         }
         return pem_sea;
@@ -504,24 +352,24 @@ static int card_update_pem(void)
 /* Update DANTON's configuration according to the content of the data card. */
 static void card_update(int * n_events, int * n_requested, int * pem_sea)
 {
-        /* Check that the root is a dictionary. */
-        json_get_object();
-
         /* Loop over the fields. */
-        while (card.cursor < card.n_tokens) {
-                const char * tag = json_get_string();
+        int i;
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
+                char * tag;
+                jsmn_tea_next_string(tea, 1, &tag);
                 if (strcmp(tag, "events") == 0)
-                        *n_events = json_get_int(tag);
+                        jsmn_tea_next_number(tea, JSMN_TEA_TYPE_INT, n_events);
                 else if (strcmp(tag, "requested") == 0)
-                        *n_requested = json_get_int(tag);
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_INT, n_requested);
                 else if (strcmp(tag, "output-file") == 0)
                         card_update_recorder();
                 else if (strcmp(tag, "mode") == 0)
                         card_update_mode();
                 else if (strcmp(tag, "decay") == 0)
-                        context->decay = json_get_bool(tag);
+                        jsmn_tea_next_bool(tea, &context->decay);
                 else if (strcmp(tag, "longitudinal") == 0)
-                        context->longitudinal = json_get_bool(tag);
+                        jsmn_tea_next_bool(tea, &context->longitudinal);
                 else if (strcmp(tag, "particle-sampler") == 0)
                         card_update_sampler();
                 else if (strcmp(tag, "primary-flux") == 0)
@@ -529,15 +377,20 @@ static void card_update(int * n_events, int * n_requested, int * pem_sea)
                 else if (strcmp(tag, "earth-model") == 0)
                         *pem_sea = card_update_pem();
                 else {
-                        fprintf(stderr, string_key_error, __FILE__, __LINE__,
-                            tag, card.path);
-                        gracefully_exit(EXIT_FAILURE);
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
+                            EINVAL, "[%s #%d] invalid key `%s`", card_path,
+                            tea->index, tag);
                 }
         }
 }
 
 int main(int argc, char * argv[])
 {
+        /* Configure the error handler. */
+        errno = 0;
+        handler.stream = stderr;
+        handler.post = &handle_post_error;
+
         /* If no data card was provided let us show the help message and
          * exit.
          */
@@ -545,36 +398,39 @@ int main(int argc, char * argv[])
 
         /* Initialise DANTON. */
         if (danton_initialise(NULL, NULL, NULL) != EXIT_SUCCESS) {
-                fprintf(stderr, "%s\n", danton_error_pop(NULL));
-                exit(EXIT_FAILURE);
+                ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
+                    danton_error_pop(NULL));
         }
 
         /* Create a simulation context. */
         context = danton_context_create();
         if (context == NULL) {
-                fprintf(stderr, "%s\n", danton_error_pop(NULL));
-                exit(EXIT_FAILURE);
+                ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
+                    danton_error_pop(NULL));
         }
 
-        /* Load the card from the disk. */
-        card_load(argv[1]);
-
-        /* Set the input arguments from the JSON card. */
+        /* Set the input arguments from the JSON card(s). */
         int n_events = 10000, n_requested = 0, pem_sea = 1;
-        card_update(&n_events, &n_requested, &pem_sea);
+        for (argv++; *argv != NULL; argv++) {
+                tea = jsmn_tea_create(*argv, JSMN_TEA_MODE_LOAD, &handler);
+                card_path = *argv;
+                card_update(&n_events, &n_requested, &pem_sea);
+                jsmn_tea_destroy(&tea);
+        }
 
         /* Configure the Earth model. */
         if (!pem_sea) danton_pem_dry();
 
         /* Update the particle sampler. */
         if (danton_sampler_update(context->sampler) != EXIT_SUCCESS) {
-                fprintf(stderr, "%s\n", danton_error_pop(NULL));
-                exit(EXIT_FAILURE);
+                ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
+                    danton_error_pop(NULL));
         }
 
         /* Run the simulation. */
         if (danton_run(context, n_events, n_requested) != EXIT_SUCCESS)
-                fprintf(stderr, "%s\n", danton_error_pop(context));
+                ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
+                    danton_error_pop(context));
 
         /* Finalise and exit to the OS. */
         gracefully_exit(EXIT_SUCCESS);

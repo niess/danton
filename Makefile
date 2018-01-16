@@ -1,13 +1,14 @@
-DEPS_DIR := deps
-LIB_DIR := lib
-PDF_DIR := $(abspath deps/ent/data/pdf)
+export DEPS_DIR := $(PWD)/deps
+export LIB_DIR := lib
+export PDF_DIR := $(abspath deps/ent/data/pdf)
 
 CFLAGS := -O2 -std=c99 -pedantic -Wall
-INCLUDE := -Iinclude -I$(DEPS_DIR)/ent/include -I$(DEPS_DIR)/pumas/include \
-	-I$(DEPS_DIR)/alouette/include -I$(DEPS_DIR)/jsmn
-DANTON_SRC := src/danton.c src/danton/recorder/text.c \
+INCLUDE := -Iinclude -I$(DEPS_DIR)/ent/include -I$(DEPS_DIR)/pumas/include     \
+	-I$(DEPS_DIR)/alouette/include -I$(DEPS_DIR)/jsmn                      \
+	-I$(DEPS_DIR)/jsmn-tea/include -I$(DEPS_DIR)/roar/include
+DANTON_SRC := src/danton.c src/danton/recorder/text.c                          \
 	src/danton/primary/discrete.c src/danton/primary/powerlaw.c
-DANTON_INC := include/danton.h include/danton/recorder/text.h \
+DANTON_INC := include/danton.h include/danton/recorder/text.h                  \
 	include/danton/primary/discrete.h include/danton/primary/powerlaw.h
 
 .PHONY: bin clean lib
@@ -17,13 +18,13 @@ bin: lib bin/danton
 clean:
 	@rm -rf bin lib/*.so lib/*.a
 
-lib: lib/libalouette.so lib/libdanton.so lib/libent.so lib/libjsmn.a           \
+lib: lib/libalouette.so lib/libdanton.so lib/libent.so lib/libjsmn-tea.a       \
 	lib/libpumas.so
 
 bin/danton: src/danton-x.c
 	@mkdir -p bin
 	@gcc -o $@ $(CFLAGS) $(INCLUDE) $< -Llib -ldanton -L$(LIB_DIR)         \
-		-lalouette -ldanton -lent -ljsmn -lpumas -lm
+		-lalouette -ldanton -lent -ljsmn-tea -lpumas -lm
 
 lib/libdanton.so: $(DANTON_SRC) $(DANTON_INC)
 	@gcc -o $@ $(CFLAGS) -DPDF_DIR="\"$(PDF_DIR)\"" $(INCLUDE) -fPIC       \
@@ -39,6 +40,5 @@ endef
 lib/lib%.so: deps/%/src deps/%/include
 	@$(call build_library,$*,,lib,so)
 
-lib/libjsmn.a: deps/jsmn/jsmn.h
-	@$(call build_library,jsmn,libjsmn.a,.,a)
-	@$(MAKE) --directory="$(DEPS_DIR)/jsmn" clean
+lib/libjsmn-tea.a: deps/jsmn-tea/src deps/jsmn-tea/include
+	@$(call build_library,jsmn-tea,static,lib,a)

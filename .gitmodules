@@ -10,3 +10,9 @@
 [submodule "jsmn"]
 	path = deps/jsmn
 	url = https://github.com/zserge/jsmn.git
+[submodule "jsmn-tea"]
+	path = deps/jsmn-tea
+	url = https://github.com/niess/jsmn-tea.git
+[submodule "roar"]
+	path = deps/roar
+	url = https://github.com/niess/roar.git
