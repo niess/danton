@@ -16,3 +16,9 @@
 [submodule "roar"]
 	path = deps/roar
 	url = https://github.com/niess/roar.git
+[submodule "turtle"]
+	path = deps/turtle
+	url = https://github.com/niess/turtle
+[submodule "tinydir"]
+	path = deps/tinydir
+	url = https://github.com/cxong/tinydir.git

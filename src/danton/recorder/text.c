@@ -82,9 +82,8 @@ static void format_state(FILE * stream, long index, const int * pid,
                 fprintf(stream, "%4d ", *pid);
         else
                 fprintf(stream, "%4c ", ' ');
-        fprintf(stream,
-            "%12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
-            "%13.3lf %13.3lf",
+        fprintf(stream, "%12.5lE %12.5lE %12.5lE %12.5lE %13.3lf "
+                        "%13.3lf %13.3lf",
             state->energy, state->direction[0], state->direction[1],
             state->direction[2], state->position[0], state->position[1],
             state->position[2]);

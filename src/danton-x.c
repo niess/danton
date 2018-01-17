@@ -181,8 +181,12 @@ static void card_update_sampler(void)
                         ROAR_ERRWP_MESSAGE(&handler, &card_update_sampler, -1,
                             "danton error", danton_error_pop(NULL));
                 }
+                sampler->latitude = 45.;
+                sampler->longitude = 0.;
                 sampler->altitude[0] = 1E-03;
                 sampler->altitude[1] = 1E+04;
+                sampler->azimuth[0] = -180.;
+                sampler->azimuth[1] = 180.;
                 sampler->elevation[0] = -10.;
                 sampler->elevation[1] = 10.;
                 sampler->energy[0] = 1E+06;
@@ -195,8 +199,16 @@ static void card_update_sampler(void)
         for (jsmn_tea_next_object(tea, &i); i; i--) {
                 char * tag;
                 jsmn_tea_next_string(tea, 1, &tag);
-                if (strcmp(tag, "altitude") == 0)
+                if (strcmp(tag, "latitude") == 0)
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &sampler->latitude);
+                else if (strcmp(tag, "longitude") == 0)
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &sampler->longitude);
+                else if (strcmp(tag, "altitude") == 0)
                         card_get_range(tag, sampler->altitude);
+                else if (strcmp(tag, "azimuth") == 0)
+                        card_get_range(tag, sampler->azimuth);
                 else if (strcmp(tag, "elevation") == 0)
                         card_get_range(tag, sampler->elevation);
                 else if (strcmp(tag, "energy") == 0)
@@ -328,29 +340,53 @@ static void card_update_primary(void)
 }
 
 /* Update the Earth model according to the data card. */
-static int card_update_pem(void)
+static void card_update_earth_model(void)
 {
-        /* Default Earth configuration. */
-        int pem_sea = 1;
+        /* Set the default parameter values. */
+        char * geodesic = NULL;
+        char * topography = NULL;
+        char * material = NULL;
+        double density = 0.;
+        int stack_size = 0;
+        int sea = -1;
 
         /* Parse the data card. */
         int i;
         for (jsmn_tea_next_object(tea, &i); i; i--) {
                 char * field;
                 jsmn_tea_next_string(tea, 1, &field);
-                if (strcmp(field, "sea") == 0)
-                        jsmn_tea_next_bool(tea, &pem_sea);
+                if (strcmp(field, "geodesic") == 0)
+                        jsmn_tea_next_string(tea, 0, &geodesic);
+                else if (strcmp(field, "topography") == 0) {
+                        handler.pre = catch_error;
+                        int size, jrc = jsmn_tea_next_array(tea, &size);
+                        handler.pre = NULL;
+                        jsmn_tea_next_string(tea, 0, &topography);
+                        if ((jrc == JSMN_SUCCESS) && (size >= 2))
+                                jsmn_tea_next_number(
+                                    tea, JSMN_TEA_TYPE_INT, &stack_size);
+                } else if (strcmp(field, "material") == 0)
+                        jsmn_tea_next_string(tea, 0, &material);
+                else if (strcmp(field, "sea") == 0)
+                        jsmn_tea_next_bool(tea, &sea);
                 else {
-                        ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_earth_model,
                             EINVAL, "[%s #%d] invalid key `%s`", card_path,
                             tea->index, field);
                 }
         }
-        return pem_sea;
+
+        /* Configure the Earth model. */
+        int * ptr_sea = (sea >= 0) ? &sea : NULL;
+        if (danton_earth_model(geodesic, topography, stack_size, material,
+                density, ptr_sea) != EXIT_SUCCESS) {
+                ROAR_ERRWP_MESSAGE(&handler, &card_update_earth_model, -1,
+                    "danton error", danton_error_pop(NULL));
+        }
 }
 
 /* Update DANTON's configuration according to the content of the data card. */
-static void card_update(int * n_events, int * n_requested, int * pem_sea)
+static void card_update(int * n_events, int * n_requested)
 {
         /* Loop over the fields. */
         int i;
@@ -375,7 +411,7 @@ static void card_update(int * n_events, int * n_requested, int * pem_sea)
                 else if (strcmp(tag, "primary-flux") == 0)
                         card_update_primary();
                 else if (strcmp(tag, "earth-model") == 0)
-                        *pem_sea = card_update_pem();
+                        card_update_earth_model();
                 else {
                         ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
                             EINVAL, "[%s #%d] invalid key `%s`", card_path,
@@ -410,16 +446,13 @@ int main(int argc, char * argv[])
         }
 
         /* Set the input arguments from the JSON card(s). */
-        int n_events = 10000, n_requested = 0, pem_sea = 1;
+        int n_events = 10000, n_requested = 0;
         for (argv++; *argv != NULL; argv++) {
                 tea = jsmn_tea_create(*argv, JSMN_TEA_MODE_LOAD, &handler);
                 card_path = *argv;
-                card_update(&n_events, &n_requested, &pem_sea);
+                card_update(&n_events, &n_requested);
                 jsmn_tea_destroy(&tea);
         }
-
-        /* Configure the Earth model. */
-        if (!pem_sea) danton_pem_dry();
 
         /* Update the particle sampler. */
         if (danton_sampler_update(context->sampler) != EXIT_SUCCESS) {

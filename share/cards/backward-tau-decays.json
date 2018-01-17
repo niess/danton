@@ -7,10 +7,17 @@
         "longitudinal" : false,
         "decay" : true,
 
-        "earth-model" : { "sea" : true },
+        "earth-model" : {
+                "geodesic" : "PREM",
+                "topography" : "flat://0",
+                "material" : "Rock",
+                "sea" : true },
 
         "particle-sampler" : {
-                "altitude" : 0,
+                "latitude" :  45.0,
+                "longitude" : 3.0,
+                "altitude" : 0.0,
+                "azimuth" : [ -180.0, 180.0 ],
                 "elevation" : 1.0,
                 "energy" : 1E+09,
                 "weight" : { "tau" : 1.0 }

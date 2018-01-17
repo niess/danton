@@ -87,8 +87,14 @@ struct danton_primary {
  * use.
  */
 struct danton_sampler {
+        /** The latitude at which events are sampled, in deg. */
+        double latitude;
+        /** The longitude at which events are sampled, in deg. */
+        double longitude;
         /** The altitude range over which events are sampled, in m. */
         double altitude[2];
+        /** The azimuth angle range of the final state, in deg. */
+        double azimuth[2];
         /** The elevation angle range of the final state, in deg. */
         double elevation[2];
         /** The energy range of the final state, in GeV. */
@@ -293,9 +299,44 @@ DANTON_API void danton_finalise(void);
 DANTON_API void danton_destroy(void ** any);
 
 /**
- * Replace the sea layer of the PEM with Standard Rock.
+ * Set or update the global Earth model.
+ *
+ * @param geodesic   The reference geodesic model, or `ǸULL`.
+ * @param topography Topography model, path to any topographic data, or `ǸULL`.
+ * @param stack_size The stack size for tiles when using a detailed topography.
+ * @param material   Material for the topography.
+ * @param density    Density of the topography material in kg / m^3.
+ * @param sea        Pointer to a flag to enable or disable sea(s), or `NULL`.
+ * @return           `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ *
+ * __Warning__ : this function is **not** thread safe. It sets the Earth
+ * model globally.
+ *
+ * The default Earth model is the Preliminary Reference Earth Model, i.e. a
+ * spherical Earth fully covered with a 3km deep sea.
+ *
+ * The supported *geodesic* values are:
+ *   - PREM (spherical)
+ *   - WGS84 (GPS ellipsoid)
+ *
+ * The *topography* parameter can either specify a path to topographic data
+ * (ASTER-GDEM2 compatible tiles) or encode a flat topography as `flat://${z}`,
+ * where `${z}` is the constant altitude above sea level, in meters, e.g.
+ * `flat://1000` for a 1km high cover.
+ *
+ * __Note__ : specifying a detailed topography requires the WGS 84 geodetic
+ * system to be used.
+ *
+ * The topography *material* must match one of the materials defined in the xml
+ * PUMAS Materials Definition File (MDF). If `NULL` is given the material is
+ * left unchanged. It defaults to Rock.
+ *
+ * If a null or negative density is provided the material density is left
+ * unchanged. It defaults to 2.65 g / cm^3.
  */
-DANTON_API void danton_pem_dry(void);
+DANTON_API int danton_earth_model(const char * geodesic,
+    const char * topography, int stack_size, const char * material,
+    double density, int * sea);
 
 /**
  * Get the PDG particle number for a given DANTON particle index.

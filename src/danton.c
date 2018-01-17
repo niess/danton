@@ -34,6 +34,7 @@
 #include "danton.h"
 #include "ent.h"
 #include "pumas.h"
+#include "turtle.h"
 
 /* The spherical Earth radius, in m. */
 #define EARTH_RADIUS 6371.E+03
@@ -240,6 +241,21 @@ struct generic_state {
         int has_crossed;
         int cross_count;
 };
+
+/* Supported geodesics for the Earth model */
+enum earth_geodesic { EARTH_GEODESIC_PREM = 0, EARTH_GEODESIC_WGS84 };
+
+/* Global settings for the Earth model. */
+static struct {
+        enum earth_geodesic geodesic;
+        struct turtle_datum * datum;
+        int stack_size;
+        double z0;
+        int is_flat;
+        int material;
+        double density;
+        int sea;
+} earth = { EARTH_GEODESIC_PREM, NULL, 16, 0., 1, 0, 2.65E+03, 1 };
 
 /* Density callbacks for ENT. */
 #define DENSITY(MODEL, INDEX)                                                  \
@@ -459,10 +475,11 @@ static void random_initialise(struct simulation_context * context)
         context->random_mt.data[0] = seed & 0xffffffffUL;
         int j;
         for (j = 1; j < MT_PERIOD; j++) {
-                context->random_mt.data[j] = (1812433253UL *
-                        (context->random_mt.data[j - 1] ^
-                            (context->random_mt.data[j - 1] >> 30)) +
-                    j);
+                context->random_mt.data[j] =
+                    (1812433253UL *
+                            (context->random_mt.data[j - 1] ^
+                                (context->random_mt.data[j - 1] >> 30)) +
+                        j);
                 context->random_mt.data[j] &= 0xffffffffUL;
         }
         context->random_mt.index = MT_PERIOD;
@@ -1163,6 +1180,12 @@ static int transport_backward(
             __LINE__, pumas_error_function((pumas_function_t *)&function),     \
             pumas_error_string(rc))
 
+/* Shortcut for dumping a TURTLE error. */
+#define ERROR_TURTLE(context, rc, function)                                    \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
+            __LINE__, turtle_strfunc((turtle_caller_t *)&function),            \
+            turtle_strerror(rc))
+
 /* Loader for PUMAS. */
 static int load_pumas(struct danton_context * context)
 {
@@ -1242,6 +1265,16 @@ static int initialise_physics(struct danton_context * context)
         return EXIT_SUCCESS;
 }
 
+static void topography_initialise(void)
+{
+        static int initialised = 0;
+        if (initialised) return;
+
+        /* Initialise TURTLE. */
+        turtle_initialise(NULL);
+        initialised = 1;
+}
+
 /* Initialise the DANTON library. */
 int danton_initialise(
     const char * pdf, danton_lock_cb * lock_, danton_lock_cb * unlock_)
@@ -1263,7 +1296,7 @@ int danton_initialise(
                 memcpy(pdf_path, pdf, n);
         }
 
-        /* Check and update the lock callbaks. */
+        /* Check and update the lock callbacks. */
         if (((lock_ == NULL) && (unlock_ != NULL)) ||
             ((lock_ != NULL) && (unlock_ == NULL))) {
                 danton_error_push(NULL,
@@ -1285,6 +1318,7 @@ void danton_finalise(void)
         ent_physics_destroy(&physics);
         pumas_finalise();
         alouette_finalise();
+        turtle_finalise();
 }
 
 /* Destroy any memory flat object. */
@@ -1294,11 +1328,101 @@ void danton_destroy(void ** any)
         *any = NULL;
 }
 
-/* Replace the sea layer of the PEM with standard rock. */
-void danton_pem_dry(void)
+/* Set the global Earth model. */
+int danton_earth_model(const char * geodesic, const char * topography,
+    int stack_size, const char * material, double density, int * sea)
 {
-        memcpy(media_ent + 9, media_ent + 8, sizeof(*media_ent));
-        memcpy(media_pumas + 9, media_pumas + 8, sizeof(*media_pumas));
+        /* Parse the geodesic. */
+        if (geodesic != NULL) {
+                if (strcmp(geodesic, "PREM") == 0) {
+                        earth.geodesic = EARTH_GEODESIC_PREM;
+                } else if (strcmp(geodesic, "WGS84") == 0) {
+                        earth.geodesic = EARTH_GEODESIC_WGS84;
+                } else {
+                        danton_error_push(NULL,
+                            "%s (%d): unknown geodesic `%s`", __FILE__,
+                            __LINE__, geodesic);
+                        return EXIT_FAILURE;
+                }
+        }
+
+        /* Parse the stcak size. */
+        if (stack_size > 0) earth.stack_size = stack_size;
+
+        /* Parse the topography. */
+        if (topography != NULL) {
+                turtle_datum_destroy(&earth.datum);
+                if (strncmp(topography, "flat://", 7) == 0) {
+                        const char * nptr = topography + 7;
+                        char * endptr;
+                        errno = 0;
+                        earth.z0 = strtod(nptr, &endptr);
+                        earth.is_flat = 1;
+                        if ((errno != 0) || (endptr == nptr)) {
+                                danton_error_push(NULL,
+                                    "%s (%d): invalid topography `%s`",
+                                    __FILE__, __LINE__, topography);
+                                return EXIT_FAILURE;
+                        }
+                } else {
+                        if ((geodesic != NULL) &&
+                            (earth.geodesic != EARTH_GEODESIC_WGS84)) {
+                                danton_error_push(NULL,
+                                    "%s (%d): geodesic must be `WGS84` when "
+                                    "specifying a detailed topography",
+                                    __FILE__, __LINE__);
+                                return EXIT_FAILURE;
+                        }
+                        topography_initialise();
+                        enum turtle_return rc;
+                        if ((rc = turtle_datum_create(topography,
+                                 earth.stack_size, lock, unlock,
+                                 &earth.datum)) != TURTLE_RETURN_SUCCESS) {
+                                ERROR_TURTLE(NULL, rc, turtle_datum_create);
+                        }
+                        earth.geodesic = EARTH_GEODESIC_WGS84;
+                        earth.is_flat = 0;
+                }
+        }
+
+        /* Ensure that there is a datum if WGS 84 is selected or clear it
+         * otherwise.
+         */
+        if (geodesic != NULL) {
+                if ((earth.geodesic == EARTH_GEODESIC_WGS84) &&
+                    (earth.datum == NULL)) {
+                        topography_initialise();
+                        enum turtle_return rc;
+                        if ((rc = turtle_datum_create(NULL, 1, lock, unlock,
+                                 &earth.datum)) != TURTLE_RETURN_SUCCESS) {
+                                ERROR_TURTLE(NULL, rc, turtle_datum_create);
+                        }
+                } else if ((earth.geodesic == EARTH_GEODESIC_PREM) &&
+                    (earth.datum != NULL)) {
+                        topography_initialise();
+                        turtle_datum_destroy(&earth.datum);
+                }
+        }
+
+        /* Parse the topography material. */
+        if (material != NULL) {
+                if (strcmp(material, "Rock") == 0)
+                        earth.material = 0;
+                else {
+                        danton_error_push(NULL,
+                            "%s (%d): Unknown material `%s`", __FILE__,
+                            __LINE__, material);
+                        return EXIT_FAILURE;
+                }
+        }
+
+        /* Parse the topography density. */
+        if (density > 0.) earth.density = density;
+
+        /* Set the sea flag. */
+        if (sea != NULL) earth.sea = *sea;
+
+        return EXIT_SUCCESS;
 }
 
 /* Low level data structure for an event sampler. */
@@ -1326,7 +1450,8 @@ struct danton_sampler * danton_sampler_create(void)
         return &sampler->api;
 }
 
-/* Bernstein's djb2 hash function, from http://www.cse.yorku.ca/~oz/hash.html.
+/* Bernstein's djb2 hash function, from
+ * http://www.cse.yorku.ca/~oz/hash.html.
  */
 static unsigned long hash(unsigned char * str)
 {
@@ -1421,7 +1546,8 @@ struct danton_context * danton_context_create(void)
         /* Initialise the random engine. */
         random_initialise(context);
 
-        /* Initialise the Monte-Carlo contexts and the recorder. */
+        /* Initialise the Monte-Carlo contexts and the recorder.
+         */
         context->ent.medium = &medium_ent;
         context->ent.random = &random_ent;
         context->ent.ancestor = NULL;
@@ -1444,7 +1570,9 @@ struct danton_context * danton_context_create(void)
         context->api.sampler = NULL;
         context->api.recorder = NULL;
 
-        /* The lower (upper) energy bound under (above) which all particles are
+        /* The lower (upper) energy bound under (above) which
+         * all
+         * particles are
          * killed.
          */
         context->energy_cut = -1;
@@ -1551,7 +1679,8 @@ int danton_run(struct danton_context * context, long events, long requested)
         struct danton_sampler * sampler = context->sampler;
         struct event_sampler * sampler_ = (struct event_sampler *)sampler;
 
-        /* Check and configure the context according to the API. */
+        /* Check and configure the context according to the API.
+         */
         if (sampler == NULL) {
                 danton_error_push(context, "%s (%d): no sampler was provided.",
                     __FILE__, __LINE__);
@@ -1581,7 +1710,8 @@ int danton_run(struct danton_context * context, long events, long requested)
                         events = 1;
                 else if (events < 2) {
                         danton_error_push(context,
-                            "%s (%d): numbers of bins must be 2 or "
+                            "%s (%d): numbers of bins must be "
+                            "2 or "
                             "more.",
                             __FILE__, __LINE__);
                         return EXIT_FAILURE;
@@ -1601,18 +1731,22 @@ int danton_run(struct danton_context * context, long events, long requested)
                         if (sampler_->neutrino_weight ==
                             sampler_->total_weight) {
                                 danton_error_push(context,
-                                    "%s (%d): no tau(s) target to decay.",
+                                    "%s (%d): no tau(s) target "
+                                    "to "
+                                    "decay.",
                                     __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
                         if (context->mode == DANTON_MODE_FORWARD) {
                                 if (sampler_->neutrino_weight > 0.) {
                                         danton_error_push(context,
-                                            "%s (%d): combining "
+                                            "%s (%d): "
+                                            "combining "
                                             "neutrino(s) and "
                                             "tau(s) "
                                             "sampling is not "
-                                            "supported in forward "
+                                            "supported in "
+                                            "forward "
                                             "mode.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
@@ -1621,7 +1755,9 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 if (sampler->altitude[0] ==
                                     sampler->altitude[1]) {
                                         danton_error_push(context,
-                                            "%s (%d): no altitude range for "
+                                            "%s (%d): no "
+                                            "altitude "
+                                            "range for "
                                             "tau(s) decays.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
@@ -1653,8 +1789,11 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 is_primary = 1;
                                 if ((*p)->energy[0] > (*p)->energy[1]) {
                                         danton_error_push(context,
-                                            "%s (%d): invalid energy range for "
-                                            "primary flux (pid = %d).",
+                                            "%s (%d): invalid "
+                                            "energy "
+                                            "range for "
+                                            "primary flux (pid "
+                                            "= %d).",
                                             __FILE__, __LINE__,
                                             danton_particle_pdg(j));
                                         return EXIT_FAILURE;
@@ -1667,13 +1806,17 @@ int danton_run(struct danton_context * context, long events, long requested)
                         return EXIT_FAILURE;
                 }
 
-                /* Initialise the Physic engines, if not already done. */
+                /* Initialise the Physic engines, if not already
+                 * done.
+                 */
                 if (physics == NULL) {
                         if (initialise_physics(context) != EXIT_SUCCESS)
                                 return EXIT_FAILURE;
                 }
                 if (context_->pumas == NULL) {
-                        /* Create PUMAS context, if not already done.. */
+                        /* Create PUMAS context, if not already
+                         * done..
+                         */
                         enum pumas_return rc;
                         if ((rc = pumas_context_create(0, &context_->pumas)) !=
                             PUMAS_RETURN_SUCCESS) {
@@ -1686,14 +1829,16 @@ int danton_run(struct danton_context * context, long events, long requested)
                 }
                 context_->pumas->longitudinal = context->longitudinal;
 
-                /* Create the event record, if not already done. */
+                /* Create the event record, if not already done.
+                 */
                 if (context_->record == NULL) {
                         const int buffer_size = 10;
                         context_->record = malloc(sizeof(*context_->record) +
                             buffer_size * sizeof(*context_->record->product));
                         if (context_->record == NULL) {
-                                danton_error_push(context,
-                                    "%s (%d): could not allocate memory.",
+                                danton_error_push(context, "%s (%d): could not "
+                                                           "allocate "
+                                                           "memory.",
                                     __FILE__, __LINE__);
                                 exit(EXIT_FAILURE);
                         }
@@ -1701,7 +1846,9 @@ int danton_run(struct danton_context * context, long events, long requested)
                         context_->record->api.vertex = NULL;
                 }
 
-                /* Configure the event record. TODO: according to options. */
+                /* Configure the event record. TODO: according
+                 * to
+                 * options. */
                 context_->record->api.primary = &context_->record->primary;
                 context_->record->api.final = &context_->record->final;
         }
@@ -1713,7 +1860,8 @@ int danton_run(struct danton_context * context, long events, long requested)
 
         /* Run the simulation. */
         if (context->mode == DANTON_MODE_FORWARD) {
-                /* Check the primary flux and pre-compute some sampling
+                /* Check the primary flux and pre-compute some
+                 * sampling
                  * parameters.
                  */
                 double primary_p[DANTON_PARTICLE_N_NU];
@@ -1748,12 +1896,14 @@ int danton_run(struct danton_context * context, long events, long requested)
 
                 long i;
                 for (i = 0; (i < events) && (n_published < requested); i++) {
-                        /* Sample the primary direction uniformly. */
+                        /* Sample the primary direction
+                         * uniformly. */
                         const double ct = sample_linear(
                             context_, sampler_->cos_theta, i, 0, NULL);
                         const double st = sqrt(1. - ct * ct);
 
-                        /* Sample the primary flavour and its energy. */
+                        /* Sample the primary flavour and its
+                         * energy. */
                         int j;
                         double weight = 0., energy;
                         while (weight == 0.) {
@@ -1802,7 +1952,8 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 return EXIT_FAILURE;
                 }
         } else {
-                /* Run a bunch of backward Monte-Carlo events. */
+                /* Run a bunch of backward Monte-Carlo events.
+                 */
                 context_->ent.ancestor = &ancestor_cb;
                 context_->energy_cut = context->sampler->energy[1];
                 int j;
@@ -1843,7 +1994,8 @@ int danton_run(struct danton_context * context, long events, long requested)
                         }
                         if ((context->mode != DANTON_MODE_GRAMMAGE) &&
                             !context_->flux_neutrino) {
-                                /* This is a particle Monte-Carlo. */
+                                /* This is a particle
+                                 * Monte-Carlo. */
                                 const double charge =
                                     (projectile > 0) ? -1. : 1.;
                                 struct generic_state state = {
@@ -1884,8 +2036,11 @@ int danton_run(struct danton_context * context, long events, long requested)
                                     EXIT_SUCCESS)
                                         return EXIT_FAILURE;
                         } else {
-                                /* This is a grammage scan using a non-
-                                 * interacting neutrino. First let us initialise
+                                /* This is a grammage scan using
+                                 * a non-
+                                 * interacting neutrino. First
+                                 * let us
+                                 * initialise
                                  * the neutrino state.
                                  */
                                 struct generic_state g_state = {
@@ -1903,7 +2058,9 @@ int danton_run(struct danton_context * context, long events, long requested)
                                         .cross_count = 0
                                 };
 
-                                /* Then let us do the transport with ENT. */
+                                /* Then let us do the transport
+                                 * with
+                                 * ENT. */
                                 struct ent_state * state = &g_state.base.ent;
                                 enum ent_event event = ENT_EVENT_NONE;
                                 while (event != ENT_EVENT_EXIT) {
@@ -1911,7 +2068,9 @@ int danton_run(struct danton_context * context, long events, long requested)
                                             state, NULL, &event);
                                 }
 
-                                /* Finally, let us publish the result. */
+                                /* Finally, let us publish the
+                                 * result.
+                                 */
                                 struct danton_grammage g = { 90. -
                                             acos(ct) / M_PI * 180.,
                                         state->grammage };
@@ -1940,7 +2099,8 @@ static struct error_stack * error_stack_get(struct danton_context * context)
         }
 }
 
-/* API function for getting the number of error(s) in the stack. */
+/* API function for getting the number of error(s) in the stack.
+ */
 int danton_error_count(struct danton_context * context)
 {
         struct error_stack * error = error_stack_get(context);
@@ -1963,7 +2123,8 @@ int danton_error_push(struct danton_context * context, const char * format, ...)
         return EXIT_SUCCESS;
 }
 
-/* API function for getting the last error message from the stack. */
+/* API function for getting the last error message from the
+ * stack. */
 const char * danton_error_pop(struct danton_context * context)
 {
         struct error_stack * error = error_stack_get(context);
