@@ -37,7 +37,11 @@
 #include "turtle.h"
 
 /* The spherical Earth radius, in m. */
-#define EARTH_RADIUS 6371.E+03
+#define PREM_EARTH_RADIUS 6371.E+03
+
+/* The WGS 84 ellipsoid parameters, in m. */
+#define WGS84_RADIUS_A 6378137.0
+#define WGS84_RADIUS_B 6356752.314245
 
 /* The radius of the geostationary orbit, in m. */
 #define GEO_ORBIT 42164E+03
@@ -69,76 +73,69 @@ static danton_lock_cb * lock = NULL;
 static danton_lock_cb * unlock = NULL;
 
 /* Density according to the Preliminary Earth Model (PEM). */
-static double pem_model0(double r, double * density)
+static double pem_model0(double x, double * density)
 {
-        const double x = r / EARTH_RADIUS;
         const double a2 = -8.8381E+03;
         *density = 13.0885E+03 + a2 * x * x;
         const double xg = (x <= 5E-02) ? 5E-02 : x;
-        return 0.01 * EARTH_RADIUS / fabs(2. * a2 * xg);
+        return 0.01 * PREM_EARTH_RADIUS / fabs(2. * a2 * xg);
 }
 
-static double pem_model1(double r, double * density)
+static double pem_model1(double x, double * density)
 {
-        const double x = r / EARTH_RADIUS;
         const double a = 1.2638E+03;
         *density = 12.58155E+03 + x * (-a + x * (-3.6426E+03 - x * 5.5281E+03));
-        return 0.01 * EARTH_RADIUS / a;
+        return 0.01 * PREM_EARTH_RADIUS / a;
 }
 
-static double pem_model2(double r, double * density)
+static double pem_model2(double x, double * density)
 {
-        const double x = r / EARTH_RADIUS;
         const double a = 6.4761E+03;
         *density = 7.9565E+03 + x * (-a + x * (5.5283E+03 - x * 3.0807E+03));
-        return 0.01 * EARTH_RADIUS / a;
+        return 0.01 * PREM_EARTH_RADIUS / a;
 }
 
-static double pem_model3(double r, double * density)
+static double pem_model3(double x, double * density)
 {
-        const double x = r / EARTH_RADIUS;
         const double a = 1.4836E+03;
         *density = 5.3197E+03 - a * x;
-        return 0.01 * EARTH_RADIUS / a;
+        return 0.01 * PREM_EARTH_RADIUS / a;
 }
 
-static double pem_model4(double r, double * density)
+static double pem_model4(double x, double * density)
 {
-        const double x = r / EARTH_RADIUS;
         const double a = 8.0298E+03;
         *density = 11.2494E+03 - a * x;
-        return 0.01 * EARTH_RADIUS / a;
+        return 0.01 * PREM_EARTH_RADIUS / a;
 }
 
-static double pem_model5(double r, double * density)
+static double pem_model5(double x, double * density)
 {
-        const double x = r / EARTH_RADIUS;
         const double a = 3.8045E+03;
         *density = 7.1089E+03 - a * x;
-        return 0.01 * EARTH_RADIUS / a;
+        return 0.01 * PREM_EARTH_RADIUS / a;
 }
 
-static double pem_model6(double r, double * density)
+static double pem_model6(double x, double * density)
 {
-        const double x = r / EARTH_RADIUS;
         const double a = 0.6924E+03;
         *density = 2.691E+03 + a * x;
-        return 0.01 * EARTH_RADIUS / a;
+        return 0.01 * PREM_EARTH_RADIUS / a;
 }
 
-static double pem_model7(double r, double * density)
+static double pem_model7(double x, double * density)
 {
         *density = 2.9E+03;
         return 0.;
 }
 
-static double pem_model8(double r, double * density)
+static double pem_model8(double x, double * density)
 {
         *density = 2.6E+03;
         return 0.;
 }
 
-static double pem_model9(double r, double * density)
+static double pem_model9(double x, double * density)
 {
         *density = 1.02E+03;
         return 0.;
@@ -146,9 +143,9 @@ static double pem_model9(double r, double * density)
 
 /* The U.S. standard atmosphere model. */
 #define USS_MODEL(INDEX, B, C)                                                 \
-        static double uss_model##INDEX(double r, double * density)             \
+        static double uss_model##INDEX(double x, double * density)             \
         {                                                                      \
-                *density = B / C * exp(-(r - EARTH_RADIUS) / C);               \
+                *density = B / C * exp(-(x - 1.) * PREM_EARTH_RADIUS / C);     \
                 return 0.01 * C;                                               \
         }
 
@@ -158,7 +155,7 @@ USS_MODEL(2, 13055.948, 6361.4304)
 USS_MODEL(3, 5401.778, 7721.7016)
 
 /* Outer space density model. */
-static double space_model0(double r, double * density)
+static double space_model0(double x, double * density)
 {
         *density = 1.E-21; /* ~10^6 H per m^-3. */
         return 0.;
@@ -235,7 +232,7 @@ struct generic_state {
         struct simulation_context * context;
         int medium;
         double density;
-        double r;
+        double x;
         int is_tau;
         int is_inside;
         int has_crossed;
@@ -257,13 +254,32 @@ static struct {
         int sea;
 } earth = { EARTH_GEODESIC_PREM, NULL, 16, 0., 1, 0, 2.65E+03, 1 };
 
+/* ENT density callback for the topography. */
+static double density_topography(
+    struct ent_medium * medium, struct ent_state * state, double * density)
+{
+        struct generic_state * s = (struct generic_state *)state;
+        *density = s->density = earth.density;
+        return 0.;
+}
+
+/* PUMAS locals callbacks for the topography. */
+static double locals_topography(struct pumas_medium * medium,
+    struct pumas_state * state, struct pumas_locals * locals)
+{
+        memset(locals->magnet, 0x0, sizeof(locals->magnet));
+        struct generic_state * s = (struct generic_state *)state;
+        s->density = locals->density = earth.density;
+        return 0.;
+}
+
 /* Density callbacks for ENT. */
 #define DENSITY(MODEL, INDEX)                                                  \
         static double density_##MODEL##INDEX(struct ent_medium * medium,       \
             struct ent_state * state, double * density)                        \
         {                                                                      \
                 struct generic_state * s = (struct generic_state *)state;      \
-                const double step = MODEL##_model##INDEX(s->r, density);       \
+                const double step = MODEL##_model##INDEX(s->x, density);       \
                 s->density = *density;                                         \
                 return step;                                                   \
         }
@@ -291,7 +307,7 @@ DENSITY(space, 0)
         {                                                                      \
                 struct generic_state * s = (struct generic_state *)state;      \
                 const double step =                                            \
-                    MODEL##_model##INDEX(s->r, &locals->density);              \
+                    MODEL##_model##INDEX(s->x, &locals->density);              \
                 memset(locals->magnet, 0x0, sizeof(locals->magnet));           \
                 s->density = locals->density;                                  \
                 return step;                                                   \
@@ -313,6 +329,95 @@ LOCALS(uss, 2)
 LOCALS(uss, 3)
 LOCALS(space, 0)
 
+/* Helper function for computing the altitude. */
+static double compute_altitude(double x, const double * position)
+{
+        if (earth.geodesic == EARTH_GEODESIC_PREM)
+                return (x - 1.) * PREM_EARTH_RADIUS;
+
+        double altitude;
+        turtle_datum_geodetic(
+            earth.datum, (double *)position, NULL, NULL, &altitude);
+        return altitude;
+}
+
+/* Helper function for computing ECEF coordinates. */
+static void compute_ecef_position(
+    double latitude, double longitude, double altitude, double * ecef)
+{
+        if (earth.geodesic == EARTH_GEODESIC_PREM) {
+                const double deg = M_PI / 180.;
+                const double theta = (90. - latitude) * deg;
+                const double phi = longitude * deg;
+                const double s = sin(theta);
+                ecef[0] = PREM_EARTH_RADIUS * s * cos(phi);
+                ecef[1] = PREM_EARTH_RADIUS * s * sin(phi);
+                ecef[2] = PREM_EARTH_RADIUS * cos(theta);
+        } else {
+                turtle_datum_ecef(
+                    earth.datum, latitude, longitude, altitude, ecef);
+        }
+}
+
+/* Helper function for computing ECEF direction from horizontal angular
+ * coordinates.
+ */
+static void compute_ecef_direction(
+    double latitude, double longitude, double azimuth, double c, double * ecef)
+{
+        if (earth.geodesic == EARTH_GEODESIC_PREM) {
+                /* Compute the rotation matrix from local to ECEF. */
+                const double deg = M_PI / 180.;
+                const double theta = (90. - latitude) * deg;
+                const double phi = longitude * deg;
+                const double st = sin(theta);
+                const double ct = cos(theta);
+                const double sp = sin(phi);
+                const double cp = cos(phi);
+
+                const double R[3][3] = { { ct * cp, ct * sp, -st },
+                        { -sp, cp, 0. }, { st * cp, st * sp, ct } };
+
+                /* Compute the local direction. */
+                const double p = (90. - azimuth) * deg;
+                const double s = sqrt(1. - c * c);
+                const double u[3] = { s * cos(p), s * sin(p), c };
+
+                /* Apply the rotation. */
+                ecef[0] = R[0][0] * u[0] + R[1][0] * u[1] + R[2][0] * u[2];
+                ecef[1] = R[0][1] * u[0] + R[1][1] * u[1] + R[2][1] * u[2];
+                ecef[2] = R[0][2] * u[0] + R[1][2] * u[1] + R[2][2] * u[2];
+        } else {
+                const double elevation = 90. - acos(c) / M_PI * 180.;
+                turtle_datum_direction(
+                    earth.datum, latitude, longitude, azimuth, elevation, ecef);
+        }
+}
+
+/* Get the parameters for computing the intersection with the ellipsoid. */
+static void ellipsoid_parameters_intersection(const double * position,
+    const double * direction, double * a, double * b, double * r2)
+{
+        double ai, bi;
+        if (earth.geodesic == EARTH_GEODESIC_PREM) {
+                ai = bi = 1. / PREM_EARTH_RADIUS;
+        } else {
+                ai = 1. / WGS84_RADIUS_A;
+                bi = 1. / WGS84_RADIUS_B;
+        }
+
+        const double rx = ai * position[0];
+        const double ry = ai * position[1];
+        const double rz = bi * position[2];
+        *r2 = rx * rx + ry * ry + rz * rz;
+
+        const double ux = ai * direction[0];
+        const double uy = ai * direction[1];
+        const double uz = bi * direction[2];
+        *a = ux * ux + uy * uy + uz * uz;
+        *b = rx * ux + ry * uy + rz * uz;
+}
+
 /* Generic medium callback. */
 static double medium(const double * position, const double * direction,
     struct generic_state * state)
@@ -320,33 +425,40 @@ static double medium(const double * position, const double * direction,
         state->medium = -1;
         double step = 0.;
 
-        const double r2 = position[0] * position[0] +
-            position[1] * position[1] + position[2] * position[2];
-        if (r2 > GEO_ORBIT * GEO_ORBIT) return step;
+        double a, b, r2;
+        ellipsoid_parameters_intersection(position, direction, &a, &b, &r2);
+        const double rmax = GEO_ORBIT / PREM_EARTH_RADIUS;
+        if (r2 > rmax * rmax) return step;
         const double r = sqrt(r2);
-        state->r = r;
+        state->x = r;
 
+        double altitude = -DBL_MAX;
         if (!state->context->api.decay && (state->has_crossed >= 0)) {
                 /* Check the flux boundary in forward MC. */
+                altitude = compute_altitude(r, position);
                 const double zi = state->context->api.sampler->altitude[0];
-                const double rf = EARTH_RADIUS + zi;
                 if (state->is_inside < 0)
-                        state->is_inside = (r < rf) ? 1 : 0;
-                else if ((state->is_inside && (r >= rf)) ||
-                    (!state->is_inside && (r <= rf))) {
+                        state->is_inside = (altitude < zi) ? 1 : 0;
+                else if ((state->is_inside && (altitude >= zi)) ||
+                    (!state->is_inside && (altitude <= zi))) {
                         state->has_crossed = 1;
                         return step;
                 }
         };
 
-        const double ri[16] = { 1221.5E+03, 3480.E+03, 5701.E+03, 5771.E+03,
-                5971.E+03, 6151.E+03, 6346.6E+03, 6356.E+03, 6368.E+03,
-                EARTH_RADIUS, EARTH_RADIUS + 4.E+03, EARTH_RADIUS + 1.E+04,
-                EARTH_RADIUS + 4.E+04, EARTH_RADIUS + 1.E+05, GEO_ORBIT,
-                2 * GEO_ORBIT };
+        const double ri[16] = { 1221.5E+03 / PREM_EARTH_RADIUS,
+                3480.E+03 / PREM_EARTH_RADIUS, 5701.E+03 / PREM_EARTH_RADIUS,
+                5771.E+03 / PREM_EARTH_RADIUS, 5971.E+03 / PREM_EARTH_RADIUS,
+                6151.E+03 / PREM_EARTH_RADIUS, 6346.6E+03 / PREM_EARTH_RADIUS,
+                6356.E+03 / PREM_EARTH_RADIUS, 6368.E+03 / PREM_EARTH_RADIUS,
+                1., 1. + 4.E+03 / PREM_EARTH_RADIUS,
+                1. + 1.E+04 / PREM_EARTH_RADIUS,
+                1. + 4.E+04 / PREM_EARTH_RADIUS,
+                1. + 1.E+05 / PREM_EARTH_RADIUS, GEO_ORBIT / PREM_EARTH_RADIUS,
+                2 * GEO_ORBIT / PREM_EARTH_RADIUS };
 
         /* Kill neutrinos that exit the atmosphere.  */
-        if ((!state->is_tau) && (state->r > ri[13])) return step;
+        if ((!state->is_tau) && (state->x > ri[13])) return step;
 
         int i;
         for (i = 0; i < sizeof(ri) / sizeof(*ri) - 1; i++) {
@@ -354,12 +466,9 @@ static double medium(const double * position, const double * direction,
                         state->medium = i;
 
                         /* Outgoing intersection. */
-                        const double b = position[0] * direction[0] +
-                            position[1] * direction[1] +
-                            position[2] * direction[2];
-                        const double d2 = b * b + ri[i] * ri[i] - r * r;
+                        const double d2 = b * b + a * (ri[i] * ri[i] - r2);
                         const double d = (d2 <= 0.) ? 0. : sqrt(d2);
-                        step = d - b;
+                        step = (d - b) / a;
 
                         if ((i > 0) && (b < 0.)) {
                                 /* This is a downgoing trajectory. Let
@@ -367,10 +476,10 @@ static double medium(const double * position, const double * direction,
                                  * radius.
                                  */
                                 const double r1 = ri[i - 1];
-                                const double d2 = b * b + r1 * r1 - r * r;
+                                const double d2 = b * b + a * (r1 * r1 - r * r);
                                 if (d2 > 0.) {
                                         const double d = sqrt(d2);
-                                        double s = -b - d;
+                                        double s = -(b + d) / a;
                                         if ((s > 0.) && (s < step)) step = s;
                                 }
                         }
@@ -378,6 +487,26 @@ static double medium(const double * position, const double * direction,
                         break;
                 }
         }
+
+/* Check for any topography. */
+#define MEDIUM_TOPOGRAPHY 100
+        if ((earth.is_flat) && (earth.z0 != 0.)) {
+                if ((earth.z0 > 0.) && (i >= 10) && (i <= 11)) {
+                        if (altitude == -DBL_MAX)
+                                altitude = compute_altitude(r, position);
+                        double s = altitude - earth.z0;
+                        if (s <= 0.) state->medium = MEDIUM_TOPOGRAPHY;
+                        s = 0.5 * fabs(s);
+                        if (s < step) step = s;
+                        if (step < 1E-03) step = 1E-03;
+                } else {
+                        /* TODO: implement other cases ... */
+                }
+        } else if (!earth.is_flat) {
+                /* TODO: compute geodetic position => change compute_altitude.
+                 */
+        }
+
         return step;
 }
 
@@ -397,6 +526,8 @@ static struct ent_medium media_ent[] = { { ZR, AR, &density_pem0 },
         { ZW, AW, &density_pem9 }, { ZA, AA, &density_uss0 },
         { ZA, AA, &density_uss1 }, { ZA, AA, &density_uss2 },
         { ZA, AA, &density_uss3 }, { ZA, AA, &density_space0 } };
+
+static struct ent_medium topography_ent = { ZR, AR, &density_topography };
 
 /* Medium callback encapsulation for ENT. */
 static double medium_ent(struct ent_context * context, struct ent_state * state,
@@ -421,11 +552,6 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
         return step;
 }
 
-#undef ZR
-#undef AR
-#undef ZA
-#undef AA
-
 /* Media table for PUMAS. */
 static struct pumas_medium media_pumas[] = { { 0, &locals_pem0 },
         { 0, &locals_pem1 }, { 0, &locals_pem2 }, { 0, &locals_pem3 },
@@ -433,6 +559,44 @@ static struct pumas_medium media_pumas[] = { { 0, &locals_pem0 },
         { 0, &locals_pem7 }, { 0, &locals_pem8 }, { 1, &locals_pem9 },
         { 2, &locals_uss0 }, { 2, &locals_uss1 }, { 2, &locals_uss2 },
         { 2, &locals_uss3 }, { 2, &locals_space0 } };
+
+static struct pumas_medium topography_pumas = { 0, &locals_topography };
+
+/* Configure the media according to the current Earth model. */
+static void earth_model_configure(void)
+{
+        if (earth.is_flat) {
+                if (earth.sea) {
+                        media_pumas[9].material = 1;
+                        media_pumas[9].locals = &locals_pem9;
+                        media_ent[9].Z = ZW;
+                        media_ent[9].A = AW;
+                        media_ent[9].density = &density_pem9;
+                } else {
+                        media_pumas[9].material = 0;
+                        media_pumas[9].locals = &locals_pem8;
+                        media_ent[9].Z = ZR;
+                        media_ent[9].A = AR;
+                        media_ent[9].density = &density_pem8;
+                }
+        } else {
+                topography_pumas.material = earth.material;
+                if (earth.material == 0) {
+                        topography_ent.Z = ZR;
+                        topography_ent.A = AR;
+                } else if (earth.material == 1) {
+                        topography_ent.Z = ZW;
+                        topography_ent.A = AW;
+                }
+        }
+}
+
+#undef ZA
+#undef AA
+#undef ZR
+#undef AR
+#undef ZW
+#undef AW
 
 /* Medium callback encapsulation for PUMAS. */
 double medium_pumas(struct pumas_context * context, struct pumas_state * state,
@@ -724,7 +888,7 @@ static int transport_forward(struct simulation_context * context,
                                 .context = context,
                                 .medium = -1,
                                 .density = 0.,
-                                .r = 0.,
+                                .x = 0.,
                                 .is_tau = 1,
                                 .is_inside = -1,
                                 .has_crossed =
@@ -798,16 +962,17 @@ static int transport_forward(struct simulation_context * context,
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
+                                const double tau_altitude =
+                                    compute_altitude(tau_data.x, tau->position);
+
                                 if (nu_e != NULL) {
                                         nu_e_data.context = context;
                                         if (context->flux_neutrino) {
                                                 nu_e_data.is_inside = -1;
                                                 nu_e_data.has_crossed = 0;
                                                 nu_e_data.cross_count =
-                                                    (tau_data.r <=
-                                                        EARTH_RADIUS +
-                                                            sampler
-                                                                ->altitude[0] +
+                                                    (tau_altitude <=
+                                                        sampler->altitude[0] +
                                                             FLT_EPSILON) ?
                                                     1 :
                                                     0;
@@ -824,10 +989,8 @@ static int transport_forward(struct simulation_context * context,
                                                 nu_t_data.is_inside = -1;
                                                 nu_t_data.has_crossed = 0;
                                                 nu_t_data.cross_count =
-                                                    (tau_data.r <=
-                                                        EARTH_RADIUS +
-                                                            sampler
-                                                                ->altitude[0] +
+                                                    (tau_altitude <=
+                                                        sampler->altitude[0] +
                                                             FLT_EPSILON) ?
                                                     1 :
                                                     0;
@@ -963,15 +1126,15 @@ static int transport_backward(
                         /* Check that the tau is **not** emerging from the
                          * Earth.
                          */
-                        const double b = -tau->position[0] * tau->direction[0] -
-                            tau->position[1] * tau->direction[1] -
-                            tau->position[2] * tau->direction[2];
-                        struct generic_state * g = (struct generic_state *)tau;
-                        const double d2 =
-                            b * b + EARTH_RADIUS * EARTH_RADIUS - g->r * g->r;
+                        double a, b, r2;
+                        ellipsoid_parameters_intersection(
+                            tau->position, tau->direction, &a, &b, &r2);
+                        b = -b;
+                        const double d2 = b * b + a * (1. - r2);
                         if ((d2 <= 0.) || (sqrt(d2) > -b)) break;
 
                         /* Check that the proposed vertex is **not** in air. */
+                        struct generic_state * g = (struct generic_state *)tau;
                         if ((g->medium < 10) || (g->density <= 0.)) break;
 
                         /* If upgoing and in air, randomly recycle the event
@@ -1016,7 +1179,7 @@ static int transport_backward(
                 memcpy(
                     state->direction, tau->direction, sizeof(state->direction));
                 g_state.context = context;
-                g_state.r = 0.;
+                g_state.x = 0.;
                 g_state.is_tau = 0;
                 g_state.is_inside = -1;
                 g_state.has_crossed = -1;
@@ -1116,7 +1279,7 @@ static int transport_backward(
                                 tau->direction[2] = momentum[2] * d;
                         }
                         tau->decayed = 0;
-                        g->r = 0.;
+                        g->x = 0.;
                         g->is_tau = 1;
                         g->is_inside = -1;
                         g->has_crossed = -1;
@@ -1422,6 +1585,9 @@ int danton_earth_model(const char * geodesic, const char * topography,
         /* Set the sea flag. */
         if (sea != NULL) earth.sea = *sea;
 
+        /* Configure according to the current settings. */
+        earth_model_configure();
+
         return EXIT_SUCCESS;
 }
 
@@ -1429,7 +1595,6 @@ int danton_earth_model(const char * geodesic, const char * topography,
 struct event_sampler {
         struct danton_sampler api;
         char endstr;
-        double cos_theta[2];
         double neutrino_weight;
         double total_weight;
         unsigned long hash;
@@ -1469,10 +1634,34 @@ int danton_sampler_update(struct danton_sampler * sampler)
 {
         struct event_sampler * sampler_ = (struct event_sampler *)sampler;
 
+        /* Check the latitude. */
+        if ((sampler->latitude < -180.) || (sampler->latitude > 180.)) {
+                danton_error_push(NULL,
+                    "%s (%d): invalid latitude value `%.5g`.", __FILE__,
+                    __LINE__, sampler->latitude);
+                return EXIT_FAILURE;
+        }
+
+        /* Check the longitude. */
+        if ((sampler->longitude < -90.) || (sampler->longitude > 90.)) {
+                danton_error_push(NULL,
+                    "%s (%d): invalid longitude value `%.5g`.", __FILE__,
+                    __LINE__, sampler->longitude);
+                return EXIT_FAILURE;
+        }
+
         /* Check the altitude. */
         if ((sampler->altitude[0] < 0.) ||
             (sampler->altitude[0] > sampler->altitude[1])) {
                 danton_error_push(NULL, "%s (%d): invalid altitude value(s).",
+                    __FILE__, __LINE__);
+                return EXIT_FAILURE;
+        }
+
+        /* Check the azimuth angle. */
+        if ((sampler->azimuth[0] > sampler->azimuth[1]) ||
+            (sampler->azimuth[1] - sampler->azimuth[0] > 360.)) {
+                danton_error_push(NULL, "%s (%d): invalid azimuth value(s).",
                     __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
@@ -1495,28 +1684,9 @@ int danton_sampler_update(struct danton_sampler * sampler)
                 return EXIT_FAILURE;
         }
 
-        /* Compute the incidence angle, for forward mode. */
-        double ael[2] = { fabs(sampler->elevation[1]),
-                fabs(sampler->elevation[0]) };
-        if (ael[0] < ael[1]) {
-                const double tmp = ael[0];
-                ael[0] = ael[1];
-                ael[1] = tmp;
-        }
-        int i;
-        for (i = 0; i < 2; i++) {
-                const double R0 = EARTH_RADIUS + 1E+05;
-                const double s1 = sin((90. - ael[i]) * M_PI / 180.);
-                const double s0 =
-                    s1 * (EARTH_RADIUS + sampler->altitude[i]) / R0;
-                if (s0 > 1.)
-                        sampler_->cos_theta[1 - i] = 0.;
-                else
-                        sampler_->cos_theta[1 - i] = cos(asin(s0));
-        }
-
         /* Compute the particle weights. */
         sampler_->neutrino_weight = 0.;
+        int i;
         for (i = 0; i < DANTON_PARTICLE_N_NU; i++)
                 sampler_->neutrino_weight +=
                     (sampler->weight[i] <= 0.) ? 0. : sampler->weight[i];
@@ -1710,9 +1880,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                         events = 1;
                 else if (events < 2) {
                         danton_error_push(context,
-                            "%s (%d): numbers of bins must be "
-                            "2 or "
-                            "more.",
+                            "%s (%d): numbers of bins must be 2 or more.",
                             __FILE__, __LINE__);
                         return EXIT_FAILURE;
                 }
@@ -1731,23 +1899,16 @@ int danton_run(struct danton_context * context, long events, long requested)
                         if (sampler_->neutrino_weight ==
                             sampler_->total_weight) {
                                 danton_error_push(context,
-                                    "%s (%d): no tau(s) target "
-                                    "to "
-                                    "decay.",
+                                    "%s (%d): no tau(s) target to decay.",
                                     __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
                         if (context->mode == DANTON_MODE_FORWARD) {
                                 if (sampler_->neutrino_weight > 0.) {
                                         danton_error_push(context,
-                                            "%s (%d): "
-                                            "combining "
-                                            "neutrino(s) and "
-                                            "tau(s) "
-                                            "sampling is not "
-                                            "supported in "
-                                            "forward "
-                                            "mode.",
+                                            "%s (%d): combining neutrino(s) "
+                                            "and tau(s) sampling is not "
+                                            "supported in forward mode.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
                                 }
@@ -1755,9 +1916,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 if (sampler->altitude[0] ==
                                     sampler->altitude[1]) {
                                         danton_error_push(context,
-                                            "%s (%d): no "
-                                            "altitude "
-                                            "range for "
+                                            "%s (%d): no altitude range for "
                                             "tau(s) decays.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
@@ -1847,8 +2006,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                 }
 
                 /* Configure the event record. TODO: according
-                 * to
-                 * options. */
+                 * to  options. */
                 context_->record->api.primary = &context_->record->primary;
                 context_->record->api.final = &context_->record->final;
         }
@@ -1857,6 +2015,12 @@ int danton_run(struct danton_context * context, long events, long requested)
         if ((context->mode == DANTON_MODE_GRAMMAGE) || (requested <= 0))
                 requested = events;
         n_published = 0;
+
+        /* Compute the generation cosine. */
+        double cos_theta[2];
+        int l;
+        for (l = 0; l < 2; l++)
+                cos_theta[l] = cos((90. - sampler->elevation[l]) * M_PI / 180.);
 
         /* Run the simulation. */
         if (context->mode == DANTON_MODE_FORWARD) {
@@ -1896,11 +2060,33 @@ int danton_run(struct danton_context * context, long events, long requested)
 
                 long i;
                 for (i = 0; (i < events) && (n_published < requested); i++) {
-                        /* Sample the primary direction
-                         * uniformly. */
-                        const double ct = sample_linear(
-                            context_, sampler_->cos_theta, i, 0, NULL);
-                        const double st = sqrt(1. - ct * ct);
+                        /* Sample the projection of the primary state
+                         * uniformly.
+                         */
+                        const double ct =
+                            sample_linear(context_, cos_theta, i, 0, NULL);
+                        const double azimuth = sample_linear(
+                            context_, sampler->azimuth, i, 0, NULL);
+                        const double z0 =
+                            (context->decay) ? sampler->altitude[0] : 0.;
+                        double ecef0[3], u0[3];
+                        compute_ecef_position(
+                            sampler->latitude, sampler->longitude, z0, ecef0);
+                        compute_ecef_direction(sampler->latitude,
+                            sampler->longitude, azimuth, ct, u0);
+
+                        /* Backward translate the primary state. */
+                        double a, b, r2;
+                        ellipsoid_parameters_intersection(
+                            ecef0, u0, &a, &b, &r2);
+                        b = -b;
+                        const double ri = 1. + 1.E+05 / PREM_EARTH_RADIUS;
+                        const double d2 = b * b + a * (ri * ri - r2);
+                        const double d = (d2 <= 0.) ? 0. : sqrt(d2);
+                        const double ds = (d - b) / a;
+                        ecef0[0] -= ds * u0[0];
+                        ecef0[1] -= ds * u0[1];
+                        ecef0[2] -= ds * u0[2];
 
                         /* Sample the primary flavour and its
                          * energy. */
@@ -1926,12 +2112,12 @@ int danton_run(struct danton_context * context, long events, long requested)
                         const int crossed = context_->flux_neutrino ? 0 : -1;
                         struct generic_state state = {
                                 .base.ent = { pid, energy, 0., 0., weight,
-                                    { 0., 0., -EARTH_RADIUS - 1E+05 },
-                                    { st, 0., ct } },
+                                    { ecef0[0], ecef0[1], ecef0[2] },
+                                    { u0[0], u0[1], u0[2] } },
                                 .context = context_,
                                 .medium = -1,
                                 .density = 0.,
-                                .r = 0.,
+                                .x = 0.,
                                 .is_tau = 0,
                                 .is_inside = -1,
                                 .has_crossed = crossed,
@@ -1970,17 +2156,15 @@ int danton_run(struct danton_context * context, long events, long requested)
                             context_->energy_cut - tau_mass;
                 }
 
-                double cos_theta[2];
-                for (j = 0; j < 2; j++)
-                        cos_theta[j] =
-                            cos((90. - sampler->elevation[j]) * M_PI / 180.);
-
                 long i;
                 for (i = 0; (i < events) && (n_published < requested); i++) {
                         double weight = 1.;
                         const double ct = sample_linear(
                             context_, cos_theta, i, events, &weight);
-                        const double st = sqrt(1. - ct * ct);
+                        const double azimuth = sample_linear(
+                            context_, sampler->azimuth, i, 0, &weight);
+                        if (sampler->azimuth[1] > sampler->azimuth[0])
+                                weight *= M_PI / 180.;
                         const double energy = sample_log_or_linear(
                             context_, sampler->energy, &weight);
                         const double z0 = sample_log_or_linear(
@@ -1998,16 +2182,21 @@ int danton_run(struct danton_context * context, long events, long requested)
                                  * Monte-Carlo. */
                                 const double charge =
                                     (projectile > 0) ? -1. : 1.;
+                                double ecef0[3], u0[3];
+                                compute_ecef_position(sampler->latitude,
+                                    sampler->longitude, z0, ecef0);
+                                compute_ecef_direction(sampler->latitude,
+                                    sampler->longitude, azimuth, ct, u0);
                                 struct generic_state state = {
                                         .base.pumas = { charge,
                                             energy - tau_mass, 0., 0., 0.,
                                             weight,
-                                            { 0., 0., EARTH_RADIUS + z0 },
-                                            { st, 0., ct }, 0 },
+                                            { ecef0[0], ecef0[1], ecef0[2] },
+                                            { u0[0], u0[1], u0[2] }, 0 },
                                         .context = context_,
                                         .medium = -1,
                                         .density = 0.,
-                                        .r = 0.,
+                                        .x = 0.,
                                         .is_tau = 1,
                                         .is_inside = -1,
                                         .has_crossed = -1,
@@ -2018,15 +2207,20 @@ int danton_run(struct danton_context * context, long events, long requested)
                                         return EXIT_FAILURE;
                         } else if ((context->mode != DANTON_MODE_GRAMMAGE) &&
                             context_->flux_neutrino) {
+                                double ecef0[3], u0[3];
+                                compute_ecef_position(sampler->latitude,
+                                    sampler->longitude, z0, ecef0);
+                                compute_ecef_direction(sampler->latitude,
+                                    sampler->longitude, azimuth, ct, u0);
                                 struct generic_state state = {
                                         .base.ent = { projectile, energy, 0.,
                                             0., weight,
-                                            { 0., 0., EARTH_RADIUS + z0 },
-                                            { st, 0., ct } },
+                                            { ecef0[0], ecef0[1], ecef0[2] },
+                                            { u0[0], u0[1], u0[2] } },
                                         .context = context_,
                                         .medium = -1,
                                         .density = 0.,
-                                        .r = 0.,
+                                        .x = 0.,
                                         .is_tau = 0,
                                         .is_inside = -1,
                                         .has_crossed = -1,
@@ -2043,15 +2237,20 @@ int danton_run(struct danton_context * context, long events, long requested)
                                  * initialise
                                  * the neutrino state.
                                  */
+                                double ecef0[3], u0[3];
+                                compute_ecef_position(sampler->latitude,
+                                    sampler->longitude, z0, ecef0);
+                                compute_ecef_direction(sampler->latitude,
+                                    sampler->longitude, azimuth, ct, u0);
                                 struct generic_state g_state = {
                                         .base.ent = { projectile, energy, 0.,
                                             0., weight,
-                                            { 0., 0., EARTH_RADIUS + z0 },
-                                            { st, 0., ct } },
+                                            { ecef0[0], ecef0[1], ecef0[2] },
+                                            { u0[0], u0[1], u0[2] } },
                                         .context = context_,
                                         .medium = -1,
                                         .density = 0.,
-                                        .r = 0.,
+                                        .x = 0.,
                                         .is_tau = 0,
                                         .is_inside = -1,
                                         .has_crossed = -1,
