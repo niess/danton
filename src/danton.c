@@ -188,6 +188,8 @@ struct simulation_context {
         struct pumas_context * pumas;
         struct ent_context ent;
 
+        struct turtle_client * client;
+
         /* Recorded events. */
         struct event_record * record;
 
@@ -329,15 +331,16 @@ LOCALS(uss, 2)
 LOCALS(uss, 3)
 LOCALS(space, 0)
 
-/* Helper function for computing the altitude. */
-static double compute_altitude(double x, const double * position)
+/* Helper function for computing geodetic coordinates from ECEF ones. */
+static double compute_geodetic(
+    double x, const double * position, double * latitude, double * longitude)
 {
         if (earth.geodesic == EARTH_GEODESIC_PREM)
                 return (x - 1.) * PREM_EARTH_RADIUS;
 
         double altitude;
         turtle_datum_geodetic(
-            earth.datum, (double *)position, NULL, NULL, &altitude);
+            earth.datum, (double *)position, latitude, longitude, &altitude);
         return altitude;
 }
 
@@ -432,10 +435,10 @@ static double medium(const double * position, const double * direction,
         const double r = sqrt(r2);
         state->x = r;
 
-        double altitude = -DBL_MAX;
+        double latitude, longitude, altitude = -DBL_MAX;
         if (!state->context->api.decay && (state->has_crossed >= 0)) {
                 /* Check the flux boundary in forward MC. */
-                altitude = compute_altitude(r, position);
+                altitude = compute_geodetic(r, position, &latitude, &longitude);
                 const double zi = state->context->api.sampler->altitude[0];
                 if (state->is_inside < 0)
                         state->is_inside = (altitude < zi) ? 1 : 0;
@@ -483,31 +486,53 @@ static double medium(const double * position, const double * direction,
                                         if ((s > 0.) && (s < step)) step = s;
                                 }
                         }
-                        if (step < 1E-03) step = 1E-03;
+#define STEP_MIN 1E-03
+                        if (step < STEP_MIN) step = STEP_MIN;
                         break;
                 }
         }
 
-/* Check for any topography. */
+        /* Check for any topography. */
 #define MEDIUM_TOPOGRAPHY 100
-        if ((earth.is_flat) && (earth.z0 != 0.)) {
-                if ((earth.z0 > 0.) && (i >= 10) && (i <= 11)) {
-                        if (altitude == -DBL_MAX)
-                                altitude = compute_altitude(r, position);
-                        double s = altitude - earth.z0;
-                        if (s <= 0.) state->medium = MEDIUM_TOPOGRAPHY;
-                        s = 0.5 * fabs(s);
-                        if (s < step) step = s;
-                        if (step < 1E-03) step = 1E-03;
+        if ((i < 7) || (i > 11) || ((earth.is_flat) && (earth.z0 == 0.)))
+                return step;
+
+        if (altitude == -DBL_MAX)
+                altitude = compute_geodetic(r, position, &latitude, &longitude);
+        if ((altitude < 0.) && !earth.sea) return step;
+
+        /* Let us compute the ground altitude. */
+        double zg;
+        if (earth.is_flat)
+                zg = earth.z0;
+        else {
+                enum turtle_return rc;
+                if (lock != NULL) {
+                        rc = turtle_client_elevation(
+                            state->context->client, latitude, longitude, &zg);
                 } else {
-                        /* TODO: implement other cases ... */
+                        rc = turtle_datum_elevation(
+                            earth.datum, latitude, longitude, &zg);
                 }
-        } else if (!earth.is_flat) {
-                /* TODO: compute geodetic position => change compute_altitude.
-                 */
+                if (rc != TURTLE_RETURN_SUCCESS)
+                        zg = 0.;
         }
 
+        /* Let us update the medium index accordingly. */
+        double s = altitude - zg;
+        if (s <= 0.) {
+                if (i >= 9) state->medium = MEDIUM_TOPOGRAPHY;
+
+        } else if (earth.sea && (altitude < 0.))
+                state->medium = 9;
+
+        /* Finally let us update the step length. */
+        s = 0.5 * fabs(s);
+        if (s < step) step = s;
+        if (step < STEP_MIN) step = STEP_MIN;
         return step;
+
+#undef STEP_MIN
 }
 
 /* Media table for ENT. */
@@ -545,7 +570,9 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
         }
         struct generic_state * g = (struct generic_state *)state;
         const double step = medium(state->position, direction, g);
-        if (g->medium >= 0)
+        if (g->medium == MEDIUM_TOPOGRAPHY)
+                *medium_ptr = &topography_ent;
+        else if (g->medium >= 0)
                 *medium_ptr = media_ent + g->medium;
         else
                 *medium_ptr = NULL;
@@ -614,12 +641,16 @@ double medium_pumas(struct pumas_context * context, struct pumas_state * state,
         }
         struct generic_state * g = (struct generic_state *)state;
         const double step = medium(state->position, direction, g);
-        if (g->medium >= 0)
+        if (g->medium == MEDIUM_TOPOGRAPHY)
+                *medium_ptr = &topography_pumas;
+        else if (g->medium >= 0)
                 *medium_ptr = media_pumas + g->medium;
         else
                 *medium_ptr = NULL;
         return step;
 }
+
+#undef MEDIUM_TOPOGRAPHY
 
 /* Initialise the PRNG random seed. */
 static void random_initialise(struct simulation_context * context)
@@ -639,11 +670,10 @@ static void random_initialise(struct simulation_context * context)
         context->random_mt.data[0] = seed & 0xffffffffUL;
         int j;
         for (j = 1; j < MT_PERIOD; j++) {
-                context->random_mt.data[j] =
-                    (1812433253UL *
-                            (context->random_mt.data[j - 1] ^
-                                (context->random_mt.data[j - 1] >> 30)) +
-                        j);
+                context->random_mt.data[j] = (1812433253UL *
+                        (context->random_mt.data[j - 1] ^
+                            (context->random_mt.data[j - 1] >> 30)) +
+                    j);
                 context->random_mt.data[j] &= 0xffffffffUL;
         }
         context->random_mt.index = MT_PERIOD;
@@ -962,8 +992,8 @@ static int transport_forward(struct simulation_context * context,
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
-                                const double tau_altitude =
-                                    compute_altitude(tau_data.x, tau->position);
+                                const double tau_altitude = compute_geodetic(
+                                    tau_data.x, tau->position, NULL, NULL);
 
                                 if (nu_e != NULL) {
                                         nu_e_data.context = context;
@@ -1481,6 +1511,7 @@ void danton_finalise(void)
         ent_physics_destroy(&physics);
         pumas_finalise();
         alouette_finalise();
+        turtle_datum_destroy(&earth.datum);
         turtle_finalise();
 }
 
@@ -1542,6 +1573,7 @@ int danton_earth_model(const char * geodesic, const char * topography,
                                  earth.stack_size, lock, unlock,
                                  &earth.datum)) != TURTLE_RETURN_SUCCESS) {
                                 ERROR_TURTLE(NULL, rc, turtle_datum_create);
+                                return EXIT_FAILURE;
                         }
                         earth.geodesic = EARTH_GEODESIC_WGS84;
                         earth.is_flat = 0;
@@ -1559,6 +1591,7 @@ int danton_earth_model(const char * geodesic, const char * topography,
                         if ((rc = turtle_datum_create(NULL, 1, lock, unlock,
                                  &earth.datum)) != TURTLE_RETURN_SUCCESS) {
                                 ERROR_TURTLE(NULL, rc, turtle_datum_create);
+                                return EXIT_FAILURE;
                         }
                 } else if ((earth.geodesic == EARTH_GEODESIC_PREM) &&
                     (earth.datum != NULL)) {
@@ -1725,6 +1758,7 @@ struct danton_context * danton_context_create(void)
         context->ent.grammage_max = 0.;
 
         context->pumas = NULL;
+        context->client = NULL;
         context->record = NULL;
         context->error.count = 0;
         context->error.size = 0;
@@ -1760,6 +1794,7 @@ void danton_context_destroy(struct danton_context ** context)
         struct simulation_context * context_ =
             (struct simulation_context *)(*context);
         pumas_context_destroy(&context_->pumas);
+        turtle_client_destroy(&context_->client);
         free(context_->record);
         free(context_);
         *context = NULL;
@@ -1925,6 +1960,16 @@ int danton_run(struct danton_context * context, long events, long requested)
                 }
         }
 
+        if ((!earth.is_flat) && (lock != NULL)) {
+                turtle_client_destroy(&context_->client);
+                enum turtle_return rc;
+                if ((rc = turtle_client_create(earth.datum,
+                         &context_->client)) != TURTLE_RETURN_SUCCESS) {
+                        ERROR_TURTLE(context, rc, turtle_client_create);
+                        return EXIT_FAILURE;
+                }
+        }
+
         /* Temporary hack for the projectile. TODO: erase. */
         int projectile = ENT_PID_NU_TAU;
         if (context->mode != DANTON_MODE_GRAMMAGE) {
@@ -1995,9 +2040,10 @@ int danton_run(struct danton_context * context, long events, long requested)
                         context_->record = malloc(sizeof(*context_->record) +
                             buffer_size * sizeof(*context_->record->product));
                         if (context_->record == NULL) {
-                                danton_error_push(context, "%s (%d): could not "
-                                                           "allocate "
-                                                           "memory.",
+                                danton_error_push(context,
+                                    "%s (%d): could not "
+                                    "allocate "
+                                    "memory.",
                                     __FILE__, __LINE__);
                                 exit(EXIT_FAILURE);
                         }

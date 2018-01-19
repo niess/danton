@@ -16,3 +16,4 @@ bin
 # Ignore temporary data.
 *.b
 *.dat
+share/topography
