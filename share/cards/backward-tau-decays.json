@@ -28,5 +28,10 @@
                         "exponent" : -2.0,
                         "weight" : 1.0
                         } ]
-        }
+        },
+
+        "stepping" : {
+                "append" : false,
+                "path" : "steps.json",
+                "verbosity" : 0 },
 }

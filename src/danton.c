@@ -338,7 +338,9 @@ static double compute_geodetic(
         if (earth.geodesic == EARTH_GEODESIC_PREM)
                 return (x - 1.) * PREM_EARTH_RADIUS;
 
-        double altitude;
+        double altitude, trash;
+        if (latitude == NULL) latitude = &trash;
+        if (longitude == NULL) longitude = &trash;
         turtle_datum_geodetic(
             earth.datum, (double *)position, latitude, longitude, &altitude);
         return altitude;
@@ -449,7 +451,7 @@ static double medium(const double * position, const double * direction,
                 }
         };
 
-        const double ri[16] = { 1221.5E+03 / PREM_EARTH_RADIUS,
+        const double ri[] = { 1221.5E+03 / PREM_EARTH_RADIUS,
                 3480.E+03 / PREM_EARTH_RADIUS, 5701.E+03 / PREM_EARTH_RADIUS,
                 5771.E+03 / PREM_EARTH_RADIUS, 5971.E+03 / PREM_EARTH_RADIUS,
                 6151.E+03 / PREM_EARTH_RADIUS, 6346.6E+03 / PREM_EARTH_RADIUS,
@@ -457,8 +459,8 @@ static double medium(const double * position, const double * direction,
                 1., 1. + 4.E+03 / PREM_EARTH_RADIUS,
                 1. + 1.E+04 / PREM_EARTH_RADIUS,
                 1. + 4.E+04 / PREM_EARTH_RADIUS,
-                1. + 1.E+05 / PREM_EARTH_RADIUS, GEO_ORBIT / PREM_EARTH_RADIUS,
-                2 * GEO_ORBIT / PREM_EARTH_RADIUS };
+                1. + 1.E+05 / PREM_EARTH_RADIUS,
+                GEO_ORBIT / PREM_EARTH_RADIUS };
 
         /* Kill neutrinos that exit the atmosphere.  */
         if ((!state->is_tau) && (state->x > ri[13])) return step;
@@ -492,7 +494,7 @@ static double medium(const double * position, const double * direction,
                 }
         }
 
-        /* Check for any topography. */
+/* Check for any topography. */
 #define MEDIUM_TOPOGRAPHY 100
         if ((i < 7) || (i > 11) || ((earth.is_flat) && (earth.z0 == 0.)))
                 return step;
@@ -514,8 +516,7 @@ static double medium(const double * position, const double * direction,
                         rc = turtle_datum_elevation(
                             earth.datum, latitude, longitude, &zg);
                 }
-                if (rc != TURTLE_RETURN_SUCCESS)
-                        zg = 0.;
+                if (rc != TURTLE_RETURN_SUCCESS) zg = 0.;
         }
 
         /* Let us update the medium index accordingly. */
@@ -649,8 +650,6 @@ double medium_pumas(struct pumas_context * context, struct pumas_state * state,
                 *medium_ptr = NULL;
         return step;
 }
-
-#undef MEDIUM_TOPOGRAPHY
 
 /* Initialise the PRNG random seed. */
 static void random_initialise(struct simulation_context * context)
@@ -842,6 +841,101 @@ static int record_publish(struct simulation_context * context)
         return rc;
 }
 
+/* Shortcut for dumping a PUMAS error. */
+#define ERROR_PUMAS(context, rc, function)                                     \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
+            __LINE__, pumas_error_function((pumas_function_t *)&function),     \
+            pumas_error_string(rc))
+
+/* Shortcut for dumping a TURTLE error. */
+#define ERROR_TURTLE(context, rc, function)                                    \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
+            __LINE__, turtle_strfunc((turtle_caller_t *)&function),            \
+            turtle_strerror(rc))
+
+/* Encapsulation of pumas' calls with run action(s). */
+static int call_pumas(
+    struct simulation_context * context_, struct generic_state * state)
+{
+        struct danton_context * context = (struct danton_context *)context_;
+        enum pumas_return rc;
+
+        if (context->run_action != NULL) {
+                /* Create a recorder if not already done. */
+                if (context_->pumas->recorder == NULL) {
+                        struct pumas_recorder * recorder;
+                        if ((rc = pumas_recorder_create(context_->pumas,
+                                 &recorder)) != PUMAS_RETURN_SUCCESS) {
+                                ERROR_PUMAS(context, rc, pumas_recorder_create);
+                                return EXIT_FAILURE;
+                        }
+                        recorder->period = 0;
+                        context_->pumas->recorder = recorder;
+                }
+        }
+
+        /* Call PUMAS. */
+        if ((rc = pumas_transport(context_->pumas, &state->base.pumas)) !=
+            PUMAS_RETURN_SUCCESS) {
+                ERROR_PUMAS(context, rc, pumas_transport);
+                return EXIT_FAILURE;
+        }
+
+        if (context->run_action != NULL) {
+                /* Loop over the recorded states and call the event callback. */
+                struct pumas_frame * frame;
+                for (frame = context_->pumas->recorder->first->next;
+                     frame != NULL; frame = frame->next) {
+                        struct danton_state s;
+                        record_copy_pumas(&s, &frame->state);
+                        int medium;
+                        if (frame->medium == NULL)
+                                medium = -1;
+                        else if (frame->medium == &topography_pumas)
+                                medium = MEDIUM_TOPOGRAPHY;
+                        else
+                                medium = (int)(frame->medium - media_pumas);
+                        const int rc = context->run_action(
+                            context, DANTON_RUN_EVENT_STEP, medium, &s);
+                        if (rc != EXIT_SUCCESS) {
+                                pumas_recorder_clear(context_->pumas->recorder);
+                                return EXIT_FAILURE;
+                        }
+                }
+                pumas_recorder_clear(context_->pumas->recorder);
+        }
+
+        return EXIT_SUCCESS;
+}
+
+/* Custom stepping action for ENT. */
+static enum ent_return stepping_ent(struct ent_context * context,
+    struct ent_medium * medium, struct ent_state * state)
+{
+        struct danton_context * c = (struct danton_context *)((char *)context -
+            offsetof(struct simulation_context, ent));
+        struct danton_state s;
+        record_copy_ent(&s, state);
+        int m;
+        if (medium == NULL)
+                m = -1;
+        else if (medium == &topography_ent)
+                m = MEDIUM_TOPOGRAPHY;
+        else
+                m = (int)(medium - media_ent);
+        int rc = c->run_action(c, DANTON_RUN_EVENT_STEP, m, &s);
+        if (rc == EXIT_SUCCESS)
+                return ENT_RETURN_SUCCESS;
+        else
+                return ENT_RETURN_DOMAIN_ERROR;
+}
+
+/* Shortcut for dumping an ENT error. */
+#define ERROR_ENT(context, rc, function)                                       \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
+            __LINE__, ent_error_function((ent_function_t *)function),          \
+            ent_error_string(rc))
+
 /* Forward transport routine, recursive. */
 static int transport_forward(struct simulation_context * context,
     struct ent_state * neutrino, int generation)
@@ -865,8 +959,12 @@ static int transport_forward(struct simulation_context * context,
         enum ent_event event;
         for (;;) {
                 /* Neutrino transport with ENT. */
-                ent_transport(
-                    physics, &context->ent, neutrino, &product, &event);
+                enum ent_return rc;
+                if ((rc = ent_transport(physics, &context->ent, neutrino,
+                         &product, &event)) != ENT_RETURN_SUCCESS) {
+                        ERROR_ENT(&context->api, rc, ent_transport);
+                        return EXIT_FAILURE;
+                }
                 if (neutrino->energy <= context->energy_cut + FLT_EPSILON)
                         break;
                 if (context->flux_neutrino && (event == ENT_EVENT_EXIT)) {
@@ -932,7 +1030,8 @@ static int transport_forward(struct simulation_context * context,
                             sizeof(tau->direction));
                         context->record->api.vertex = &context->record->vertex;
                         record_copy_pumas(context->record->api.vertex, tau);
-                        pumas_transport(context->pumas, tau);
+                        if (call_pumas(context, &tau_data) != EXIT_SUCCESS)
+                                return EXIT_FAILURE;
                         if (tau->decayed) {
                                 /* Tau decay with ALOUETTE/TAUOLA. */
                                 const double p = sqrt(tau->kinetic *
@@ -1143,7 +1242,9 @@ static int transport_backward(
                         context->pumas->grammage_max =
                             x0 - lambda0 * log(random_uniform01(context));
                         tau->decayed = 0;
-                        pumas_transport(context->pumas, tau);
+                        if (call_pumas(context, (struct generic_state *)tau) !=
+                            EXIT_SUCCESS)
+                                return EXIT_FAILURE;
                         if ((!tau->decayed &&
                                 (tau->grammage < context->pumas->grammage_max -
                                         FLT_EPSILON)) ||
@@ -1218,8 +1319,12 @@ static int transport_backward(
                 struct ent_medium * medium;
                 medium_ent(&context->ent, state, &medium);
                 if (medium == NULL) return EXIT_SUCCESS;
-                ent_vertex(physics, &context->ent, state, medium,
-                    ENT_PROCESS_NONE, NULL);
+                enum ent_return re;
+                if ((re = ent_vertex(physics, &context->ent, state, medium,
+                         ENT_PROCESS_NONE, NULL)) != ENT_RETURN_SUCCESS) {
+                        ERROR_ENT(&context->api, re, ent_vertex);
+                        return EXIT_FAILURE;
+                }
 
                 /* Append the effective BMC weight for the transport, in order
                  * to recover a flux convention.
@@ -1252,7 +1357,12 @@ static int transport_backward(
         enum ent_event event = ENT_EVENT_NONE;
         while ((event != ENT_EVENT_EXIT) &&
             (state->energy < context->energy_cut - FLT_EPSILON)) {
-                ent_transport(physics, &context->ent, state, NULL, &event);
+                enum ent_return re;
+                if ((re = ent_transport(physics, &context->ent, state, NULL,
+                         &event)) != ENT_RETURN_SUCCESS) {
+                        ERROR_ENT(&context->api, re, ent_transport);
+                        return EXIT_FAILURE;
+                }
                 if (state->weight <= 0.) return EXIT_SUCCESS;
                 if (context->api.longitudinal)
                         memcpy(state->direction, direction,
@@ -1367,18 +1477,6 @@ static int transport_backward(
         return EXIT_SUCCESS;
 }
 
-/* Shortcut for dumping a PUMAS error. */
-#define ERROR_PUMAS(context, rc, function)                                     \
-        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, pumas_error_function((pumas_function_t *)&function),     \
-            pumas_error_string(rc))
-
-/* Shortcut for dumping a TURTLE error. */
-#define ERROR_TURTLE(context, rc, function)                                    \
-        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, turtle_strfunc((turtle_caller_t *)&function),            \
-            turtle_strerror(rc))
-
 /* Loader for PUMAS. */
 static int load_pumas(struct danton_context * context)
 {
@@ -1411,12 +1509,6 @@ static int load_pumas(struct danton_context * context)
 
         return EXIT_SUCCESS;
 }
-
-/* Shortcut for dumping an ENT error. */
-#define ERROR_ENT(context, rc, function)                                       \
-        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, ent_error_function((ent_function_t *)function),          \
-            ent_error_string(rc))
 
 /* Low level routine for initialising the Physics engines. */
 static int initialise_physics(struct danton_context * context)
@@ -1765,6 +1857,7 @@ struct danton_context * danton_context_create(void)
         context->error.data[0] = 0;
 
         /* Initialise the public API data. */
+        context->api.run_action = NULL;
         context->api.mode = DANTON_MODE_BACKWARD;
         context->api.longitudinal = 0;
         context->api.decay = 1;
@@ -1793,7 +1886,10 @@ void danton_context_destroy(struct danton_context ** context)
         if (*context == NULL) return;
         struct simulation_context * context_ =
             (struct simulation_context *)(*context);
-        pumas_context_destroy(&context_->pumas);
+        if (context_->pumas != NULL) {
+                pumas_recorder_destroy(&context_->pumas->recorder);
+                pumas_context_destroy(&context_->pumas);
+        }
         turtle_client_destroy(&context_->client);
         free(context_->record);
         free(context_);
@@ -1981,6 +2077,12 @@ int danton_run(struct danton_context * context, long events, long requested)
                         }
                 }
         }
+
+        /* Check for any custom run action and configure accordingly. */
+        if (context->run_action != NULL)
+                context_->ent.stepping_action = &stepping_ent;
+        else
+                context_->ent.stepping_action = NULL;
 
         if (context->mode != DANTON_MODE_GRAMMAGE) {
                 /* Check that there is a valid primary flux. */
@@ -2178,10 +2280,30 @@ int danton_run(struct danton_context * context, long events, long requested)
                         record_copy_ent(
                             context_->record->api.primary, &state.base.ent);
 
+                        /* Call any custom initial run action. */
+                        if (context->run_action != NULL) {
+                                medium(state.base.ent.position,
+                                    state.base.ent.direction, &state);
+                                if (context->run_action(context,
+                                        DANTON_RUN_EVENT_START, state.medium,
+                                        context_->record->api.primary) !=
+                                    EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
+                        }
+
                         /* Do the Monte-Carlo simulation. */
                         if (transport_forward(context_,
                                 (struct ent_state *)&state, 1) != EXIT_SUCCESS)
                                 return EXIT_FAILURE;
+
+                        /* Call any custom final run action. */
+                        if (context->run_action != NULL) {
+                                if (context->run_action(context,
+                                        DANTON_RUN_EVENT_STOP, -1,
+                                        context_->record->api.final) !=
+                                    EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
+                        }
                 }
         } else {
                 /* Run a bunch of backward Monte-Carlo events.
@@ -2224,8 +2346,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                         }
                         if ((context->mode != DANTON_MODE_GRAMMAGE) &&
                             !context_->flux_neutrino) {
-                                /* This is a particle
-                                 * Monte-Carlo. */
+                                /* This is a particle Monte-Carlo. */
                                 const double charge =
                                     (projectile > 0) ? -1. : 1.;
                                 double ecef0[3], u0[3];
@@ -2248,9 +2369,34 @@ int danton_run(struct danton_context * context, long events, long requested)
                                         .has_crossed = -1,
                                         .cross_count = 0
                                 };
+
+                                /* Call any custom initial run action. */
+                                if (context->run_action != NULL) {
+                                        medium(state.base.pumas.position,
+                                            state.base.pumas.direction, &state);
+                                        struct danton_state s;
+                                        record_copy_pumas(
+                                            &s, &state.base.pumas);
+                                        if (context->run_action(context,
+                                                DANTON_RUN_EVENT_START,
+                                                state.medium,
+                                                &s) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
+                                }
+
                                 if (transport_backward(context_, &state) !=
                                     EXIT_SUCCESS)
                                         return EXIT_FAILURE;
+
+                                /* Call any custom final run action. */
+                                if (context->run_action != NULL) {
+                                        if (context->run_action(context,
+                                                DANTON_RUN_EVENT_STOP, -1,
+                                                context_->record->api
+                                                    .primary) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
+                                }
+
                         } else if ((context->mode != DANTON_MODE_GRAMMAGE) &&
                             context_->flux_neutrino) {
                                 double ecef0[3], u0[3];
@@ -2272,16 +2418,37 @@ int danton_run(struct danton_context * context, long events, long requested)
                                         .has_crossed = -1,
                                         .cross_count = 0
                                 };
+
+                                /* Call any custom initial run action. */
+                                if (context->run_action != NULL) {
+                                        medium(state.base.ent.position,
+                                            state.base.ent.direction, &state);
+                                        struct danton_state s;
+                                        record_copy_ent(&s, &state.base.ent);
+                                        if (context->run_action(context,
+                                                DANTON_RUN_EVENT_START,
+                                                state.medium,
+                                                &s) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
+                                }
+
                                 if (transport_backward(context_, &state) !=
                                     EXIT_SUCCESS)
                                         return EXIT_FAILURE;
+
+                                /* Call any custom final run action. */
+                                if (context->run_action != NULL) {
+                                        if (context->run_action(context,
+                                                DANTON_RUN_EVENT_STOP, -1,
+                                                context_->record->api
+                                                    .primary) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
+                                }
+
                         } else {
                                 /* This is a grammage scan using
-                                 * a non-
-                                 * interacting neutrino. First
-                                 * let us
-                                 * initialise
-                                 * the neutrino state.
+                                 * a non-interacting neutrino. First
+                                 * let us initialise the neutrino state.
                                  */
                                 double ecef0[3], u0[3];
                                 compute_ecef_position(sampler->latitude,
@@ -2303,14 +2470,38 @@ int danton_run(struct danton_context * context, long events, long requested)
                                         .cross_count = 0
                                 };
 
-                                /* Then let us do the transport
-                                 * with
-                                 * ENT. */
+                                /* Call any custom initial run action. */
                                 struct ent_state * state = &g_state.base.ent;
+                                if (context->run_action != NULL) {
+                                        medium(g_state.base.ent.position,
+                                            g_state.base.ent.direction,
+                                            &g_state);
+                                        struct danton_state s;
+                                        record_copy_ent(&s, state);
+                                        if (context->run_action(context,
+                                                DANTON_RUN_EVENT_START,
+                                                g_state.medium,
+                                                &s) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
+                                }
+
+                                /* Then let us do the transport
+                                 * with ENT.
+                                 */
                                 enum ent_event event = ENT_EVENT_NONE;
                                 while (event != ENT_EVENT_EXIT) {
                                         ent_transport(NULL, &context_->ent,
                                             state, NULL, &event);
+                                }
+
+                                /* Call any custom final run action. */
+                                if (context->run_action != NULL) {
+                                        struct danton_state s;
+                                        record_copy_ent(&s, state);
+                                        if (context->run_action(context,
+                                                DANTON_RUN_EVENT_STOP, -1,
+                                                &s) != EXIT_SUCCESS)
+                                                return EXIT_FAILURE;
                                 }
 
                                 /* Finally, let us publish the

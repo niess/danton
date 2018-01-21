@@ -17,3 +17,4 @@ bin
 *.b
 *.dat
 share/topography
+share/scripts

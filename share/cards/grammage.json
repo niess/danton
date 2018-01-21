@@ -6,15 +6,11 @@
         "longitudinal" : true,
 
         "earth-model" : {
-                "geodesic" : "WGS84",
-                "topography" : [ "share/topography", 25 ],
-                "sea" : false },
+                "geodesic" : "PREM" },
 
         "particle-sampler" : {
-                "latitude" : 42.928056,
-                "longitude" : 86.741667,
-                "altitude" : 2700.0,
-                "azimuth" : [ -180.0, 180.0 ],
+                "altitude" : 0.0,
+                "azimuth" : 0.0,
                 "elevation" : [0.1, 90.0]
         }
 }

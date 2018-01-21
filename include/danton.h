@@ -191,6 +191,29 @@ struct danton_recorder {
         danton_grammage_cb * record_grammage;
 };
 
+/** Flags for events occuring during custom run action(s). */
+enum danton_run_event {
+        /** Flag for the start of a new event. */
+        DANTON_RUN_EVENT_START = 0,
+        /** Flag for the end of the current event. */
+        DANTON_RUN_EVENT_STOP,
+        /** Flag for a new step in the current event. */
+        DANTON_RUN_EVENT_STEP,
+        /** The total number of event flags. */
+        DANTON_RUN_N
+};
+
+/**
+ * Callback for custom run actions.
+ *
+ * @param  context Handle for the simulation context.
+ * @param  event   Flag signing the occuring event.
+ * @param  state   The current particle state.
+ * @return         `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ */
+typedef int danton_run_cb(struct danton_context * context,
+    enum danton_run_event event, int medium, struct danton_state * state);
+
 /** The available run modes. */
 enum danton_mode {
         /** Backward Monte-Carlo simulation. */
@@ -251,6 +274,13 @@ struct danton_context {
          * running.
          */
         struct danton_recorder * recorder;
+        /**
+         * Callback for custom run action(s).
+         *
+         * Starts initialised to `ǸULL`, i.e. disabled. Providing additional
+         * run action(s) is optionnal.
+         */
+        danton_run_cb * run_action;
 };
 
 /**

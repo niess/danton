@@ -48,6 +48,13 @@ static struct roar_handler handler = { NULL, NULL, NULL, NULL };
 /* Path of the current card. */
 static const char * card_path = NULL;
 
+/* Global options for the stepping. */
+static struct {
+        char * path;
+        int append;
+        int verbosity;
+} stepping_options = { NULL, 0, 0 };
+
 /* Finalise and exit to the OS. */
 static int gracefully_exit(int rc)
 {
@@ -60,6 +67,7 @@ static int gracefully_exit(int rc)
         danton_destroy((void **)&context->sampler);
         danton_context_destroy(&context);
         danton_finalise();
+        free(stepping_options.path);
         exit(rc);
 }
 
@@ -385,6 +393,36 @@ static void card_update_earth_model(void)
         }
 }
 
+/* Update the stepping options according to the data card. */
+static void card_update_stepping(void)
+{
+        /* Parse the data card. */
+        int i;
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
+                char * field;
+                jsmn_tea_next_string(tea, 1, &field);
+                if (strcmp(field, "append") == 0) {
+                        jsmn_tea_next_bool(tea, &stepping_options.append);
+                } else if (strcmp(field, "path") == 0) {
+                        free(stepping_options.path);
+                        char * s;
+                        jsmn_tea_next_string(tea, 0, &s);
+                        if (s != NULL) {
+                                const int n = strlen(s) + 1;
+                                stepping_options.path = malloc(n);
+                                memcpy(stepping_options.path, s, n);
+                        }
+                } else if (strcmp(field, "verbosity") == 0) {
+                        jsmn_tea_next_number(tea, JSMN_TEA_TYPE_INT,
+                            &stepping_options.verbosity);
+                } else {
+                        ROAR_ERRNO_FORMAT(&handler, &card_update_stepping,
+                            EINVAL, "[%s #%d] invalid key `%s`", card_path,
+                            tea->index, field);
+                }
+        }
+}
+
 /* Update DANTON's configuration according to the content of the data card. */
 static void card_update(int * n_events, int * n_requested)
 {
@@ -412,12 +450,52 @@ static void card_update(int * n_events, int * n_requested)
                         card_update_primary();
                 else if (strcmp(tag, "earth-model") == 0)
                         card_update_earth_model();
+                else if (strcmp(tag, "stepping") == 0)
+                        card_update_stepping();
                 else {
                         ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
                             EINVAL, "[%s #%d] invalid key `%s`", card_path,
                             tea->index, tag);
                 }
         }
+}
+
+/* Dump the given step to the opened file. */
+static void dump_step(
+    FILE * fid, int index, int medium, struct danton_state * state)
+{
+        if (index > 0) fputs(", ", fid);
+        fprintf(fid, "[%3d, %3d, %.5E, %.3f, %.3f, %.3f]", medium, state->pid,
+            state->energy, state->position[0], state->position[1],
+            state->position[2]);
+}
+
+/* Custom run action for dumping an event's steps. */
+static int dump_steps(struct danton_context * context,
+    enum danton_run_event event, int medium, struct danton_state * state)
+{
+        static FILE * fid = NULL;
+        static int index = 0;
+
+        if (event == DANTON_RUN_EVENT_START) {
+                fid = fopen(stepping_options.path, "a");
+                if (fid == NULL) {
+                        ROAR_ERRNO_MESSAGE(
+                            &handler, &dump_steps, 0, stepping_options.path);
+                        return EXIT_FAILURE;
+                }
+                index = 0;
+                fprintf(fid, "[");
+                dump_step(fid, index++, medium, state);
+        } else if (event == DANTON_RUN_EVENT_STEP) {
+                dump_step(fid, index++, medium, state);
+        } else {
+                fprintf(fid, "]\n");
+                fclose(fid);
+                fid = NULL;
+        }
+
+        return EXIT_SUCCESS;
 }
 
 int main(int argc, char * argv[])
@@ -452,6 +530,17 @@ int main(int argc, char * argv[])
                 card_path = *argv;
                 card_update(&n_events, &n_requested);
                 jsmn_tea_destroy(&tea);
+        }
+
+        /* Initialise any stepping dump. */
+        if (stepping_options.path != NULL) {
+                context->run_action = &dump_steps;
+                if (!stepping_options.append) {
+                        FILE * fid = fopen(stepping_options.path, "w+");
+                        fclose(fid);
+                }
+        } else {
+                context->run_action = NULL;
         }
 
         /* Update the particle sampler. */
