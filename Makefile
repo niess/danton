@@ -1,6 +1,6 @@
 export DEPS_DIR := $(PWD)/deps
 export LIB_DIR := lib
-export PDF_DIR := $(abspath deps/ent/data/pdf)
+export PDF_DIR := $(abspath deps/ent/share/pdf)
 export TURTLE_USE_PNG := 0
 unexport CFLAGS
 
