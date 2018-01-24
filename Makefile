@@ -27,7 +27,8 @@ lib: lib/libalouette.so lib/libdanton.so lib/libent.so lib/libjsmn-tea.a       \
 bin/danton: src/danton-x.c
 	@mkdir -p bin
 	@gcc -o $@ $(CFLAGS) $(INCLUDE) $< -Llib -ldanton -L$(LIB_DIR)         \
-		-lalouette -ldanton -lent -ljsmn-tea -lpumas -lturtle -lm
+		-lalouette -ldanton -lent -ljsmn-tea -lpumas -lturtle -ltiff   \
+                -lm
 
 lib/libdanton.so: $(DANTON_SRC) $(DANTON_INC)
 	@gcc -o $@ $(CFLAGS) -DPDF_DIR="\"$(PDF_DIR)\"" $(INCLUDE) -fPIC       \
