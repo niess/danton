@@ -1760,7 +1760,7 @@ int danton_sampler_update(struct danton_sampler * sampler)
         struct event_sampler * sampler_ = (struct event_sampler *)sampler;
 
         /* Check the latitude. */
-        if ((sampler->latitude < -180.) || (sampler->latitude > 180.)) {
+        if ((sampler->latitude < -90.) || (sampler->latitude > 90.)) {
                 danton_error_push(NULL,
                     "%s (%d): invalid latitude value `%.5g`.", __FILE__,
                     __LINE__, sampler->latitude);
@@ -1768,7 +1768,7 @@ int danton_sampler_update(struct danton_sampler * sampler)
         }
 
         /* Check the longitude. */
-        if ((sampler->longitude < -90.) || (sampler->longitude > 90.)) {
+        if ((sampler->longitude < -180.) || (sampler->longitude > 1800.)) {
                 danton_error_push(NULL,
                     "%s (%d): invalid longitude value `%.5g`.", __FILE__,
                     __LINE__, sampler->longitude);
