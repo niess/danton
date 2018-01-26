@@ -256,6 +256,12 @@ static struct {
         int sea;
 } earth = { EARTH_GEODESIC_PREM, NULL, 16, 0., 1, 0, 2.65E+03, 1 };
 
+/* API function for accessing the datum. */
+void * danton_get_datum(void)
+{
+        return earth.datum;
+}
+
 /* ENT density callback for the topography. */
 static double density_topography(
     struct ent_medium * medium, struct ent_state * state, double * density)
@@ -651,19 +657,30 @@ double medium_pumas(struct pumas_context * context, struct pumas_state * state,
         return step;
 }
 
+/* PRNG from the OS. */
+static const char * urandom = "/dev/urandom";
+
+/* Get a random seed from /dev/urandom. */
+static int random_get_seed(unsigned long * seed)
+{
+        /* Get a seed from /dev/urandom*/
+        FILE * fp = fopen(urandom, "rb");
+        if (fp == NULL) return EXIT_FAILURE;
+        if (fread(seed, sizeof(long), 1, fp) <= 0) {
+                fclose(fp);
+                return EXIT_FAILURE;
+        }
+        fclose(fp);
+        return EXIT_SUCCESS;
+}
+
 /* Initialise the PRNG random seed. */
 static void random_initialise(struct simulation_context * context)
 {
         /* Get a seed from /dev/urandom*/
         unsigned long seed;
-        static const char * urandom = "/dev/urandom";
-        FILE * fp = fopen(urandom, "rb");
-        if (fp == NULL) goto error;
-        if (fread(&seed, sizeof(long), 1, fp) <= 0) {
-                fclose(fp);
+        if (random_get_seed(&seed) != EXIT_SUCCESS)
                 goto error;
-        }
-        fclose(fp);
 
         /* Set the Mersenne Twister initial state. */
         context->random_mt.data[0] = seed & 0xffffffffUL;
@@ -744,6 +761,22 @@ double random_ent(struct ent_context * context)
 {
         struct simulation_context * c = ent2context(context);
         return random_uniform01(c);
+}
+
+double danton_get_uniform01(struct danton_context * context)
+{
+        if (context == NULL) {
+                static int initialised = 0;
+                if (!initialised) {
+                        unsigned long seed = 0;
+                        random_get_seed(&seed);
+                        initialised = 1;
+                        srand((unsigned int)seed);
+                }
+                return rand() / (double)RAND_MAX;
+        } else {
+                return random_uniform01((struct simulation_context *)context);
+        }
 }
 
 /* Set a neutrino state from a tau decay product. */
@@ -1776,8 +1809,7 @@ int danton_sampler_update(struct danton_sampler * sampler)
         }
 
         /* Check the altitude. */
-        if ((sampler->altitude[0] < 0.) ||
-            (sampler->altitude[0] > sampler->altitude[1])) {
+        if (sampler->altitude[0] > sampler->altitude[1]) {
                 danton_error_push(NULL, "%s (%d): invalid altitude value(s).",
                     __FILE__, __LINE__);
                 return EXIT_FAILURE;
@@ -2043,15 +2075,6 @@ int danton_run(struct danton_context * context, long events, long requested)
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
                                 }
-
-                                if (sampler->altitude[0] ==
-                                    sampler->altitude[1]) {
-                                        danton_error_push(context,
-                                            "%s (%d): no altitude range for "
-                                            "tau(s) decays.",
-                                            __FILE__, __LINE__);
-                                        return EXIT_FAILURE;
-                                }
                         }
                 }
         }
@@ -2215,8 +2238,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                             sample_linear(context_, cos_theta, i, 0, NULL);
                         const double azimuth = sample_linear(
                             context_, sampler->azimuth, i, 0, NULL);
-                        const double z0 =
-                            (context->decay) ? sampler->altitude[0] : 0.;
+                        const double z0 = sampler->altitude[0];
                         double ecef0[3], u0[3];
                         compute_ecef_position(
                             sampler->latitude, sampler->longitude, z0, ecef0);

@@ -369,6 +369,26 @@ DANTON_API int danton_earth_model(const char * geodesic,
     double density, int * sea);
 
 /**
+ * Get the current topography datum.
+ * @return  A `turtle_datum` pointer, or `NULL`.
+ *
+ * This routines provides access to the low level `turtle_datum` used by
+ * DANTON for handling the topography. It can be used, e.g. for performing
+ * coordinate transforms or querying the altitude with TURTLE.
+ *
+ * __Warnings__ : the datum should not be modified directly with TURTLE. Use
+ * the DANTON API functions instead.
+ */
+void * danton_get_datum(void);
+
+/**
+ * Get a random number from DANTON's stream.
+ * @param  context A simulation context or `NULL`.
+ * @return         A pseudo random number in [0,1], uniformly.
+ */
+double danton_get_uniform01(struct danton_context * context);
+
+/**
  * Get the PDG particle number for a given DANTON particle index.
  *
  * @param  particle  The DANTON particle index.
