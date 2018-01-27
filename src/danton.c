@@ -257,10 +257,7 @@ static struct {
 } earth = { EARTH_GEODESIC_PREM, NULL, 16, 0., 1, 0, 2.65E+03, 1 };
 
 /* API function for accessing the datum. */
-void * danton_get_datum(void)
-{
-        return earth.datum;
-}
+void * danton_get_datum(void) { return earth.datum; }
 
 /* ENT density callback for the topography. */
 static double density_topography(
@@ -387,7 +384,7 @@ static void compute_ecef_direction(
                 const double cp = cos(phi);
 
                 const double R[3][3] = { { -sp, cp, 0. },
-                    { ct * cp, ct * sp, -st }, { st * cp, st * sp, ct } };
+                        { ct * cp, ct * sp, -st }, { st * cp, st * sp, ct } };
 
                 /* Compute the local direction. */
                 const double p = (90. - azimuth) * deg;
@@ -679,8 +676,7 @@ static void random_initialise(struct simulation_context * context)
 {
         /* Get a seed from /dev/urandom*/
         unsigned long seed;
-        if (random_get_seed(&seed) != EXIT_SUCCESS)
-                goto error;
+        if (random_get_seed(&seed) != EXIT_SUCCESS) goto error;
 
         /* Set the Mersenne Twister initial state. */
         context->random_mt.data[0] = seed & 0xffffffffUL;
@@ -1105,7 +1101,10 @@ static int transport_forward(struct simulation_context * context,
                                                 continue;
 
                                         /* Log the decay if in air. */
-                                        if (tau_data.medium < 10) continue;
+                                        if ((tau_data.medium < 10) ||
+                                            (tau_data.medium ==
+                                                MEDIUM_TOPOGRAPHY))
+                                                continue;
                                         if (context->record->api.n_products ==
                                             0)
                                                 record_copy_pumas(
@@ -1299,7 +1298,10 @@ static int transport_backward(
 
                         /* Check that the proposed vertex is **not** in air. */
                         struct generic_state * g = (struct generic_state *)tau;
-                        if ((g->medium < 10) || (g->density <= 0.)) break;
+                        if ((g->medium < 10) ||
+                            (g->medium == MEDIUM_TOPOGRAPHY) ||
+                            (g->density <= 0.))
+                                break;
 
                         /* If upgoing and in air, randomly recycle the event
                          * by biasing the decay probability at the vertex.
