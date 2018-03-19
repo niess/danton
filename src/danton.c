@@ -56,6 +56,14 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+/* Paths for PUMAS materials. */
+#ifndef PUMAS_MDF
+#define PUMAS_MDF NULL
+#endif
+#ifndef PUMAS_DEDX
+#define PUMAS_DEDX NULL
+#endif
+
 /* Handle for ENT Physic. */
 static struct ent_physics * physics = NULL;
 
@@ -1533,7 +1541,7 @@ static int load_pumas(struct danton_context * context)
         }
 
         /* If no binary dump, initialise from the MDF and dump. */
-        pumas_initialise(particle, NULL, NULL, NULL);
+        pumas_initialise(particle, PUMAS_MDF, PUMAS_DEDX, NULL);
         pumas_particle(NULL, &tau_ctau0, &tau_mass);
 
         /* Dump the library configuration. */
