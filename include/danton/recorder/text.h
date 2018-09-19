@@ -31,18 +31,43 @@ extern "C" {
 
 #include "danton.h"
 
+/** Operations mode for a text danton_recorder. */
 enum danton_text_mode {
+        /** Append to an existing text file, or create it. */
         DANTON_TEXT_MODE_APPEND = 0,
+        /** Create a new text file, or override it. */
         DANTON_TEXT_MODE_CREATE,
+        /** The number of operations modes.  */
         DANTON_TEXT_MODE_N
 };
 
+/**
+ * Data structure for a text danton_recorder.
+ *
+ * This is an implementation of a danton_recorder to a *text* file. The exposed
+ * data can be directly modified.
+ */
 struct danton_text {
+        /** The base danton_recorder. */
         struct danton_recorder base;
+        /** The operation mode. */
         enum danton_text_mode mode;
 };
 
+/**
+ * Create a text danton_recorder.
+ *
+ * @param  path  The path to the text file
+ * @return       The corresponding text danton_recorder, or `ǸULL`.
+ */
 DANTON_API struct danton_text * danton_text_create(const char * path);
+
+/**
+* Check if a danton_recorder is of *text* type.
+*
+* @param primary  The danton_recorder.
+* @return         `1` if the recorder is a text one, `0` otherwise.
+*/
 DANTON_API int danton_text_check(struct danton_recorder * recorder);
 
 #ifdef __cplusplus

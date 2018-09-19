@@ -31,16 +31,46 @@ extern "C" {
 
 #include "danton.h"
 
+/** Opaque structure for a discrete danton_primary. */
 struct danton_discrete;
 
+/**
+ * Create a discrete danton_primary.
+ *
+ * @param  energy   The energy of the primary neutrino, in GeV.
+ * @param  weight   The intensity of the discrete source.
+ * @return          The corresponding discrete danton_primary, or `ǸULL`.
+ */
 DANTON_API struct danton_discrete * danton_discrete_create(
     double energy, double weight);
 
+/**
+ * Set the properties of a discrete danton_primary.
+ *
+ * @param discrete  The discrete danton_primary.
+ * @param  energy   The energy of the primary neutrino, in GeV.
+ * @param  weight   The intensity of the discrete source.
+ * @return          `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ */
 DANTON_API int danton_discrete_set(
     struct danton_discrete * discrete, double energy, double weight);
+
+/**
+ * Get the properties of a discrete danton_primary.
+ *
+ * @param discrete  The discrete danton_primary.
+ * @param  energy   The energy of the primary neutrino, in GeV.
+ * @param  weight   The intensity of the discrete source.
+ */
 DANTON_API void danton_discrete_get(
     const struct danton_discrete * discrete, double * energy, double * weight);
 
+/**
+ * Check if a danton_primary is of *discrete* type.
+ *
+ * @param primary  The danton_primary.
+ * @return         `1` if the primary is a discrete one, `0` otherwise.
+ */
 DANTON_API int danton_discrete_check(struct danton_primary * primary);
 
 #ifdef __cplusplus

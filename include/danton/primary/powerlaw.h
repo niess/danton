@@ -31,15 +31,39 @@ extern "C" {
 
 #include "danton.h"
 
+/**
+ * Data structure for a powerlaw danton_primary.
+ *
+ * This is an implementation of a powerlaw danton_primary. The exposed
+ * data can be directly modified.
+ */
 struct danton_powerlaw {
+        /** The base danton_primary object. */
         struct danton_primary base;
+        /** The exponent of the power law. */
         double exponent;
+        /** The weight of the primary source. */
         double weight;
 };
 
+/**
+ * Create a powerlaw danton_primary.
+ *
+ * @param  energy_min   The minimum energy of the primary neutrino, in GeV.
+ * @param  energy_max   The maximum energy of the primary neutrino, in GeV.
+ * @param  exponent     The exponent of the powerlaw.
+ * @param  weight       The intensity of the powerlaw source.
+ * @return              The corresponding powerlaw danton_primary, or `ǸULL`.
+ */
 DANTON_API struct danton_powerlaw * danton_powerlaw_create(
     double energy_min, double energy_max, double exponent, double weight);
 
+/**
+ * Check if a danton_primary is of *powerlaw* type.
+ *
+ * @param primary  The danton_primary.
+ * @return         `1` if the primary is a powerlaw one, `0` otherwise.
+ */
 DANTON_API int danton_powerlaw_check(struct danton_primary * primary);
 
 #ifdef __cplusplus
