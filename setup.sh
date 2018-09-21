@@ -3,10 +3,6 @@
 # Script root directory.
 danton_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Set the path for dynamic libraries.
-lib_dir=$danton_dir/lib
-[[ "$LD_LIBRARY_PATH" =~ "${lib_dir}" ]] || export LD_LIBRARY_PATH=${lib_dir}:$LD_LIBRARY_PATH
-
 # Set the materials.
 export PUMAS_MDF=$danton_dir/share/materials/materials.xml
 export PUMAS_DEDX=$danton_dir/share/materials/dedx

@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.com/niess/danton.svg?branch=dev)](https://travis-ci.com/niess/danton)
+
 # DANTON
 ( **D**ec**A**yi**N**g **T**aus fr**O**m **N**eutrinos )
 
@@ -23,26 +25,31 @@ detailed topography can be provided from world wide elevation models, e.g.
 [SRTMGL1]: https://lpdaac.usgs.gov/dataset_discovery/measures/measures_products_table/srtmgl1_v003
 
 ## Installation
-Currently there is no automatic build procedure. On a linux box you might try
-the provided [setup.sh](setup.sh) and [Makefile](Makefile) as :
+DANTON has been tested on both Linux and OSX. Not on Windows though. The
+provided [Makefile](Makefile) builds `libdanton` as a shared library as well
+as the `danton` executable. Note that the [setup.sh](setup.sh) script must
+be sourced before using DANTON, e.g. as:
 ```bash
-. setup.sh
-make lib && make
+# Build DANTON
+cd danton
+make
+
+# Run the executable
+source setup.sh
+danton path/to/card.json
 ```
-This will build the dynamic libraries for all the submodules and then the
-`libdanton.so` library and the `danton` executable.
 
 ## API documentation
 A documentation of the `libdanton` API is available [online][API:docs].
 
 [API:docs]: https://niess.github.io/danton-docs
 
-## Data cards
+## Steering files
 
-A syntaxic summary of the data cards options is provided here. Examples can
-also be found in the [share/cards](share/cards) folder.
+A syntaxic summary of the steering files parameters is provided here. Examples
+can also be found in the [share/cards](share/cards) folder.
 
-### Root keys
+### Root items
 ```
 decay           boolean              If `true` the sampled taus are decayed.
 events          integer              The number of Monte-Carlo events to run.
@@ -52,7 +59,7 @@ output-file     string, null         The output file name or `null` for `stdout`
 requested       integer              The requested number of valid Monte-Carlo events
 ```
 
-In addition to the previous general options one also has the following keys :
+In addition to the previous general parameters one also has the following keys :
 `"earth-model"`, `"particle-sampler"`, `"primary-flux"` and `"stepping"`. The
 corresponding options are described hereafter.
 
