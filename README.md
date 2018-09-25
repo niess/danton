@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/niess/danton.svg?branch=dev)](https://travis-ci.com/niess/danton)
+[![Build Status](https://travis-ci.com/niess/danton.svg?branch=master)](https://travis-ci.com/niess/danton)
 
 # DANTON
 ( **D**ec**A**yi**N**g **T**aus fr**O**m **N**eutrinos )
@@ -37,6 +37,11 @@ make
 ./bin/danton path/to/card.json
 ```
 
+DANTON requires `gfortran` in order to compile TAUOLA. In addition, the default Makefile
+expects `libpng` and `libtiff` to be installed. Those are required by some topography
+models. They can be disabled by editing the `USE_PNG` and `USE_TIFF` flags in the
+Makefile.
+ 
 ## API documentation
 A documentation of the `libdanton` API is available [online][API:docs].
 
