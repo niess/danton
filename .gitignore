@@ -16,7 +16,7 @@ bin
 .tags
 
 # Ignore temporary data.
-*.b
+.danton.*
 *.dat
 share/topography
 share/scripts

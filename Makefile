@@ -1,5 +1,7 @@
 # Generic options
-PDF_DIR := $(abspath deps/ent/share/pdf)
+DANTON_DEFAULT_PDF := $(abspath deps/ent/share/pdf/CT14nlo_0000.dat)
+DANTON_DEFAULT_MDF := $(abspath share/materials/materials.xml)
+DANTON_DEFAULT_DEDX := $(abspath share/materials/dedx)
 USE_TIFF := 1
 USE_PNG := 1
 
@@ -58,7 +60,7 @@ endif
 ifneq ($(TURTLE_USE_TIFF),1)
 	TURTLE_CFLAGS += -DTURTLE_NO_PNG
 endif
-		
+
 lib/libdanton.so: $(OBJS)
 	@$(CC) -o $@ $(CFLAGS) -shared $(OBJS) -lgfortran -ltiff -lpng -lm
 
@@ -71,9 +73,11 @@ define build_c
 	@mkdir -p build
 	@$(CC) -o $@ $(CFLAGS) $1 -fPIC -c $<
 endef
-	
+
 build/danton.lo: src/danton.c
-	@$(call build_c,-DPDF_DIR="\"$(PDF_DIR)\"" $(INCLUDE))
+	@$(call build_c,-DDANTON_DEFAULT_PDF="\"$(DANTON_DEFAULT_PDF)\""       \
+		-DDANTON_DEFAULT_MDF="\"$(DANTON_DEFAULT_MDF)\""               \
+		-DDANTON_DEFAULT_DEDX="\"$(DANTON_DEFAULT_DEDX)\"" $(INCLUDE))
 
 build/%.lo: src/danton/primary/%.c
 	@$(call build_c,$(INCLUDE))

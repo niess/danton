@@ -56,19 +56,13 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* Paths for PUMAS materials. */
-#ifndef PUMAS_MDF
-#define PUMAS_MDF NULL
-#endif
-#ifndef PUMAS_DEDX
-#define PUMAS_DEDX NULL
-#endif
-
 /* Handle for ENT Physic. */
 static struct ent_physics * physics = NULL;
 
-/* Path to the PDF tables. */
+/* Path for data sets. */
 static char * pdf_path = NULL;
+static char * mdf_path = NULL;
+static char * dedx_path = NULL;
 
 /* The tau lepton mass, in GeV / c^2. */
 static double tau_mass;
@@ -638,8 +632,8 @@ static void earth_model_configure(void)
 #undef AW
 
 /* Medium callback encapsulation for PUMAS. */
-double medium_pumas(struct pumas_context * context, struct pumas_state * state,
-    struct pumas_medium ** medium_ptr)
+static double medium_pumas(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium ** medium_ptr)
 {
         double direction[3];
         if (context->forward) {
@@ -1524,7 +1518,7 @@ static int transport_backward(
 static int load_pumas(struct danton_context * context)
 {
         const enum pumas_particle particle = PUMAS_PARTICLE_TAU;
-        const char * dump = "materials.b";
+        const char * dump = ".danton.cfg";
 
         /* First, attempt to load any binary dump. */
         FILE * stream = fopen(dump, "rb");
@@ -1537,11 +1531,16 @@ static int load_pumas(struct danton_context * context)
                 }
                 fclose(stream);
                 pumas_particle(NULL, &tau_ctau0, &tau_mass);
-                return EXIT_SUCCESS;
+                goto exit;
         }
 
         /* If no binary dump, initialise from the MDF and dump. */
-        pumas_initialise(particle, PUMAS_MDF, PUMAS_DEDX, NULL);
+        const char * mdf = (mdf_path == NULL) ?
+            DANTON_DEFAULT_MDF : mdf_path;
+        const char * dedx = (dedx_path == NULL) ?
+            DANTON_DEFAULT_DEDX : dedx_path;
+
+        pumas_initialise(particle, mdf, dedx, NULL);
         pumas_particle(NULL, &tau_ctau0, &tau_mass);
 
         /* Dump the library configuration. */
@@ -1549,6 +1548,12 @@ static int load_pumas(struct danton_context * context)
         if (stream == NULL) return EXIT_FAILURE;
         pumas_dump(stream);
         fclose(stream);
+
+exit:
+        free(mdf_path);
+        mdf_path = NULL;
+        free(dedx_path);
+        dedx_path = NULL;
 
         return EXIT_SUCCESS;
 }
@@ -1563,7 +1568,7 @@ static int initialise_physics(struct danton_context * context)
         enum ent_return e_rc;
         const char * pdf;
         if (pdf_path == NULL)
-                pdf = PDF_DIR "/CT14nlo_0000.dat";
+                pdf = DANTON_DEFAULT_PDF;
         else
                 pdf = pdf_path;
         if ((e_rc = ent_physics_create(&physics, pdf)) != ENT_RETURN_SUCCESS) {
@@ -1603,26 +1608,37 @@ static void topography_initialise(void)
         initialised = 1;
 }
 
+static int copy_config_string(const char * opts, char ** config)
+{
+        if (opts == NULL) return EXIT_SUCCESS;
+                
+        if (*config != NULL) free(*config);
+        const int n = strlen(opts) + 1;
+        *config = malloc(n);
+        if (*config == NULL) {
+                danton_error_push(NULL,
+                    "%s (%d): could not allocate memory.", __FILE__, __LINE__);
+                return EXIT_FAILURE;
+        }
+        memcpy(*config, opts, n);
+        
+        return EXIT_SUCCESS;
+}
+
 /* Initialise the DANTON library. */
-int danton_initialise(
-    const char * pdf, danton_lock_cb * lock_, danton_lock_cb * unlock_)
+int danton_initialise(const char * pdf, const char * mdf, const char * dedx,
+    danton_lock_cb * lock_, danton_lock_cb * unlock_)
 {
         /* Clear the error status. */
         errno = 0;
 
-        /* Copy the PDF path for later use. */
-        if (pdf != NULL) {
-                if (pdf_path != NULL) free(pdf_path);
-                const int n = strlen(pdf) + 1;
-                pdf_path = malloc(n);
-                if (pdf_path == NULL) {
-                        danton_error_push(NULL,
-                            "%s (%d): could not allocate memory.", __FILE__,
-                            __LINE__);
-                        return EXIT_FAILURE;
-                }
-                memcpy(pdf_path, pdf, n);
-        }
+        /* Copy the data paths for later use. */
+        if (copy_config_string(pdf, &pdf_path) != EXIT_SUCCESS)
+                return EXIT_FAILURE;
+        if (copy_config_string(mdf, &mdf_path) != EXIT_SUCCESS)
+                return EXIT_FAILURE;
+        if (copy_config_string(dedx, &dedx_path) != EXIT_SUCCESS)
+                return EXIT_FAILURE;
 
         /* Check and update the lock callbacks. */
         if (((lock_ == NULL) && (unlock_ != NULL)) ||
@@ -1643,6 +1659,10 @@ void danton_finalise(void)
 {
         free(pdf_path);
         pdf_path = NULL;
+        free(mdf_path);
+        mdf_path = NULL;
+        free(dedx_path);
+        dedx_path = NULL;
         ent_physics_destroy(&physics);
         pumas_finalise();
         alouette_finalise();

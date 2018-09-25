@@ -21,5 +21,4 @@ install:
   - make
 
 script:
-  - source setup.sh
-  - danton
+  - ./bin/danton

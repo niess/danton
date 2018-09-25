@@ -27,16 +27,14 @@ detailed topography can be provided from world wide elevation models, e.g.
 ## Installation
 DANTON has been tested on both Linux and OSX. Not on Windows though. The
 provided [Makefile](Makefile) builds `libdanton` as a shared library as well
-as the `danton` executable. Note that the [setup.sh](setup.sh) script must
-be sourced before using DANTON, e.g. as:
+as the `danton` executable, e.g. as:
 ```bash
 # Build DANTON
 cd danton
 make
 
 # Run the executable
-source setup.sh
-danton path/to/card.json
+./bin/danton path/to/card.json
 ```
 
 ## API documentation

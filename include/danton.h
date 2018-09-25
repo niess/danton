@@ -298,6 +298,8 @@ typedef int danton_lock_cb(void);
  * Initialise the DANTON library.
  *
  * @param  pdf     Path to the PDF tables for ENT, or `NULL`.
+ * @param  mdf     Path to the MDF file for PUMAS, or `NULL`.
+ * @param  dedx    Path to the energy loss tables for PUMAS, or `NULL`.
  * @param  lock    A locking callback, or `NULL`.
  * @param  unlock  An unlocking callback, or `NULL`.
  * @return         `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
@@ -308,8 +310,8 @@ typedef int danton_lock_cb(void);
  * __Warning__ : for multithreaded usage one **must** provide valid *lock* and
  * *unlock* callbacks.
  */
-DANTON_API int danton_initialise(
-    const char * pdf, danton_lock_cb * lock, danton_lock_cb * unlock);
+DANTON_API int danton_initialise(const char * pdf, const char * mdf,
+    const char * dedx, danton_lock_cb * lock, danton_lock_cb * unlock);
 
 /**
  * Finalise the danton library.

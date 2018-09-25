@@ -511,7 +511,7 @@ int main(int argc, char * argv[])
         if (argc <= 1) exit_with_help(EXIT_SUCCESS);
 
         /* Initialise DANTON. */
-        if (danton_initialise(NULL, NULL, NULL) != EXIT_SUCCESS) {
+        if (danton_initialise(NULL, NULL, NULL, NULL, NULL) != EXIT_SUCCESS) {
                 ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
                     danton_error_pop(NULL));
         }
