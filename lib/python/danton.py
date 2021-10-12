@@ -56,14 +56,14 @@ class iter_event:
 
     def next(self):
         if not self.field:
-                if not self.fid:
-                        self.fid.close()
-                        self.fid = None
-                raise StopIteration()
+            if not self.fid:
+                    self.fid.close()
+                    self.fid = None
+            raise StopIteration()
         try:
-		self.field, event = self._get_next_event()
-	except:
-		raise StopIteration()
+            self.field, event = self._get_next_event()
+        except:
+            raise StopIteration()
         return event
 
     def _get_next_event(self):
@@ -99,7 +99,7 @@ class iter_event:
         return self.field, self.Event(eventid, primary, decay, weight)
 
 class iter_flux:
-    """Iterator over the neutrino flux events in a text dump.
+    """Iterator over the flux events in a text dump.
     """
 
     # Data structures for events.
@@ -126,10 +126,10 @@ class iter_flux:
 
     def next(self):
         if not self.field:
-                if not self.fid:
-                        self.fid.close()
-                        self.fid = None
-                raise StopIteration()
+            if not self.fid:
+                    self.fid.close()
+                    self.fid = None
+            raise StopIteration()
         self.field, event = self._get_next_event()
         return event
 
@@ -146,11 +146,20 @@ class iter_flux:
         # Get the final state(s) info.
         final = []
         self.field = self.fid.readline().split()
-        while len(self.field) == 9:
-            genid = int(self.field[0])
-            pid = int(self.field[1])
-            final.append(self.State(pid, genid, float(self.field[2]),
-                    map(float, self.field[3:6]), map(float, self.field[6:9])))
-            self.field = self.fid.readline().split()
+        if len(self.field) == 9:
+            while len(self.field) == 9:
+                genid = int(self.field[0])
+                pid = int(self.field[1])
+                if abs(pid) == 15:
+                    self.field = self.fid.readline().split()
+                    final.append(self.State(pid, genid, float(self.field[0]),
+                        map(float, self.field[1:4]),
+                        map(float, self.field[4:7])))
+                else:
+                    final.append(self.State(pid, genid, float(self.field[2]),
+                        map(float, self.field[3:6]),
+                        map(float, self.field[6:9])))
+
+                self.field = self.fid.readline().split()
 
         return self.field, self.Event(eventid, primary, final, weight)

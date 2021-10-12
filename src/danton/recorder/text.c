@@ -139,8 +139,10 @@ static int record_event(struct danton_context * context,
          * the event weight and the generation index are printed once and
          * only once.
          */
-        long index[3] = { event->id + 1, event->generation, 0 };
-        const double * weight[3] = { &event->weight, NULL, NULL };
+        long index[3] = { (event->id != text->last_id) ? event->id + 1 :
+            event->generation, event->generation, 0 };
+        const double * weight[3] = { (event->id != text->last_id) ?
+            &event->weight : NULL, NULL, NULL };
         int i = 0;
         if ((event->primary != NULL) && (event->id != text->last_id)) {
                 format_state(stream, index[i], &event->primary->pid,
@@ -152,7 +154,7 @@ static int record_event(struct danton_context * context,
         if (event->vertex != NULL) {
                 format_state(stream, index[i], &event->vertex->pid,
                     event->vertex, weight[i]);
-                dump_pid = 0;
+                dump_pid = event->vertex->pid != event->final->pid;
                 i++;
         }
         int * pid = dump_pid ? &event->final->pid : NULL;

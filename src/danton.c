@@ -859,9 +859,18 @@ static int record_publish(struct simulation_context * context)
         else
                 record->api.product = NULL;
 
+        /* Check and prune the vertex */
+        struct danton_state * vertex = record->api.vertex;
+        if (record->vertex.pid != record->final.pid) {
+                record->api.vertex = NULL;
+        }
+
         /* Call the event processor. */
         int rc = context->api.recorder->record_event(
             &context->api, context->api.recorder, &record->api);
+
+        /* Restore the vertex */
+        record->api.vertex = vertex;
 
         /* Reset the record for new data. */
         record->api.n_products = 0;
@@ -1252,7 +1261,7 @@ static int transport_backward(
                             context->record->api.final, &current->base.ent);
         }
 
-        struct generic_state g_state;
+        struct generic_state g_state = {.context = current->context};
         struct ent_state * state = NULL;
         struct pumas_state * tau = NULL;
         double direction[3];
@@ -1346,7 +1355,6 @@ static int transport_backward(
                 memcpy(state->position, tau->position, sizeof(state->position));
                 memcpy(
                     state->direction, tau->direction, sizeof(state->direction));
-                g_state.context = context;
                 g_state.x = 0.;
                 g_state.is_tau = 0;
                 g_state.is_inside = -1;
@@ -2084,9 +2092,8 @@ int danton_run(struct danton_context * context, long events, long requested)
                             __LINE__);
                         return EXIT_FAILURE;
                 }
-                if (context->mode == DANTON_MODE_FORWARD)
-                        context_->flux_neutrino =
-                            sampler_->neutrino_weight > 0.;
+                context_->flux_neutrino =
+                        sampler_->neutrino_weight > 0.;
 
                 if (context->decay) {
                         if (sampler_->neutrino_weight ==

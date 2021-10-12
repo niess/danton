@@ -29,6 +29,9 @@ DANTON has been tested on both Linux and OSX. Not on Windows though. The
 provided [Makefile](Makefile) builds `libdanton` as a shared library as well
 as the `danton` executable, e.g. as:
 ```bash
+# Fetch the source and deps from GitHub
+git clone --recursive https://github.com/niess/danton.git
+
 # Build DANTON
 cd danton
 make
