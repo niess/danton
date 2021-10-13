@@ -56,8 +56,11 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* Handle for ENT Physic. */
-static struct ent_physics * physics = NULL;
+/* Handles for Physic. */
+static struct {
+        struct ent_physics * ent;
+        struct pumas_physics * pumas;
+} physics = { NULL, NULL };
 
 /* Path for data sets. */
 static char * pdf_path = NULL;
@@ -80,28 +83,28 @@ static double pem_model0(double x, double * density)
         const double a2 = -8.8381E+03;
         *density = 13.0885E+03 + a2 * x * x;
         const double xg = (x <= 5E-02) ? 5E-02 : x;
-        return 0.01 * PREM_EARTH_RADIUS / fabs(2. * a2 * xg);
+        return PREM_EARTH_RADIUS / fabs(2. * a2 * xg);
 }
 
 static double pem_model1(double x, double * density)
 {
         const double a = 1.2638E+03;
         *density = 12.58155E+03 + x * (-a + x * (-3.6426E+03 - x * 5.5281E+03));
-        return 0.01 * PREM_EARTH_RADIUS / a;
+        return PREM_EARTH_RADIUS / a;
 }
 
 static double pem_model2(double x, double * density)
 {
         const double a = 6.4761E+03;
         *density = 7.9565E+03 + x * (-a + x * (5.5283E+03 - x * 3.0807E+03));
-        return 0.01 * PREM_EARTH_RADIUS / a;
+        return PREM_EARTH_RADIUS / a;
 }
 
 static double pem_model3(double x, double * density)
 {
         const double a = 1.4836E+03;
         *density = 5.3197E+03 - a * x;
-        return 0.01 * PREM_EARTH_RADIUS / a;
+        return PREM_EARTH_RADIUS / a;
 }
 
 static double pem_model4(double x, double * density)
@@ -115,14 +118,14 @@ static double pem_model5(double x, double * density)
 {
         const double a = 3.8045E+03;
         *density = 7.1089E+03 - a * x;
-        return 0.01 * PREM_EARTH_RADIUS / a;
+        return PREM_EARTH_RADIUS / a;
 }
 
 static double pem_model6(double x, double * density)
 {
         const double a = 0.6924E+03;
         *density = 2.691E+03 + a * x;
-        return 0.01 * PREM_EARTH_RADIUS / a;
+        return PREM_EARTH_RADIUS / a;
 }
 
 static double pem_model7(double x, double * density)
@@ -148,7 +151,7 @@ static double pem_model9(double x, double * density)
         static double uss_model##INDEX(double x, double * density)             \
         {                                                                      \
                 *density = B / C * exp(-(x - 1.) * PREM_EARTH_RADIUS / C);     \
-                return 0.01 * C;                                               \
+                return C;                                                      \
         }
 
 USS_MODEL(0, 12226.562, 9941.8638)
@@ -288,7 +291,7 @@ static double locals_topography(struct pumas_medium * medium,
                 struct generic_state * s = (struct generic_state *)state;      \
                 const double step = MODEL##_model##INDEX(s->x, density);       \
                 s->density = *density;                                         \
-                return step;                                                   \
+                return 0.01 * step;                                            \
         }
 
 DENSITY(pem, 0)
@@ -632,11 +635,12 @@ static void earth_model_configure(void)
 #undef AW
 
 /* Medium callback encapsulation for PUMAS. */
-static double medium_pumas(struct pumas_context * context,
-    struct pumas_state * state, struct pumas_medium ** medium_ptr)
+static enum pumas_step medium_pumas(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium ** medium_ptr,
+    double * step_ptr)
 {
         double direction[3];
-        if (context->forward) {
+        if (context->mode.direction == PUMAS_MODE_FORWARD) {
                 direction[0] = state->direction[0];
                 direction[1] = state->direction[1];
                 direction[2] = state->direction[2];
@@ -647,13 +651,21 @@ static double medium_pumas(struct pumas_context * context,
         }
         struct generic_state * g = (struct generic_state *)state;
         const double step = medium(state->position, direction, g);
-        if (g->medium == MEDIUM_TOPOGRAPHY)
-                *medium_ptr = &topography_pumas;
-        else if (g->medium >= 0)
-                *medium_ptr = media_pumas + g->medium;
-        else
-                *medium_ptr = NULL;
-        return step;
+
+        if (medium_ptr != NULL) {
+                if (g->medium == MEDIUM_TOPOGRAPHY)
+                        *medium_ptr = &topography_pumas;
+                else if (g->medium >= 0)
+                        *medium_ptr = media_pumas + g->medium;
+                else
+                        *medium_ptr = NULL;
+        }
+
+        if (step_ptr != NULL) {
+                *step_ptr = step;
+        }
+
+        return PUMAS_STEP_CHECK;
 }
 
 /* PRNG from the OS. */
@@ -816,7 +828,7 @@ static void record_copy_pumas(
 {
         if (dst == NULL) return;
         dst->pid = (src->charge > 0.) ? ENT_PID_TAU_BAR : ENT_PID_TAU;
-        dst->energy = src->kinetic + tau_mass;
+        dst->energy = src->energy + tau_mass;
         memcpy(dst->position, src->position, sizeof(dst->position));
         memcpy(dst->direction, src->direction, sizeof(dst->direction));
 }
@@ -900,11 +912,23 @@ static int record_publish(struct simulation_context * context)
         return rc;
 }
 
+/* Callback for PUMAS errors */
+#define PUMAS_ERROR_SIZE 2048
+static char pumas_last_error[PUMAS_ERROR_SIZE] = { 0x0 };
+static pumas_function_t * pumas_last_caller = NULL;
+
+static void catch_pumas_error(enum pumas_return rc, pumas_function_t * caller,
+    const char * message)
+{
+        pumas_last_caller = caller;
+        strncpy(pumas_last_error, message, PUMAS_ERROR_SIZE - 1);
+}
+
 /* Shortcut for dumping a PUMAS error. */
-#define ERROR_PUMAS(context, rc, function)                                     \
+#define ERROR_PUMAS(context)                                                   \
         danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, pumas_error_function((pumas_function_t *)&function),     \
-            pumas_error_string(rc))
+            __LINE__, pumas_error_function(pumas_last_caller),                 \
+            pumas_last_error)
 
 /* Shortcut for dumping a TURTLE error. */
 #define ERROR_TURTLE(context, rc, function)                                    \
@@ -917,15 +941,14 @@ static int call_pumas(
     struct simulation_context * context_, struct generic_state * state)
 {
         struct danton_context * context = (struct danton_context *)context_;
-        enum pumas_return rc;
 
         if (context->run_action != NULL) {
                 /* Create a recorder if not already done. */
                 if (context_->pumas->recorder == NULL) {
                         struct pumas_recorder * recorder;
-                        if ((rc = pumas_recorder_create(context_->pumas,
-                                 &recorder)) != PUMAS_RETURN_SUCCESS) {
-                                ERROR_PUMAS(context, rc, pumas_recorder_create);
+                        if (pumas_recorder_create(&recorder, 0)
+                            != PUMAS_RETURN_SUCCESS) {
+                                ERROR_PUMAS(context);
                                 return EXIT_FAILURE;
                         }
                         recorder->period = 0;
@@ -934,9 +957,10 @@ static int call_pumas(
         }
 
         /* Call PUMAS. */
-        if ((rc = pumas_transport(context_->pumas, &state->base.pumas)) !=
+        if (pumas_context_transport(
+            context_->pumas, &state->base.pumas, NULL, NULL) !=
             PUMAS_RETURN_SUCCESS) {
-                ERROR_PUMAS(context, rc, pumas_transport);
+                ERROR_PUMAS(context);
                 return EXIT_FAILURE;
         }
 
@@ -1019,7 +1043,7 @@ static int transport_forward(struct simulation_context * context,
         for (;;) {
                 /* Neutrino transport with ENT. */
                 enum ent_return rc;
-                if ((rc = ent_transport(physics, &context->ent, neutrino,
+                if ((rc = ent_transport(physics.ent, &context->ent, neutrino,
                          &product, &event)) != ENT_RETURN_SUCCESS) {
                         ERROR_ENT(&context->api, rc, ent_transport);
                         return EXIT_FAILURE;
@@ -1093,8 +1117,8 @@ static int transport_forward(struct simulation_context * context,
                                 return EXIT_FAILURE;
                         if (tau->decayed) {
                                 /* Tau decay with ALOUETTE/TAUOLA. */
-                                const double p = sqrt(tau->kinetic *
-                                    (tau->kinetic + 2. * tau_mass));
+                                const double p = sqrt(tau->energy *
+                                    (tau->energy + 2. * tau_mass));
                                 double momentum[3] = { p * tau->direction[0],
                                         p * tau->direction[1],
                                         p * tau->direction[2] };
@@ -1290,7 +1314,7 @@ static int transport_backward(
                 if (context->api.decay ||
                     (context->record->api.generation > 1)) {
                         const double Pf =
-                            sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                            sqrt(tau->energy * (tau->energy + 2. * tau_mass));
                         tau->weight *= tau_mass / (tau_ctau0 * Pf);
                 }
 
@@ -1301,16 +1325,17 @@ static int transport_backward(
                 double x0;
                 for (;;) {
                         x0 = tau->grammage;
-                        context->pumas->grammage_max =
+                        context->pumas->limit.grammage =
                             x0 - lambda0 * log(random_uniform01(context));
                         tau->decayed = 0;
                         if (call_pumas(context, (struct generic_state *)tau) !=
                             EXIT_SUCCESS)
                                 return EXIT_FAILURE;
                         if ((!tau->decayed &&
-                                (tau->grammage < context->pumas->grammage_max -
-                                        FLT_EPSILON)) ||
-                            (tau->kinetic + tau_mass >=
+                                (tau->grammage <
+                                    context->pumas->limit.grammage -
+                                    FLT_EPSILON)) ||
+                            (tau->energy + tau_mass >=
                                 context->energy_cut - FLT_EPSILON) ||
                             (tau->weight <= 0.))
                                 return EXIT_SUCCESS;
@@ -1338,7 +1363,7 @@ static int transport_backward(
                          * First let us compute the true decay probability.
                          */
                         const double Pf =
-                            sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                            sqrt(tau->energy * (tau->energy + 2. * tau_mass));
                         const double lD = tau_ctau0 * Pf / tau_mass;
                         const double lB = lambda0 / g->density;
                         const double pD = lB / (lB + lD);
@@ -1367,7 +1392,7 @@ static int transport_backward(
                     (tau->charge < 0.) ? ENT_PID_TAU : ENT_PID_TAU_BAR;
                 state = &g_state.base.ent;
                 state->pid = pid;
-                state->energy = tau->kinetic + tau_mass;
+                state->energy = tau->energy + tau_mass;
                 state->distance = tau->distance;
                 state->grammage = tau->grammage;
                 state->weight = tau->weight;
@@ -1384,7 +1409,7 @@ static int transport_backward(
                 medium_ent(&context->ent, state, &medium);
                 if (medium == NULL) return EXIT_SUCCESS;
                 enum ent_return re;
-                if ((re = ent_vertex(physics, &context->ent, state, medium,
+                if ((re = ent_vertex(physics.ent, &context->ent, state, medium,
                          ENT_PROCESS_NONE, NULL)) != ENT_RETURN_SUCCESS) {
                         ERROR_ENT(&context->api, re, ent_vertex);
                         return EXIT_FAILURE;
@@ -1394,13 +1419,13 @@ static int transport_backward(
                  * to recover a flux convention.
                  */
                 double cs;
-                ent_physics_cross_section(physics, pid, state->energy,
+                ent_physics_cross_section(physics.ent, pid, state->energy,
                     medium->Z, medium->A, ENT_PROCESS_NONE, &cs);
                 double density;
                 medium->density(medium, state, &density);
                 const double lP = 1E-03 * medium->A / (cs * PHYS_NA * density);
                 const double Pi =
-                    sqrt(tau->kinetic * (tau->kinetic + 2. * tau_mass));
+                    sqrt(tau->energy * (tau->energy + 2. * tau_mass));
                 const double lD = tau_ctau0 * Pi / tau_mass;
                 const double lB = lambda0 / density;
                 const double p0 = exp(-(tau->grammage - x0) / lambda0);
@@ -1422,7 +1447,7 @@ static int transport_backward(
         while ((event != ENT_EVENT_EXIT) &&
             (state->energy < context->energy_cut - FLT_EPSILON)) {
                 enum ent_return re;
-                if ((re = ent_transport(physics, &context->ent, state, NULL,
+                if ((re = ent_transport(physics.ent, &context->ent, state, NULL,
                          &event)) != ENT_RETURN_SUCCESS) {
                         ERROR_ENT(&context->api, re, ent_transport);
                         return EXIT_FAILURE;
@@ -1463,7 +1488,7 @@ static int transport_backward(
                          * transport.
                          */
                         tau->charge = (pid1 > 0) ? -1. : 1.;
-                        tau->kinetic = E1 - tau_mass;
+                        tau->energy = E1 - tau_mass;
                         tau->distance = state->distance;
                         tau->grammage = state->grammage;
                         tau->time = 0.;
@@ -1550,14 +1575,15 @@ static int load_pumas(struct danton_context * context)
         /* First, attempt to load any binary dump. */
         FILE * stream = fopen(dump, "rb");
         if (stream != NULL) {
-                enum pumas_return rc;
-                if ((rc = pumas_load(stream)) != PUMAS_RETURN_SUCCESS) {
+                if (pumas_physics_load(&physics.pumas, stream)
+                    != PUMAS_RETURN_SUCCESS) {
                         fclose(stream);
-                        ERROR_PUMAS(context, rc, pumas_load);
+                        ERROR_PUMAS(context);
                         return EXIT_FAILURE;
                 }
                 fclose(stream);
-                pumas_particle(NULL, &tau_ctau0, &tau_mass);
+                pumas_physics_particle(
+                    physics.pumas, NULL, &tau_ctau0, &tau_mass);
                 goto exit;
         }
 
@@ -1567,13 +1593,17 @@ static int load_pumas(struct danton_context * context)
         const char * dedx = (dedx_path == NULL) ?
             DANTON_DEFAULT_DEDX : dedx_path;
 
-        pumas_initialise(particle, mdf, dedx, NULL);
-        pumas_particle(NULL, &tau_ctau0, &tau_mass);
+        if (pumas_physics_create(&physics.pumas, particle, mdf, dedx, NULL) !=
+            PUMAS_RETURN_SUCCESS) {
+                ERROR_PUMAS(context);
+                return EXIT_FAILURE;
+        }
+        pumas_physics_particle(physics.pumas, NULL, &tau_ctau0, &tau_mass);
 
         /* Dump the library configuration. */
         stream = fopen(dump, "wb+");
         if (stream == NULL) return EXIT_FAILURE;
-        pumas_dump(stream);
+        pumas_physics_dump(physics.pumas, stream);
         fclose(stream);
 
 exit:
@@ -1589,7 +1619,7 @@ exit:
 static int initialise_physics(struct danton_context * context)
 {
         if (lock != NULL) lock();
-        if (physics != NULL) return EXIT_SUCCESS;
+        if (physics.ent != NULL) return EXIT_SUCCESS;
 
         /* Create a new neutrino Physics environment. */
         enum ent_return e_rc;
@@ -1598,7 +1628,8 @@ static int initialise_physics(struct danton_context * context)
                 pdf = DANTON_DEFAULT_PDF;
         else
                 pdf = pdf_path;
-        if ((e_rc = ent_physics_create(&physics, pdf)) != ENT_RETURN_SUCCESS) {
+        if ((e_rc = ent_physics_create(&physics.ent, pdf)) !=
+            ENT_RETURN_SUCCESS) {
                 ERROR_ENT(context, e_rc, ent_physics_create);
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
@@ -1638,7 +1669,7 @@ static void topography_initialise(void)
 static int copy_config_string(const char * opts, char ** config)
 {
         if (opts == NULL) return EXIT_SUCCESS;
-                
+
         if (*config != NULL) free(*config);
         const int n = strlen(opts) + 1;
         *config = malloc(n);
@@ -1648,7 +1679,7 @@ static int copy_config_string(const char * opts, char ** config)
                 return EXIT_FAILURE;
         }
         memcpy(*config, opts, n);
-        
+
         return EXIT_SUCCESS;
 }
 
@@ -1678,6 +1709,9 @@ int danton_initialise(const char * pdf, const char * mdf, const char * dedx,
         lock = lock_;
         unlock = unlock_;
 
+        /* Set the error handler for PUMAS */
+        pumas_error_handler_set(&catch_pumas_error);
+
         return EXIT_SUCCESS;
 }
 
@@ -1690,8 +1724,8 @@ void danton_finalise(void)
         mdf_path = NULL;
         free(dedx_path);
         dedx_path = NULL;
-        ent_physics_destroy(&physics);
-        pumas_finalise();
+        ent_physics_destroy(&physics.ent);
+        pumas_physics_destroy(&physics.pumas);
         alouette_finalise();
         turtle_datum_destroy(&earth.datum);
         turtle_finalise();
@@ -2201,7 +2235,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                 /* Initialise the Physic engines, if not already
                  * done.
                  */
-                if (physics == NULL) {
+                if (physics.ent == NULL) {
                         if (initialise_physics(context) != EXIT_SUCCESS)
                                 return EXIT_FAILURE;
                 }
@@ -2209,17 +2243,20 @@ int danton_run(struct danton_context * context, long events, long requested)
                         /* Create PUMAS context, if not already
                          * done..
                          */
-                        enum pumas_return rc;
-                        if ((rc = pumas_context_create(0, &context_->pumas)) !=
+                        if (pumas_context_create(
+                            &context_->pumas, physics.pumas, 0) !=
                             PUMAS_RETURN_SUCCESS) {
-                                ERROR_PUMAS(context, rc, pumas_context_create);
+                                ERROR_PUMAS(context);
                                 return EXIT_FAILURE;
                         }
                         context_->pumas->medium = &medium_pumas;
                         context_->pumas->random = &random_pumas;
                         context_->pumas->user_data = context_;
                 }
-                context_->pumas->longitudinal = context->longitudinal;
+                context_->pumas->mode.energy_loss = PUMAS_MODE_STRAGGLED;
+                context_->pumas->mode.decay = PUMAS_MODE_RANDOMISED;
+                context_->pumas->mode.scattering = context->longitudinal ?
+                        PUMAS_MODE_DISABLED : PUMAS_MODE_MIXED;
 
                 /* Create the event record, if not already done.
                  */
@@ -2287,10 +2324,13 @@ int danton_run(struct danton_context * context, long events, long requested)
 
                 /* Run a bunch of forward Monte-Carlo events. */
                 context_->ent.ancestor = NULL;
-                if (context_->pumas != NULL) context_->pumas->forward = 1;
                 context_->energy_cut = context->sampler->energy[0];
-                context_->pumas->kinetic_limit =
-                    context_->energy_cut - tau_mass;
+                if (context_->pumas != NULL) {
+                        context_->pumas->mode.direction = PUMAS_MODE_FORWARD;
+                        context_->pumas->limit.energy =
+                            context_->energy_cut - tau_mass;
+                        context_->pumas->event = PUMAS_EVENT_LIMIT_ENERGY;
+                }
 
                 long i;
                 for (i = 0; (i < events) && (n_published < requested); i++) {
@@ -2404,9 +2444,11 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 context_->energy_cut = (*p)->energy[1];
                 }
                 if (context_->pumas != NULL) {
-                        context_->pumas->forward = 0;
-                        context_->pumas->kinetic_limit =
+                        context_->pumas->mode.direction = PUMAS_MODE_BACKWARD;
+                        context_->pumas->limit.energy =
                             context_->energy_cut - tau_mass;
+                        context_->pumas->event = PUMAS_EVENT_LIMIT_ENERGY |
+                            PUMAS_EVENT_LIMIT_GRAMMAGE;
                 }
 
                 long i;

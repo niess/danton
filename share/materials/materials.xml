@@ -1,33 +1,29 @@
-<!-- Description of materials and atomic elements as tabulated by the PDG.
-
-     See: Atomic and Nuclear Properties of Materials,
-	http://pdg.lbl.gov/2014/AtomicNuclearProperties/index.html
-  -->
+<!-- Description of materials and atomic elements for PUMAS. -->
 <pumas>
-	<!-- List of atomic elements. -->
-        <element name="Hydrogen" Z="1" A="1.0087" I="21.8"/>
-	<element name="Carbon" Z="6" A="12.0108" I="78.0"/>
-	<element name="Nitrogen" Z="7" A="14.0067" I="82.0"/>
-	<element name="Oxygen" Z="8" A="15.9994" I="95.0"/>
-	<element name="StandardRock" Z="11" A="22.0" I="136.4"/>
-	<element name="Argon" Z="18" A="39.948" I="188.0"/>
+        <!-- List of atomic elements. -->
+        <element name="H"  Z="1"  A="1.0087"  I="21.8"  />
+        <element name="C"  Z="6"  A="12.0108" I="78.0"  />
+        <element name="N"  Z="7"  A="14.0067" I="82.0"  />
+        <element name="O"  Z="8"  A="15.9994" I="95.0"  />
+        <element name="Rk" Z="11" A="22.0"    I="136.4" />
+        <element name="Ar" Z="18" A="39.948"  I="188.0" />
 
-	<!-- The so called `Standard rock` -->
-	<material name="Rock" file="rock.txt">
-		<component name="StandardRock" fraction="1.0"/>
-	</material>
+        <!-- The so called `Standard rock` -->
+        <material name="Rock" file="rock.txt" density="2.65">
+                <component name="Rk" fraction="1.0" />
+        </material>
 
-        <!-- Liquid water at sea level atmospheric pressure -->
-	<material name="Water" file="water.txt">
-		<component name="Hydrogen" fraction="0.111894"/>
-		<component name="Oxygen" fraction="0.888106"/>
-	</material>
+        <!-- Liquid water with PREM density -->
+        <material name="Water" file="water.txt" density="1.02">
+                <component name="H" fraction="0.111894" />
+                <component name="O" fraction="0.888106" />
+        </material>
 
-	<!-- Dry air at sea level atmospheric pressure -->
-	<material name="Air" file="air.txt">
-		<component name="Carbon" fraction="0.000124"/>
-		<component name="Nitrogen" fraction="0.755267"/>
-		<component name="Oxygen" fraction="0.231781"/>
-		<component name="Argon" fraction="0.012827"/>
-	</material>
+        <!-- Dry air at sea level atmospheric pressure -->
+        <material name="Air" file="air.txt" density="1.205E-03">
+                <component name="C"  fraction="0.000124" />
+                <component name="N"  fraction="0.755267" />
+                <component name="O"  fraction="0.231781" />
+                <component name="Ar" fraction="0.012827" />
+        </material>
 </pumas>

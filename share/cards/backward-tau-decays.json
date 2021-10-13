@@ -33,5 +33,5 @@
         "stepping" : {
                 "append" : false,
                 "path" : "steps.json",
-                "verbosity" : 0 },
+                "verbosity" : 0 }
 }
