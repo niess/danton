@@ -859,6 +859,25 @@ static int record_publish(struct simulation_context * context)
         else
                 record->api.product = NULL;
 
+        /* Check the sampler in forward mode */
+        if (context->api.mode == DANTON_MODE_FORWARD) {
+                struct danton_sampler * sampler = context->api.sampler;
+                const int pid = record->final.pid;
+                int selected = 0;
+                int j;
+                for (j = 0; j < DANTON_PARTICLE_N; j++) {
+                        if (sampler->weight[j] > 0.) {
+                                if (pid == danton_particle_pdg(j)) {
+                                        selected = 1;
+                                        break;
+                                }
+                        }
+                }
+                if (!selected) {
+                        return EXIT_SUCCESS;
+                }
+        }
+
         /* Check and prune the vertex */
         struct danton_state * vertex = record->api.vertex;
         if (record->vertex.pid != record->final.pid) {
