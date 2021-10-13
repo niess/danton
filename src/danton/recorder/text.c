@@ -139,8 +139,11 @@ static int record_event(struct danton_context * context,
          * the event weight and the generation index are printed once and
          * only once.
          */
-        long index[3] = { (event->id != text->last_id) ? event->id + 1 :
-            event->generation, event->generation, 0 };
+        long index[3] = {
+            (event->id != text->last_id) ? event->id + 1 : event->generation,
+            (event->id != text->last_id) ? event->generation : 0,
+            0
+        };
         const double * weight[3] = { (event->id != text->last_id) ?
             &event->weight : NULL, NULL, NULL };
         int i = 0;
