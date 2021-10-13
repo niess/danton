@@ -200,8 +200,8 @@ struct simulation_context {
          */
         double energy_cut;
 
-        /* Flag to check if the neutrino flux is requested. */
-        int flux_neutrino;
+        /* Flag to check if a flux sampling is requested. */
+        int sample_flux;
 
         /* Data for the Mersenne Twister PRNG. */
         struct {
@@ -1007,7 +1007,7 @@ static int transport_forward(struct simulation_context * context,
                 }
                 if (neutrino->energy <= context->energy_cut + FLT_EPSILON)
                         break;
-                if (context->flux_neutrino && (event == ENT_EVENT_EXIT)) {
+                if (context->sample_flux && (event == ENT_EVENT_EXIT)) {
                         /* Check for a flux crossing condition. */
                         struct generic_state * g_state =
                             (struct generic_state *)neutrino;
@@ -1060,7 +1060,7 @@ static int transport_forward(struct simulation_context * context,
                                 .is_tau = 1,
                                 .is_inside = -1,
                                 .has_crossed =
-                                    (context->flux_neutrino) ? -1 : 0,
+                                    (context->sample_flux) ? 0 : -1,
                                 .cross_count = 0
                         };
                         struct pumas_state * tau = &tau_data.base.pumas;
@@ -1139,7 +1139,7 @@ static int transport_forward(struct simulation_context * context,
 
                                 if (nu_e != NULL) {
                                         nu_e_data.context = context;
-                                        if (context->flux_neutrino) {
+                                        if (context->sample_flux) {
                                                 nu_e_data.is_inside = -1;
                                                 nu_e_data.has_crossed = 0;
                                                 nu_e_data.cross_count =
@@ -1157,7 +1157,7 @@ static int transport_forward(struct simulation_context * context,
                                 }
                                 if (nu_t != NULL) {
                                         nu_t_data.context = context;
-                                        if (context->flux_neutrino) {
+                                        if (context->sample_flux) {
                                                 nu_t_data.is_inside = -1;
                                                 nu_t_data.has_crossed = 0;
                                                 nu_t_data.cross_count =
@@ -1945,7 +1945,7 @@ struct danton_context * danton_context_create(void)
         context->energy_cut = -1;
 
         /* Flag to check if the neutrino flux is requested. */
-        context->flux_neutrino = 0;
+        context->sample_flux = 0;
 
         return &context->api;
 }
@@ -2092,8 +2092,14 @@ int danton_run(struct danton_context * context, long events, long requested)
                             __LINE__);
                         return EXIT_FAILURE;
                 }
-                context_->flux_neutrino =
-                        sampler_->neutrino_weight > 0.;
+
+                if (context->mode == DANTON_MODE_FORWARD) {
+                        context_->sample_flux =
+                            sampler->altitude[1] == sampler->altitude[0];
+                } else {
+                        context_->sample_flux =
+                            sampler_->neutrino_weight > 0.;
+                }
 
                 if (context->decay) {
                         if (sampler_->neutrino_weight ==
@@ -2104,10 +2110,11 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 return EXIT_FAILURE;
                         }
                         if (context->mode == DANTON_MODE_FORWARD) {
-                                if (sampler_->neutrino_weight > 0.) {
+                                /* XXX Allow to force decay in forward mode ? */
+                                if (context_->sample_flux) {
                                         danton_error_push(context,
-                                            "%s (%d): combining neutrino(s) "
-                                            "and tau(s) sampling is not "
+                                            "%s (%d): combining flux "
+                                            "and tau decays sampling is not "
                                             "supported in forward mode.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
@@ -2316,7 +2323,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                         const int pid = danton_particle_pdg(j);
 
                         /* Configure the primary state. */
-                        const int crossed = context_->flux_neutrino ? 0 : -1;
+                        const int crossed = context_->sample_flux ? 0 : -1;
                         struct generic_state state = {
                                 .base.ent = { pid, energy, 0., 0., weight,
                                     { ecef0[0], ecef0[1], ecef0[2] },
@@ -2404,7 +2411,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 context_->record->api.n_products = 0;
                         }
                         if ((context->mode != DANTON_MODE_GRAMMAGE) &&
-                            !context_->flux_neutrino) {
+                            !context_->sample_flux) {
                                 /* This is a particle Monte-Carlo. */
                                 const double charge =
                                     (projectile > 0) ? -1. : 1.;
@@ -2457,7 +2464,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 }
 
                         } else if ((context->mode != DANTON_MODE_GRAMMAGE) &&
-                            context_->flux_neutrino) {
+                            context_->sample_flux) {
                                 double ecef0[3], u0[3];
                                 compute_ecef_position(sampler->latitude,
                                     sampler->longitude, z0, ecef0);
