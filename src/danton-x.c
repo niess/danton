@@ -351,11 +351,10 @@ static void card_update_primary(void)
 static void card_update_earth_model(void)
 {
         /* Set the default parameter values. */
-        char * geodesic = NULL;
+        char * reference = NULL;
         char * topography = NULL;
         char * material = NULL;
         double density = 0.;
-        int stack_size = 0;
         int sea = -1;
 
         /* Parse the data card. */
@@ -363,21 +362,18 @@ static void card_update_earth_model(void)
         for (jsmn_tea_next_object(tea, &i); i; i--) {
                 char * field;
                 jsmn_tea_next_string(tea, 1, &field);
-                if (strcmp(field, "geodesic") == 0)
-                        jsmn_tea_next_string(tea, 0, &geodesic);
-                else if (strcmp(field, "topography") == 0) {
-                        handler.pre = catch_error;
-                        int size, jrc = jsmn_tea_next_array(tea, &size);
-                        handler.pre = NULL;
+                if (strcmp(field, "reference") == 0) {
+                        jsmn_tea_next_string(tea, 0, &reference);
+                } else if (strcmp(field, "topography") == 0) {
                         jsmn_tea_next_string(tea, 0, &topography);
-                        if ((jrc == JSMN_SUCCESS) && (size >= 2))
-                                jsmn_tea_next_number(
-                                    tea, JSMN_TEA_TYPE_INT, &stack_size);
-                } else if (strcmp(field, "material") == 0)
+                } else if (strcmp(field, "material") == 0) {
                         jsmn_tea_next_string(tea, 0, &material);
-                else if (strcmp(field, "sea") == 0)
+                } else if (strcmp(field, "density") == 0) {
+                        jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &density);
+                } else if (strcmp(field, "sea") == 0) {
                         jsmn_tea_next_bool(tea, &sea);
-                else {
+                } else {
                         ROAR_ERRNO_FORMAT(&handler, &card_update_earth_model,
                             EINVAL, "[%s #%d] invalid key `%s`", card_path,
                             tea->index, field);
@@ -386,7 +382,7 @@ static void card_update_earth_model(void)
 
         /* Configure the Earth model. */
         int * ptr_sea = (sea >= 0) ? &sea : NULL;
-        if (danton_earth_model(geodesic, topography, stack_size, material,
+        if (danton_earth_model(reference, topography, material,
                 density, ptr_sea) != EXIT_SUCCESS) {
                 ROAR_ERRWP_MESSAGE(&handler, &card_update_earth_model, -1,
                     "danton error", danton_error_pop(NULL));

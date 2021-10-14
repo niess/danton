@@ -8,8 +8,8 @@
         "decay" : true,
 
         "earth-model" : {
-                "geodesic" : "WGS84",
-                "topography" : [ "share/topography", 25 ],
+                "reference" : "EGM96",
+                "topography" : "share/topography",
                 "sea" : false },
 
         "particle-sampler" : {

@@ -333,9 +333,8 @@ DANTON_API void danton_destroy(void ** any);
 /**
  * Set or update the global Earth model.
  *
- * @param geodesic   The reference geodesic model, or `ǸULL`.
- * @param topography Topography model, path to any topographic data, or `ǸULL`.
- * @param stack_size The stack size for tiles when using a detailed topography.
+ * @param reference  The reference system for the sea level, or `NULL`.
+ * @param topography Topography model, path to any topographic data, or `NULL`.
  * @param material   Material for the topography.
  * @param density    Density of the topography material in kg / m^3.
  * @param sea        Pointer to a flag to enable or disable sea(s), or `NULL`.
@@ -347,17 +346,20 @@ DANTON_API void danton_destroy(void ** any);
  * The default Earth model is the Preliminary Reference Earth Model, i.e. a
  * spherical Earth fully covered with a 3km deep sea.
  *
- * The supported *geodesic* values are:
+ * The supported *reference* values for the sea level are:
  *   - PREM (spherical)
  *   - WGS84 (GPS ellipsoid)
+ *   - EGM96 (GPS ellipsoid + geoid undulations)
+ *
+ * If let `NULL`, then the PREM system is used.
  *
  * The *topography* parameter can either specify a path to topographic data
- * (ASTER-GDEM2 compatible tiles) or encode a flat topography as `flat://${z}`,
- * where `${z}` is the constant altitude above sea level, in meters, e.g.
+ * (e.g. SRTMGL1 tiles) or encode a flat topography as `flat://${z}`, where
+ * `${z}` is the constant altitude above sea level, in meters, e.g.
  * `flat://1000` for a 1km high cover.
  *
- * __Note__ : specifying a detailed topography requires the WGS 84 geodetic
- * system to be used.
+ * __Note__ : specifying a detailed topography requires the WGS84 or EGM96
+ * reference system to be used.
  *
  * The topography *material* must match one of the materials defined in the xml
  * PUMAS Materials Definition File (MDF). If `NULL` is given the material is
@@ -367,21 +369,20 @@ DANTON_API void danton_destroy(void ** any);
  * unchanged. It defaults to 2.65 g / cm^3.
  */
 DANTON_API int danton_earth_model(const char * geodesic,
-    const char * topography, int stack_size, const char * material,
-    double density, int * sea);
+    const char * topography, const char * material, double density, int * sea);
 
 /**
- * Get the current topography datum.
- * @return  A `turtle_datum` pointer, or `NULL`.
+ * Get the current topography.
+ * @return  A `turtle_stack` pointer, or `NULL`.
  *
- * This routines provides access to the low level `turtle_datum` used by
- * DANTON for handling the topography. It can be used, e.g. for performing
- * coordinate transforms or querying the altitude with TURTLE.
+ * This routines provides access to the topography used by DANTON as
+ * a`turtle_stack` object.  It can be used, e.g. for querying the topography
+ * ground altitude with TURTLE.
  *
- * __Warnings__ : the datum should not be modified directly with TURTLE. Use
+ * __Warnings__ : the stack should not be modified directly with TURTLE. Use
  * the DANTON API functions instead.
  */
-void * danton_get_datum(void);
+void * danton_get_topography(void);
 
 /**
  * Get a random number from DANTON's stream.

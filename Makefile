@@ -2,6 +2,7 @@
 DANTON_DEFAULT_PDF := $(abspath deps/ent/share/pdf/CT14nlo_0000.dat)
 DANTON_DEFAULT_MDF := $(abspath share/materials/materials.xml)
 DANTON_DEFAULT_DEDX := $(abspath share/materials/dedx)
+DANTON_DEFAULT_GEOID := $(abspath share/geoid/egm96.png)
 
 # Compiler flags
 CFLAGS := -O3 -std=c99 -Wall
@@ -68,7 +69,9 @@ endef
 build/danton.lo: src/danton.c
 	@$(call build_c,-DDANTON_DEFAULT_PDF="\"$(DANTON_DEFAULT_PDF)\""       \
 		-DDANTON_DEFAULT_MDF="\"$(DANTON_DEFAULT_MDF)\""               \
-		-DDANTON_DEFAULT_DEDX="\"$(DANTON_DEFAULT_DEDX)\"" $(INCLUDE))
+		-DDANTON_DEFAULT_DEDX="\"$(DANTON_DEFAULT_DEDX)\""             \
+		-DDANTON_DEFAULT_GEOID="\"$(DANTON_DEFAULT_GEOID)\""           \
+		$(INCLUDE))
 
 build/%.lo: src/danton/primary/%.c
 	@$(call build_c,$(INCLUDE))

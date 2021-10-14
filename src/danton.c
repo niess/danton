@@ -246,23 +246,23 @@ struct generic_state {
         int cross_count;
 };
 
-/* Supported geodesics for the Earth model */
-enum earth_geodesic { EARTH_GEODESIC_PREM = 0, EARTH_GEODESIC_WGS84 };
+/* Supported reference systems for the Earth model */
+enum earth_reference { EARTH_PREM = 0, EARTH_WGS84, EARTH_EGM96 };
 
 /* Global settings for the Earth model. */
 static struct {
-        enum earth_geodesic geodesic;
+        enum earth_reference reference;
         struct turtle_stack * stack;
-        int stack_size;
+        struct turtle_map * undulations;
         double z0;
-        int is_flat;
+        int flat_topography;
         int material;
         double density;
         int sea;
-} earth = { EARTH_GEODESIC_PREM, NULL, 16, 0., 1, 0, 2.65E+03, 1 };
+} earth = { EARTH_PREM, NULL, NULL, 0., 1, 0, 2.65E+03, 1 };
 
 /* API function for accessing the turtle topography stack. */
-void * danton_get_stack(void) { return earth.stack; }
+void * danton_get_topography(void) { return earth.stack; }
 
 /* ENT density callback for the topography. */
 static double density_topography(
@@ -343,7 +343,7 @@ LOCALS(space, 0)
 static double compute_geodetic(
     double x, const double * position, double * latitude, double * longitude)
 {
-        if (earth.geodesic == EARTH_GEODESIC_PREM)
+        if (earth.reference == EARTH_PREM)
                 return (x - 1.) * PREM_EARTH_RADIUS;
 
         double altitude, trash;
@@ -358,7 +358,7 @@ static double compute_geodetic(
 static void compute_ecef_position(
     double latitude, double longitude, double altitude, double * ecef)
 {
-        if (earth.geodesic == EARTH_GEODESIC_PREM) {
+        if (earth.reference == EARTH_PREM) {
                 const double deg = M_PI / 180.;
                 const double theta = (90. - latitude) * deg;
                 const double phi = longitude * deg;
@@ -378,7 +378,7 @@ static void compute_ecef_position(
 static void compute_ecef_direction(
     double latitude, double longitude, double azimuth, double c, double * ecef)
 {
-        if (earth.geodesic == EARTH_GEODESIC_PREM) {
+        if (earth.reference == EARTH_PREM) {
                 /* Compute the rotation matrix from local to ECEF. */
                 const double deg = M_PI / 180.;
                 const double theta = (90. - latitude) * deg;
@@ -412,7 +412,7 @@ static void ellipsoid_parameters_intersection(const double * position,
     const double * direction, double * a, double * b, double * r2)
 {
         double ai, bi;
-        if (earth.geodesic == EARTH_GEODESIC_PREM) {
+        if (earth.reference == EARTH_PREM) {
                 ai = bi = 1. / PREM_EARTH_RADIUS;
         } else {
                 ai = 1. / WGS84_RADIUS_A;
@@ -504,16 +504,25 @@ static double medium(const double * position, const double * direction,
 
         /* Check for any topography. */
 #define MEDIUM_TOPOGRAPHY 100
-        if ((i < 7) || (i > 11) || ((earth.is_flat) && (earth.z0 == 0.)))
+        if ((i < 7) || (i > 11) || ((earth.undulations == NULL) &&
+            (earth.flat_topography) && (earth.z0 <= 0.) && (!earth.sea)))
                 return step;
 
         if (altitude == -DBL_MAX)
                 altitude = compute_geodetic(r, position, &latitude, &longitude);
-        if ((altitude < 0.) && !earth.sea) return step;
+
+        double z_sea = 0.;
+        if (earth.undulations != NULL) {
+                int inside;
+                turtle_map_elevation(
+                    earth.undulations, longitude, latitude, &z_sea, &inside);
+                if (!inside) z_sea = 0.;
+        }
+        if ((altitude < z_sea) && !earth.sea) return step;
 
         /* Let us compute the ground altitude. */
         double zg;
-        if (earth.is_flat)
+        if (earth.flat_topography)
                 zg = earth.z0;
         else {
                 int inside;
@@ -526,13 +535,14 @@ static double medium(const double * position, const double * direction,
                 }
                 if (!inside) zg = 0.;
         }
+        zg += z_sea;
 
         /* Let us update the medium index accordingly. */
         double s = altitude - zg;
         if (s <= 0.) {
                 if (i >= 9) state->medium = MEDIUM_TOPOGRAPHY;
 
-        } else if (earth.sea && (altitude < 0.))
+        } else if (earth.sea && (altitude < z_sea))
                 state->medium = 9;
 
         /* Finally let us update the step length. */
@@ -601,7 +611,7 @@ static struct pumas_medium topography_pumas = { 0, &locals_topography };
 /* Configure the media according to the current Earth model. */
 static void earth_model_configure(void)
 {
-        if (earth.is_flat) {
+        if (earth.flat_topography) {
                 if (earth.sea) {
                         media_pumas[9].material = 1;
                         media_pumas[9].locals = &locals_pem9;
@@ -760,14 +770,14 @@ static double random_uniform01(struct simulation_context * context)
 }
 
 /* Encapsulation of the random engine for PUMAS. */
-double random_pumas(struct pumas_context * context)
+static double random_pumas(struct pumas_context * context)
 {
         struct simulation_context * c = pumas2context(context);
         return random_uniform01(c);
 }
 
 /* Encapsulation of the random engine for ENT. */
-double random_ent(struct ent_context * context)
+static double random_ent(struct ent_context * context)
 {
         struct simulation_context * c = ent2context(context);
         return random_uniform01(c);
@@ -1281,7 +1291,8 @@ static double ancestor_cb(struct ent_context * context, enum ent_pid ancestor,
 /* Polarisation callback for ALOUETTE in backward mode. A 100% longitudinal
  * polarisation is assumed.
  */
-void polarisation_cb(int pid, const double momentum[3], double * polarisation)
+static void polarisation_cb(
+    int pid, const double momentum[3], double * polarisation)
 {
         double nrm = momentum[0] * momentum[0] + momentum[1] * momentum[1] +
             momentum[2] * momentum[2];
@@ -1726,6 +1737,7 @@ void danton_finalise(void)
         pumas_physics_destroy(&physics.pumas);
         alouette_finalise();
         turtle_stack_destroy(&earth.stack);
+        turtle_map_destroy(&earth.undulations);
 }
 
 /* Destroy any memory flat object. */
@@ -1736,35 +1748,48 @@ void danton_destroy(void ** any)
 }
 
 /* Set the global Earth model. */
-int danton_earth_model(const char * geodesic, const char * topography,
-    int stack_size, const char * material, double density, int * sea)
+int danton_earth_model(const char * reference, const char * topography,
+    const char * material, double density, int * sea)
 {
         /* Parse the geodesic. */
-        if (geodesic != NULL) {
-                if (strcmp(geodesic, "PREM") == 0) {
-                        earth.geodesic = EARTH_GEODESIC_PREM;
-                } else if (strcmp(geodesic, "WGS84") == 0) {
-                        earth.geodesic = EARTH_GEODESIC_WGS84;
+        if (reference != NULL) {
+                if (strcmp(reference, "PREM") == 0) {
+                        earth.reference = EARTH_PREM;
+                } else if (strcmp(reference, "WGS84") == 0) {
+                        earth.reference = EARTH_WGS84;
+                } else if (strcmp(reference, "EGM96") == 0) {
+                        earth.reference = EARTH_EGM96;
+                        if (turtle_map_load(&earth.undulations,
+                            DANTON_DEFAULT_GEOID) !=
+                             TURTLE_RETURN_SUCCESS) {
+                                ERROR_TURTLE(NULL);
+                                return EXIT_FAILURE;
+                        }
                 } else {
                         danton_error_push(NULL,
-                            "%s (%d): unknown geodesic `%s`", __FILE__,
-                            __LINE__, geodesic);
+                            "%s (%d): unknown reference `%s`", __FILE__,
+                            __LINE__, reference);
                         return EXIT_FAILURE;
                 }
         }
 
-        /* Parse the stcak size. */
-        if (stack_size > 0) earth.stack_size = stack_size;
+        /* Destroy any previous topography data. */
+        if (earth.stack != NULL) {
+                turtle_stack_destroy(&earth.stack);
+        }
+
+        if ((earth.reference != EARTH_EGM96) && (earth.undulations != NULL)) {
+                turtle_map_destroy(&earth.undulations);
+        }
 
         /* Parse the topography. */
         if (topography != NULL) {
-                turtle_stack_destroy(&earth.stack);
                 if (strncmp(topography, "flat://", 7) == 0) {
                         const char * nptr = topography + 7;
                         char * endptr;
                         errno = 0;
                         earth.z0 = strtod(nptr, &endptr);
-                        earth.is_flat = 1;
+                        earth.flat_topography = 1;
                         if ((errno != 0) || (endptr == nptr)) {
                                 danton_error_push(NULL,
                                     "%s (%d): invalid topography `%s`",
@@ -1772,30 +1797,22 @@ int danton_earth_model(const char * geodesic, const char * topography,
                                 return EXIT_FAILURE;
                         }
                 } else {
-                        if ((geodesic != NULL) &&
-                            (earth.geodesic != EARTH_GEODESIC_WGS84)) {
+                        if ((reference != NULL) &&
+                            (earth.reference == EARTH_PREM)) {
                                 danton_error_push(NULL,
-                                    "%s (%d): geodesic must be `WGS84` when "
-                                    "specifying a detailed topography",
+                                    "%s (%d): reference must be `WGS84` "
+                                    "or `EGM96` when specifying a detailed "
+                                    "topography",
                                     __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
                         if (turtle_stack_create(&earth.stack, topography,
-                             earth.stack_size, lock, unlock) !=
+                             -1, lock, unlock) !=
                              TURTLE_RETURN_SUCCESS) {
                                 ERROR_TURTLE(NULL);
                                 return EXIT_FAILURE;
                         }
-                        earth.geodesic = EARTH_GEODESIC_WGS84;
-                        earth.is_flat = 0;
-                }
-        }
-
-        /* Destroy any topography stack if PREM is selected as geodesic. */
-        if (geodesic != NULL) {
-                if ((earth.geodesic == EARTH_GEODESIC_PREM) &&
-                    (earth.stack != NULL)) {
-                        turtle_stack_destroy(&earth.stack);
+                        earth.flat_topography = 0;
                 }
         }
 
@@ -2159,7 +2176,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                 }
         }
 
-        if ((!earth.is_flat) && (lock != NULL)) {
+        if ((!earth.flat_topography) && (lock != NULL)) {
                 turtle_client_destroy(&context_->client);
                 if (turtle_client_create(&context_->client,
                          earth.stack) != TURTLE_RETURN_SUCCESS) {

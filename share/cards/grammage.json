@@ -6,7 +6,7 @@
         "longitudinal" : true,
 
         "earth-model" : {
-                "geodesic" : "PREM" },
+                "reference" : "PREM" },
 
         "particle-sampler" : {
                 "altitude" : 0.0,
