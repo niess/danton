@@ -2,8 +2,8 @@
 DANTON_DEFAULT_PDF := $(abspath deps/ent/share/pdf/CT14nlo_0000.dat)
 DANTON_DEFAULT_MDF := $(abspath share/materials/materials.xml)
 DANTON_DEFAULT_DEDX := $(abspath share/materials/dedx)
-USE_TIFF := 1
-USE_PNG := 1
+DANTON_USE_TIFF := 1
+DANTON_USE_PNG := 1
 
 # Compiler flags
 CFLAGS := -O3 -std=c99 -pedantic -Wall
@@ -52,12 +52,12 @@ OBJS += build/pumas.lo
 OBJS += $(addprefix build/,                                                    \
 	turtle.lo turtle_projection.lo turtle_map.lo turtle_datum.lo           \
 	turtle_client.lo)
-ifeq ($(TURTLE_USE_TIFF),1)
-	OBJS +=  geotiff16.lo
+ifeq ($(DANTON_USE_TIFF),1)
+	OBJS +=  build/geotiff16.lo
 else
 	TURTLE_CFLAGS += -DTURTLE_NO_TIFF
 endif
-ifneq ($(TURTLE_USE_TIFF),1)
+ifneq ($(DANTON_USE_PNG),1)
 	TURTLE_CFLAGS += -DTURTLE_NO_PNG
 endif
 
