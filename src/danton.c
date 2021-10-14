@@ -252,7 +252,7 @@ enum earth_geodesic { EARTH_GEODESIC_PREM = 0, EARTH_GEODESIC_WGS84 };
 /* Global settings for the Earth model. */
 static struct {
         enum earth_geodesic geodesic;
-        struct turtle_datum * datum;
+        struct turtle_stack * stack;
         int stack_size;
         double z0;
         int is_flat;
@@ -261,8 +261,8 @@ static struct {
         int sea;
 } earth = { EARTH_GEODESIC_PREM, NULL, 16, 0., 1, 0, 2.65E+03, 1 };
 
-/* API function for accessing the datum. */
-void * danton_get_datum(void) { return earth.datum; }
+/* API function for accessing the turtle topography stack. */
+void * danton_get_stack(void) { return earth.stack; }
 
 /* ENT density callback for the topography. */
 static double density_topography(
@@ -349,8 +349,8 @@ static double compute_geodetic(
         double altitude, trash;
         if (latitude == NULL) latitude = &trash;
         if (longitude == NULL) longitude = &trash;
-        turtle_datum_geodetic(
-            earth.datum, (double *)position, latitude, longitude, &altitude);
+        turtle_ecef_to_geodetic(
+            (double *)position, latitude, longitude, &altitude);
         return altitude;
 }
 
@@ -367,8 +367,8 @@ static void compute_ecef_position(
                 ecef[1] = PREM_EARTH_RADIUS * s * sin(phi);
                 ecef[2] = PREM_EARTH_RADIUS * cos(theta);
         } else {
-                turtle_datum_ecef(
-                    earth.datum, latitude, longitude, altitude, ecef);
+                turtle_ecef_from_geodetic(
+                    latitude, longitude, altitude, ecef);
         }
 }
 
@@ -402,8 +402,8 @@ static void compute_ecef_direction(
                 ecef[2] = R[0][2] * u[0] + R[1][2] * u[1] + R[2][2] * u[2];
         } else {
                 const double elevation = 90. - acos(c) / M_PI * 180.;
-                turtle_datum_direction(
-                    earth.datum, latitude, longitude, azimuth, elevation, ecef);
+                turtle_ecef_from_horizontal(
+                    latitude, longitude, azimuth, elevation, ecef);
         }
 }
 
@@ -502,7 +502,7 @@ static double medium(const double * position, const double * direction,
                 }
         }
 
-/* Check for any topography. */
+        /* Check for any topography. */
 #define MEDIUM_TOPOGRAPHY 100
         if ((i < 7) || (i > 11) || ((earth.is_flat) && (earth.z0 == 0.)))
                 return step;
@@ -516,15 +516,15 @@ static double medium(const double * position, const double * direction,
         if (earth.is_flat)
                 zg = earth.z0;
         else {
-                enum turtle_return rc;
+                int inside;
                 if (lock != NULL) {
-                        rc = turtle_client_elevation(
-                            state->context->client, latitude, longitude, &zg);
+                        turtle_client_elevation(state->context->client,
+                            latitude, longitude, &zg, &inside);
                 } else {
-                        rc = turtle_datum_elevation(
-                            earth.datum, latitude, longitude, &zg);
+                        turtle_stack_elevation(
+                            earth.stack, latitude, longitude, &zg, &inside);
                 }
-                if (rc != TURTLE_RETURN_SUCCESS) zg = 0.;
+                if (!inside) zg = 0.;
         }
 
         /* Let us update the medium index accordingly. */
@@ -912,29 +912,36 @@ static int record_publish(struct simulation_context * context)
         return rc;
 }
 
-/* Callback for PUMAS errors */
-#define PUMAS_ERROR_SIZE 2048
-static char pumas_last_error[PUMAS_ERROR_SIZE] = { 0x0 };
-static pumas_function_t * pumas_last_caller = NULL;
+/* Callback for PUMAS or TURTLE errors */
+#define ERROR_BUFFER_SIZE 2048
+static char last_error[ERROR_BUFFER_SIZE] = { 0x0 };
+static pumas_function_t * last_caller = NULL;
 
 static void catch_pumas_error(enum pumas_return rc, pumas_function_t * caller,
     const char * message)
 {
-        pumas_last_caller = caller;
-        strncpy(pumas_last_error, message, PUMAS_ERROR_SIZE - 1);
+        last_caller = caller;
+        strncpy(last_error, message, ERROR_BUFFER_SIZE - 1);
+}
+
+static void catch_turtle_error(enum turtle_return rc,
+    turtle_function_t * caller, const char * message)
+{
+        last_caller = (pumas_function_t *)caller;
+        strncpy(last_error, message, ERROR_BUFFER_SIZE - 1);
 }
 
 /* Shortcut for dumping a PUMAS error. */
 #define ERROR_PUMAS(context)                                                   \
         danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, pumas_error_function(pumas_last_caller),                 \
-            pumas_last_error)
+            __LINE__, pumas_error_function(last_caller),                       \
+            last_error)
 
 /* Shortcut for dumping a TURTLE error. */
-#define ERROR_TURTLE(context, rc, function)                                    \
+#define ERROR_TURTLE(context)                                                  \
         danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, turtle_strfunc((turtle_caller_t *)&function),            \
-            turtle_strerror(rc))
+            __LINE__, turtle_error_function((turtle_function_t *)last_caller), \
+            last_error)
 
 /* Encapsulation of pumas' calls with run action(s). */
 static int call_pumas(
@@ -1656,16 +1663,6 @@ static int initialise_physics(struct danton_context * context)
         return EXIT_SUCCESS;
 }
 
-static void topography_initialise(void)
-{
-        static int initialised = 0;
-        if (initialised) return;
-
-        /* Initialise TURTLE. */
-        turtle_initialise(NULL);
-        initialised = 1;
-}
-
 static int copy_config_string(const char * opts, char ** config)
 {
         if (opts == NULL) return EXIT_SUCCESS;
@@ -1709,8 +1706,9 @@ int danton_initialise(const char * pdf, const char * mdf, const char * dedx,
         lock = lock_;
         unlock = unlock_;
 
-        /* Set the error handler for PUMAS */
+        /* Set the error handlers for PUMAS and TURTLE */
         pumas_error_handler_set(&catch_pumas_error);
+        turtle_error_handler_set(&catch_turtle_error);
 
         return EXIT_SUCCESS;
 }
@@ -1727,8 +1725,7 @@ void danton_finalise(void)
         ent_physics_destroy(&physics.ent);
         pumas_physics_destroy(&physics.pumas);
         alouette_finalise();
-        turtle_datum_destroy(&earth.datum);
-        turtle_finalise();
+        turtle_stack_destroy(&earth.stack);
 }
 
 /* Destroy any memory flat object. */
@@ -1761,7 +1758,7 @@ int danton_earth_model(const char * geodesic, const char * topography,
 
         /* Parse the topography. */
         if (topography != NULL) {
-                turtle_datum_destroy(&earth.datum);
+                turtle_stack_destroy(&earth.stack);
                 if (strncmp(topography, "flat://", 7) == 0) {
                         const char * nptr = topography + 7;
                         char * endptr;
@@ -1783,12 +1780,10 @@ int danton_earth_model(const char * geodesic, const char * topography,
                                     __FILE__, __LINE__);
                                 return EXIT_FAILURE;
                         }
-                        topography_initialise();
-                        enum turtle_return rc;
-                        if ((rc = turtle_datum_create(topography,
-                                 earth.stack_size, lock, unlock,
-                                 &earth.datum)) != TURTLE_RETURN_SUCCESS) {
-                                ERROR_TURTLE(NULL, rc, turtle_datum_create);
+                        if (turtle_stack_create(&earth.stack, topography,
+                             earth.stack_size, lock, unlock) !=
+                             TURTLE_RETURN_SUCCESS) {
+                                ERROR_TURTLE(NULL);
                                 return EXIT_FAILURE;
                         }
                         earth.geodesic = EARTH_GEODESIC_WGS84;
@@ -1796,23 +1791,11 @@ int danton_earth_model(const char * geodesic, const char * topography,
                 }
         }
 
-        /* Ensure that there is a datum if WGS 84 is selected or clear it
-         * otherwise.
-         */
+        /* Destroy any topography stack if PREM is selected as geodesic. */
         if (geodesic != NULL) {
-                if ((earth.geodesic == EARTH_GEODESIC_WGS84) &&
-                    (earth.datum == NULL)) {
-                        topography_initialise();
-                        enum turtle_return rc;
-                        if ((rc = turtle_datum_create(NULL, 1, lock, unlock,
-                                 &earth.datum)) != TURTLE_RETURN_SUCCESS) {
-                                ERROR_TURTLE(NULL, rc, turtle_datum_create);
-                                return EXIT_FAILURE;
-                        }
-                } else if ((earth.geodesic == EARTH_GEODESIC_PREM) &&
-                    (earth.datum != NULL)) {
-                        topography_initialise();
-                        turtle_datum_destroy(&earth.datum);
+                if ((earth.geodesic == EARTH_GEODESIC_PREM) &&
+                    (earth.stack != NULL)) {
+                        turtle_stack_destroy(&earth.stack);
                 }
         }
 
@@ -2178,10 +2161,9 @@ int danton_run(struct danton_context * context, long events, long requested)
 
         if ((!earth.is_flat) && (lock != NULL)) {
                 turtle_client_destroy(&context_->client);
-                enum turtle_return rc;
-                if ((rc = turtle_client_create(earth.datum,
-                         &context_->client)) != TURTLE_RETURN_SUCCESS) {
-                        ERROR_TURTLE(context, rc, turtle_client_create);
+                if (turtle_client_create(&context_->client,
+                         earth.stack) != TURTLE_RETURN_SUCCESS) {
+                        ERROR_TURTLE(context);
                         return EXIT_FAILURE;
                 }
         }

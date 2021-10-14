@@ -7,9 +7,6 @@
 [submodule "pumas"]
 	path = deps/pumas
 	url = https://github.com/niess/pumas.git
-[submodule "jsmn"]
-	path = deps/jsmn
-	url = https://github.com/zserge/jsmn.git
 [submodule "jsmn-tea"]
 	path = deps/jsmn-tea
 	url = https://github.com/niess/jsmn-tea.git
@@ -19,6 +16,3 @@
 [submodule "turtle"]
 	path = deps/turtle
 	url = https://github.com/niess/turtle
-[submodule "tinydir"]
-	path = deps/tinydir
-	url = https://github.com/cxong/tinydir.git

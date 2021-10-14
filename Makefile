@@ -2,11 +2,9 @@
 DANTON_DEFAULT_PDF := $(abspath deps/ent/share/pdf/CT14nlo_0000.dat)
 DANTON_DEFAULT_MDF := $(abspath share/materials/materials.xml)
 DANTON_DEFAULT_DEDX := $(abspath share/materials/dedx)
-DANTON_USE_TIFF := 1
-DANTON_USE_PNG := 1
 
 # Compiler flags
-CFLAGS := -O3 -std=c99 -pedantic -Wall
+CFLAGS := -O3 -std=c99 -Wall
 FFLAGS := -O2 -fno-second-underscore -fno-backslash -fno-automatic             \
 	-ffixed-line-length-132
 
@@ -50,24 +48,17 @@ OBJS += build/jsmn.lo build/jsmn-tea.lo
 OBJS += build/pumas.lo
 # TURTLE
 OBJS += $(addprefix build/,                                                    \
-	turtle.lo turtle_projection.lo turtle_map.lo turtle_datum.lo           \
-	turtle_client.lo)
-ifeq ($(DANTON_USE_TIFF),1)
-	OBJS +=  build/geotiff16.lo
-else
-	TURTLE_CFLAGS += -DTURTLE_NO_TIFF
-endif
-ifneq ($(DANTON_USE_PNG),1)
-	TURTLE_CFLAGS += -DTURTLE_NO_PNG
-endif
+	client.lo ecef.lo error.lo io.lo list.lo map.lo projection.lo stack.lo \
+	stepper.lo tinydir.lo asc.lo geotiff16.lo grd.lo hgt.lo png16.lo)
 
 lib/libdanton.so: $(OBJS)
-	@$(CC) -o $@ $(CFLAGS) -shared $(OBJS) -lgfortran -ltiff -lpng -lm
+	@$(CC) -o $@ $(CFLAGS) -shared $(OBJS) -lgfortran -lm -ldl
 
 # Build DANTON
 INCLUDE := -Iinclude -Ideps/ent/include -Ideps/pumas/include                   \
-	-Ideps/alouette/include -Ideps/jsmn -Ideps/jsmn-tea/include            \
-	-Ideps/roar/include -Ideps/turtle/include
+	-Ideps/alouette/include -Ideps/jsmn-tea/include                        \
+	-Ideps/roar/include -Ideps/turtle/include -Ideps/turtle/src            \
+	-Ideps/turtle/src/deps
 
 define build_c
 	@mkdir -p build
@@ -113,11 +104,8 @@ build/%.lo: deps/ent/src/%.c
 	@$(call build_c,-Ideps/ent/include)
 
 # Build JSMN-TEA
-build/%.lo: deps/jsmn/%.c deps/jsmn/%.h
-	@$(call build_c)
-
 build/%.lo: deps/jsmn-tea/src/%.c deps/jsmn-tea/include/%.h
-	@$(call build_c,-Ideps/jsmn-tea/include -Ideps/jsmn                    \
+	@$(call build_c,-Ideps/jsmn-tea/include -Ideps/turtle/src/deps         \
 		-Ideps/roar/include -DROAR_IMPLEMENTATION)
 	
 # Build PUMAS
@@ -125,9 +113,17 @@ build/%.lo: deps/pumas/src/%.c
 	@$(call build_c,-Ideps/pumas/include)
 
 # Build TURTLE
+build/%.lo: deps/turtle/src/turtle/%.c deps/turtle/src/turtle/%.h
+	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src)
+
+build/%.lo: deps/turtle/src/turtle/%.c
+	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src)
+
+build/%.lo: deps/turtle/src/turtle/io/%.c
+	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src)
+
 build/%.lo: deps/turtle/src/%.c deps/turtle/include/%.h
-	@$(call build_c,$(TURTLE_CFLAGS) -Ideps/turtle/include)
-	
-build/%.lo: deps/turtle/src/%.c deps/turtle/src/%.h deps/turtle/include/turtle.h
-	@$(call build_c,$(TURTLE_CFLAGS) -Ideps/turtle/include                 \
-		-Ideps/turtle/src -Ideps/jsmn -Ideps/tinydir)
+	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src)
+
+build/%.lo: deps/turtle/src/deps/%.c deps/turtle/src/deps/%.h
+	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src)
