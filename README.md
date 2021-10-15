@@ -71,9 +71,11 @@ corresponding options are described hereafter.
 
 ### Earth model
 ```
-geodesic        string               The geodesic model: "PREM" (spherical) or "WGS84".
-sea             boolean              If `true` the PREM Earth is covered with sea.
-topography      [string, integer]    The topography data location and the in-memory stack size.
+reference       string               The reference model: "PREM" (spherical),
+                                       "WGS84" (elliptical) or "EGM96" (geoidal).
+sea             boolean              If `true` the Earth is covered with sea.
+topography      string               Path to a folder containing topography data, e.g.
+                                       SRTMGL1.v3 tiles.
 ```
 
 Note that the legacy PREM has an external layer of 3km of sea water. If the sea

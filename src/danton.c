@@ -1818,9 +1818,11 @@ int danton_earth_model(const char * reference, const char * topography,
 
         /* Parse the topography material. */
         if (material != NULL) {
-                if (strcmp(material, "Rock") == 0)
+                if (strcmp(material, "Rock") == 0) {
                         earth.material = 0;
-                else {
+                } else if (strcmp(material, "Water") == 0) {
+                        earth.material = 1;
+                } else {
                         danton_error_push(NULL,
                             "%s (%d): Unknown material `%s`", __FILE__,
                             __LINE__, material);

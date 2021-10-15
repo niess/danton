@@ -10,6 +10,8 @@
         "earth-model" : {
                 "reference" : "EGM96",
                 "topography" : "share/topography",
+                "material" : "Rock",
+                "density" : 2.65,
                 "sea" : false },
 
         "particle-sampler" : {
