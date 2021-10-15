@@ -290,7 +290,7 @@ static struct {
         int material;
         double density;
         int sea;
-} earth = { EARTH_PREM, NULL, NULL, 0., 1, 0, 2.65E+03, 1 };
+} earth = { EARTH_PREM, NULL, NULL, 0., 0, 0, 2.65E+03, 1 };
 
 /* API function for accessing the turtle topography stack. */
 void * danton_get_topography(void) { return earth.stack; }
@@ -394,9 +394,10 @@ static void compute_ecef_position(
                 const double theta = (90. - latitude) * deg;
                 const double phi = longitude * deg;
                 const double s = sin(theta);
-                ecef[0] = PREM_EARTH_RADIUS * s * cos(phi);
-                ecef[1] = PREM_EARTH_RADIUS * s * sin(phi);
-                ecef[2] = PREM_EARTH_RADIUS * cos(theta);
+                const double r = PREM_EARTH_RADIUS + altitude;
+                ecef[0] = r * s * cos(phi);
+                ecef[1] = r * s * sin(phi);
+                ecef[2] = r * cos(theta);
         } else {
                 turtle_ecef_from_geodetic(
                     latitude, longitude, altitude, ecef);
@@ -549,7 +550,6 @@ static double medium(const double * position, const double * direction,
                     earth.undulations, longitude, latitude, &z_sea, &inside);
                 if (!inside) z_sea = 0.;
         }
-        if ((altitude < z_sea) && !earth.sea) return step;
 
         /* Let us compute the ground altitude. */
         double zg;
@@ -1894,6 +1894,8 @@ int danton_earth_model(const char * reference, const char * topography,
                         }
                         earth.flat_topography = 0;
                 }
+        } else {
+                earth.flat_topography = 0;
         }
 
         /* Initialise the physics, if not already done. */

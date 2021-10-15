@@ -77,7 +77,7 @@ sea             boolean              If `true` the Earth is covered with sea.
 topography      string               Path to a folder containing topography data, e.g.
                                        SRTMGL1.v3 tiles.
 material        string               The material composing the topography.
-density         float                The density of the topography, in kg/m<sup>3</sup>.
+density         float                The density of the topography, in kg/m^3.
 ```
 
 Note that the legacy PREM has an external layer of 3km of sea water. If the sea
