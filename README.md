@@ -1,6 +1,4 @@
-[![Build Status](https://travis-ci.com/niess/danton.svg?branch=master)](https://travis-ci.com/niess/danton)
-
-# DANTON
+# DANTON ![Build](https://github.com/niess/danton/workflows/Build/badge.svg)
 ( **D**ec**A**yi**N**g **T**aus fr**O**m **N**eutrinos )
 
 ## Description

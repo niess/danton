@@ -7,13 +7,16 @@ DANTON_DEFAULT_GEOID := $(abspath share/geoid/egm96.png)
 # Compiler flags
 CFLAGS := -O3 -std=c99 -Wall
 FFLAGS := -O2 -fno-second-underscore -fno-backslash -fno-automatic             \
-	-ffixed-line-length-132
+	-ffixed-line-length-132 -std=legacy
 
 # OSX additional flags
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-        CFLAGS += -L"$(shell dirname `gfortran --print-file-name libgfortran.dylib`)"
+        CFLAGS += -L"$(shell dirname `$(FC) --print-file-name libgfortran.dylib`)"
+	CFLAGS += -Wno-unused-command-line-argument
         CFLAGS += -Wno-tautological-compare
+else
+	CFLAGS += -Wno-restrict
 endif
 
 # Main build targets
@@ -85,7 +88,7 @@ build/%.lo: deps/alouette/src/%.c
 
 define build_fortran
 	@mkdir -p build
-	@gfortran -o $@ $(FFLAGS) -fPIC -c $<
+	@$(FC) -o $@ $(FFLAGS) -fPIC -c $<
 endef
 
 TAUSRC = deps/alouette/src/tauola
