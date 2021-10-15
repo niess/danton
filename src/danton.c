@@ -535,8 +535,8 @@ static double medium(const double * position, const double * direction,
 
         /* Check for any topography. */
 #define MEDIUM_TOPOGRAPHY 100
-        if ((i < 7) || (i > 11) || ((earth.undulations == NULL) &&
-            (earth.flat_topography) && (earth.z0 <= 0.) && (!earth.sea)))
+        if ((i < 8) || (i > 11) ||
+            ((earth.undulations == NULL) && !earth.flat_topography))
                 return step;
 
         if (altitude == -DBL_MAX)
@@ -572,12 +572,14 @@ static double medium(const double * position, const double * direction,
         double s = altitude - zg;
         if (s <= 0.) {
                 if (i >= 9) state->medium = MEDIUM_TOPOGRAPHY;
-
-        } else if (earth.sea && (altitude < z_sea))
+        } else if (earth.sea && (altitude < z_sea)) {
                 state->medium = 9;
+        } else {
+                if (i < 10) state->medium = 10;
+        }
 
         /* Finally let us update the step length. */
-        s = 0.5 * fabs(s);
+        s = 0.4 * fabs(s);
         if (s < step) step = s;
         if (step < STEP_MIN) step = STEP_MIN;
         return step;
@@ -746,13 +748,6 @@ static void earth_model_configure(void)
         convert_material(
             earth.material, &topography_ent.Z, &topography_ent.A);
 }
-
-#undef ZA
-#undef AA
-#undef ZR
-#undef AR
-#undef ZW
-#undef AW
 
 /* Medium callback encapsulation for PUMAS. */
 static enum pumas_step medium_pumas(struct pumas_context * context,

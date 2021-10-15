@@ -11,7 +11,7 @@
                 "reference" : "EGM96",
                 "topography" : "share/topography",
                 "material" : "Rock",
-                "density" : 2.65,
+                "density" : 2.65E+03,
                 "sea" : false },
 
         "particle-sampler" : {

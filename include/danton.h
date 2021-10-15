@@ -366,7 +366,7 @@ DANTON_API void danton_destroy(void ** any);
  * left unchanged. It defaults to Rock.
  *
  * If a null or negative density is provided the material density is left
- * unchanged. It defaults to 2.65 g / cm^3.
+ * unchanged. It defaults to 2.650 kg / m^3.
  */
 DANTON_API int danton_earth_model(const char * geodesic,
     const char * topography, const char * material, double density, int * sea);
