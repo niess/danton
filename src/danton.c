@@ -2163,16 +2163,37 @@ int danton_run(struct danton_context * context, long events, long requested)
                                 return EXIT_FAILURE;
                         }
                         if (context->mode == DANTON_MODE_FORWARD) {
-                                /* XXX Allow to force decay in forward mode ? */
                                 if (context_->sample_flux) {
                                         danton_error_push(context,
                                             "%s (%d): combining flux "
                                             "and tau decays sampling is not "
-                                            "supported in forward mode.",
+                                            "supported.",
                                             __FILE__, __LINE__);
                                         return EXIT_FAILURE;
                                 }
                         }
+                }
+        }
+
+        /* Set the initial projectile in backward mode. */
+        int projectile = ENT_PID_NU_TAU;
+        if ((context->mode == DANTON_MODE_BACKWARD) &&
+            (context->mode != DANTON_MODE_GRAMMAGE)) {
+                int j;
+                double w = 0.;
+                for (j = 0; j < DANTON_PARTICLE_N; j++) {
+                        if (sampler->weight[j] > 0.) {
+                                w = sampler->weight[j];
+                                projectile = danton_particle_pdg(j);
+                                break;
+                        }
+                }
+
+                if (w < sampler_->total_weight) {
+                        danton_error_push(context,
+                            "%s (%d): sampling multiple particles is not "
+                            "allowed in backward mode.", __FILE__, __LINE__);
+                        return EXIT_FAILURE;
                 }
         }
 
@@ -2182,18 +2203,6 @@ int danton_run(struct danton_context * context, long events, long requested)
                          earth.stack) != TURTLE_RETURN_SUCCESS) {
                         ERROR_TURTLE(context);
                         return EXIT_FAILURE;
-                }
-        }
-
-        /* Temporary hack for the projectile. TODO: erase. */
-        int projectile = ENT_PID_NU_TAU;
-        if (context->mode != DANTON_MODE_GRAMMAGE) {
-                int j;
-                for (j = 0; j < DANTON_PARTICLE_N; j++) {
-                        if (sampler->weight[j] > 0.) {
-                                projectile = danton_particle_pdg(j);
-                                break;
-                        }
                 }
         }
 
@@ -2265,9 +2274,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                             buffer_size * sizeof(*context_->record->product));
                         if (context_->record == NULL) {
                                 danton_error_push(context,
-                                    "%s (%d): could not "
-                                    "allocate "
-                                    "memory.",
+                                    "%s (%d): could not allocate memory.",
                                     __FILE__, __LINE__);
                                 exit(EXIT_FAILURE);
                         }
@@ -2275,8 +2282,7 @@ int danton_run(struct danton_context * context, long events, long requested)
                         context_->record->api.vertex = NULL;
                 }
 
-                /* Configure the event record. TODO: according
-                 * to  options. */
+                /* Configure the event record. */
                 context_->record->api.primary = &context_->record->primary;
                 context_->record->api.final = &context_->record->final;
         }
