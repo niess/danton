@@ -77,6 +77,37 @@ static double tau_ctau0;
 static danton_lock_cb * lock = NULL;
 static danton_lock_cb * unlock = NULL;
 
+/* Callback for PUMAS or TURTLE errors */
+#define ERROR_BUFFER_SIZE 2048
+static char last_error[ERROR_BUFFER_SIZE] = { 0x0 };
+static pumas_function_t * last_caller = NULL;
+
+static void catch_pumas_error(enum pumas_return rc, pumas_function_t * caller,
+    const char * message)
+{
+        last_caller = caller;
+        strncpy(last_error, message, ERROR_BUFFER_SIZE - 1);
+}
+
+static void catch_turtle_error(enum turtle_return rc,
+    turtle_function_t * caller, const char * message)
+{
+        last_caller = (pumas_function_t *)caller;
+        strncpy(last_error, message, ERROR_BUFFER_SIZE - 1);
+}
+
+/* Shortcut for dumping a PUMAS error. */
+#define ERROR_PUMAS(context)                                                   \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
+            __LINE__, pumas_error_function(last_caller),                       \
+            last_error)
+
+/* Shortcut for dumping a TURTLE error. */
+#define ERROR_TURTLE(context)                                                  \
+        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
+            __LINE__, turtle_error_function((turtle_function_t *)last_caller), \
+            last_error)
+
 /* Density according to the Preliminary Earth Model (PEM). */
 static double pem_model0(double x, double * density)
 {
@@ -555,23 +586,17 @@ static double medium(const double * position, const double * direction,
 }
 
 /* Media table for ENT. */
-#define ZR 11.
-#define AR 22.
-#define ZW 10.
-#define AW 18.
-#define ZA 7.32
-#define AA 14.72
 
-static struct ent_medium media_ent[] = { { ZR, AR, &density_pem0 },
-        { ZR, AR, &density_pem1 }, { ZR, AR, &density_pem2 },
-        { ZR, AR, &density_pem3 }, { ZR, AR, &density_pem4 },
-        { ZR, AR, &density_pem5 }, { ZR, AR, &density_pem6 },
-        { ZR, AR, &density_pem7 }, { ZR, AR, &density_pem8 },
-        { ZW, AW, &density_pem9 }, { ZA, AA, &density_uss0 },
-        { ZA, AA, &density_uss1 }, { ZA, AA, &density_uss2 },
-        { ZA, AA, &density_uss3 }, { ZA, AA, &density_space0 } };
+static struct ent_medium media_ent[] = { { 0., 0., &density_pem0 },
+        { 0., 0., &density_pem1 }, { 0., 0., &density_pem2 },
+        { 0., 0., &density_pem3 }, { 0., 0., &density_pem4 },
+        { 0., 0., &density_pem5 }, { 0., 0., &density_pem6 },
+        { 0., 0., &density_pem7 }, { 0., 0., &density_pem8 },
+        { 0., 0., &density_pem9 }, { 0., 0., &density_uss0 },
+        { 0., 0., &density_uss1 }, { 0., 0., &density_uss2 },
+        { 0., 0., &density_uss3 }, { 0., 0., &density_space0 } };
 
-static struct ent_medium topography_ent = { ZR, AR, &density_topography };
+static struct ent_medium topography_ent = { 0., 0., &density_topography };
 
 /* Medium callback encapsulation for ENT. */
 static double medium_ent(struct ent_context * context, struct ent_state * state,
@@ -598,43 +623,128 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
         return step;
 }
 
+/* Media indices for PUMAS (mapped by initialise_materials). */
+static struct {
+        int rock, water, air;
+} material_index = {0};
+
 /* Media table for PUMAS. */
 static struct pumas_medium media_pumas[] = { { 0, &locals_pem0 },
         { 0, &locals_pem1 }, { 0, &locals_pem2 }, { 0, &locals_pem3 },
         { 0, &locals_pem4 }, { 0, &locals_pem5 }, { 0, &locals_pem6 },
-        { 0, &locals_pem7 }, { 0, &locals_pem8 }, { 1, &locals_pem9 },
-        { 2, &locals_uss0 }, { 2, &locals_uss1 }, { 2, &locals_uss2 },
-        { 2, &locals_uss3 }, { 2, &locals_space0 } };
+        { 0, &locals_pem7 }, { 0, &locals_pem8 }, { 0, &locals_pem9 },
+        { 0, &locals_uss0 }, { 0, &locals_uss1 }, { 0, &locals_uss2 },
+        { 0, &locals_uss3 }, { 0, &locals_space0 } };
 
 static struct pumas_medium topography_pumas = { 0, &locals_topography };
+
+/* Convert material data from PUMAS to ENT */
+static void convert_material(int material, double * Z_ptr, double * A_ptr)
+{
+        /* Get atomic elements from PUMAS */
+        int n;
+        pumas_physics_material_properties(physics.pumas, material, &n,
+            NULL, NULL, NULL, NULL);
+        int components[n];
+        double fractions[n];
+        pumas_physics_material_properties(physics.pumas, material, NULL,
+            NULL, NULL, components, fractions);
+
+        double Z = 0., A = 0., w = 0.;
+        int i;
+        for (i = 0; i < n; i++) {
+                double Zi, Ai;
+                pumas_physics_element_properties(
+                    physics.pumas, components[i], &Zi, &Ai, NULL);
+                const double wi = fractions[i] / Ai;
+                w += wi;
+                Z += Zi * wi;
+                A += Ai * wi;
+        }
+
+        *Z_ptr = Z / w;
+        *A_ptr = A / w;
+}
+
+/* Initialise the material data */
+static int initialise_materials(struct danton_context * context)
+{
+        /* Get material indices from the MDF */
+        if (pumas_physics_material_index(
+            physics.pumas, "Rock", &material_index.rock) !=
+            PUMAS_RETURN_SUCCESS) {
+                ERROR_PUMAS(context);
+                return EXIT_FAILURE;
+        }
+
+        if (pumas_physics_material_index(
+            physics.pumas, "Water", &material_index.water) !=
+            PUMAS_RETURN_SUCCESS) {
+                ERROR_PUMAS(context);
+                return EXIT_FAILURE;
+        }
+
+        if (pumas_physics_material_index(
+            physics.pumas, "Air", &material_index.air) !=
+            PUMAS_RETURN_SUCCESS) {
+                ERROR_PUMAS(context);
+                return EXIT_FAILURE;
+        }
+
+        /* Set PUMAS material indices */
+#define N_LAYERS 15
+        media_pumas[ 0].material = material_index.rock;
+        media_pumas[ 1].material = material_index.rock;
+        media_pumas[ 2].material = material_index.rock;
+        media_pumas[ 3].material = material_index.rock;
+        media_pumas[ 4].material = material_index.rock;
+        media_pumas[ 5].material = material_index.rock;
+        media_pumas[ 6].material = material_index.rock;
+        media_pumas[ 8].material = material_index.rock;
+        media_pumas[ 9].material = material_index.water;
+        media_pumas[10].material = material_index.air;
+        media_pumas[11].material = material_index.air;
+        media_pumas[12].material = material_index.air;
+        media_pumas[13].material = material_index.air;
+        media_pumas[14].material = material_index.air;
+
+        topography_pumas.material = material_index.rock;
+
+        /* Set material properties for ENT */
+        int i;
+        struct ent_medium * m;
+        for (i = 0, m = media_ent; i < N_LAYERS; i++, m++) {
+                /* Get atomic elements from PUMAS */
+                int material = media_pumas[i].material;
+                convert_material(material, &m->Z, &m->A);
+        }
+
+        convert_material(
+            material_index.rock, &topography_ent.Z, &topography_ent.A);
+#undef N_LAYERS
+
+        return EXIT_SUCCESS;
+}
 
 /* Configure the media according to the current Earth model. */
 static void earth_model_configure(void)
 {
-        if (earth.flat_topography) {
-                if (earth.sea) {
-                        media_pumas[9].material = 1;
-                        media_pumas[9].locals = &locals_pem9;
-                        media_ent[9].Z = ZW;
-                        media_ent[9].A = AW;
-                        media_ent[9].density = &density_pem9;
-                } else {
-                        media_pumas[9].material = 0;
-                        media_pumas[9].locals = &locals_pem8;
-                        media_ent[9].Z = ZR;
-                        media_ent[9].A = AR;
-                        media_ent[9].density = &density_pem8;
-                }
+        /* Set the outer PREM layer to rock or water */
+        if ((earth.stack != NULL) || earth.flat_topography ||
+            (earth.sea == 0)) {
+                media_pumas[9].material = material_index.rock;
+                media_pumas[9].locals = &locals_pem8;
         } else {
-                topography_pumas.material = earth.material;
-                if (earth.material == 0) {
-                        topography_ent.Z = ZR;
-                        topography_ent.A = AR;
-                } else if (earth.material == 1) {
-                        topography_ent.Z = ZW;
-                        topography_ent.A = AW;
-                }
+                media_pumas[9].material = material_index.water;
+                media_pumas[9].locals = &locals_pem9;
         }
+        convert_material(
+            media_pumas[9].material, &media_ent[9].Z, &media_ent[9].A);
+
+        /* Set the topography material */
+        topography_pumas.material = earth.material;
+        convert_material(
+            earth.material, &topography_ent.Z, &topography_ent.A);
 }
 
 #undef ZA
@@ -921,37 +1031,6 @@ static int record_publish(struct simulation_context * context)
 
         return rc;
 }
-
-/* Callback for PUMAS or TURTLE errors */
-#define ERROR_BUFFER_SIZE 2048
-static char last_error[ERROR_BUFFER_SIZE] = { 0x0 };
-static pumas_function_t * last_caller = NULL;
-
-static void catch_pumas_error(enum pumas_return rc, pumas_function_t * caller,
-    const char * message)
-{
-        last_caller = caller;
-        strncpy(last_error, message, ERROR_BUFFER_SIZE - 1);
-}
-
-static void catch_turtle_error(enum turtle_return rc,
-    turtle_function_t * caller, const char * message)
-{
-        last_caller = (pumas_function_t *)caller;
-        strncpy(last_error, message, ERROR_BUFFER_SIZE - 1);
-}
-
-/* Shortcut for dumping a PUMAS error. */
-#define ERROR_PUMAS(context)                                                   \
-        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, pumas_error_function(last_caller),                       \
-            last_error)
-
-/* Shortcut for dumping a TURTLE error. */
-#define ERROR_TURTLE(context)                                                  \
-        danton_error_push(context, "%s (%d): error in %s, `%s`.", __FILE__,    \
-            __LINE__, turtle_error_function((turtle_function_t *)last_caller), \
-            last_error)
 
 /* Encapsulation of pumas' calls with run action(s). */
 static int call_pumas(
@@ -1668,6 +1747,12 @@ static int initialise_physics(struct danton_context * context)
                 return EXIT_FAILURE;
         }
 
+        /* Initialise the material tables */
+        if (initialise_materials(context) != EXIT_SUCCESS) {
+                if (unlock != NULL) unlock();
+                return EXIT_FAILURE;
+        }
+
         free(pdf_path);
         pdf_path = NULL;
         if (unlock != NULL) unlock();
@@ -1751,7 +1836,7 @@ void danton_destroy(void ** any)
 int danton_earth_model(const char * reference, const char * topography,
     const char * material, double density, int * sea)
 {
-        /* Parse the geodesic. */
+        /* Parse the reference. */
         if (reference != NULL) {
                 if (strcmp(reference, "PREM") == 0) {
                         earth.reference = EARTH_PREM;
@@ -1816,17 +1901,20 @@ int danton_earth_model(const char * reference, const char * topography,
                 }
         }
 
+        /* Initialise the physics, if not already done. */
+        if (initialise_physics(NULL) != EXIT_SUCCESS) {
+                return EXIT_FAILURE;
+        }
+
         /* Parse the topography material. */
         if (material != NULL) {
-                if (strcmp(material, "Rock") == 0) {
-                        earth.material = 0;
-                } else if (strcmp(material, "Water") == 0) {
-                        earth.material = 1;
-                } else {
-                        danton_error_push(NULL,
-                            "%s (%d): Unknown material `%s`", __FILE__,
-                            __LINE__, material);
+                int index;
+                if (pumas_physics_material_index(
+                    physics.pumas, material, &index) != PUMAS_RETURN_SUCCESS) {
+                        ERROR_PUMAS(NULL);
                         return EXIT_FAILURE;
+                } else {
+                        earth.material = index;
                 }
         }
 
@@ -1836,7 +1924,7 @@ int danton_earth_model(const char * reference, const char * topography,
         /* Set the sea flag. */
         if (sea != NULL) earth.sea = *sea;
 
-        /* Configure according to the current settings. */
+        /* Configure materials according to the current settings. */
         earth_model_configure();
 
         return EXIT_SUCCESS;

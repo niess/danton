@@ -1,4 +1,4 @@
-<!-- Description of materials and atomic elements for PUMAS. -->
+<!-- Description of materials and atomic elements. -->
 <pumas>
         <!-- List of atomic elements. -->
         <element name="H"  Z="1"  A="1.0087"  I="21.8"  />
