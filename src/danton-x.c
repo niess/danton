@@ -354,8 +354,8 @@ static void card_update_earth_model(void)
         char * reference = NULL;
         char * topography = NULL;
         char * material = NULL;
-        double density = 0.;
-        int sea = -1;
+        double zf = 0., density = 0.;
+        int sea = -1, flat_topography = 0;
 
         /* Parse the data card. */
         int i;
@@ -365,7 +365,15 @@ static void card_update_earth_model(void)
                 if (strcmp(field, "reference") == 0) {
                         jsmn_tea_next_string(tea, 0, &reference);
                 } else if (strcmp(field, "topography") == 0) {
-                        jsmn_tea_next_string(tea, 0, &topography);
+                        handler.pre = &catch_error;
+                        int rc = jsmn_tea_next_number(
+                            tea, JSMN_TEA_TYPE_DOUBLE, &zf);
+                        handler.pre = NULL;
+                        if (rc < 0) {
+                                jsmn_tea_next_string(tea, 0, &topography);
+                        } else {
+                                flat_topography = 1;
+                        }
                 } else if (strcmp(field, "material") == 0) {
                         jsmn_tea_next_string(tea, 0, &material);
                 } else if (strcmp(field, "density") == 0) {
@@ -378,6 +386,13 @@ static void card_update_earth_model(void)
                             EINVAL, "[%s #%d] invalid key `%s`", card_path,
                             tea->index, field);
                 }
+        }
+
+        /* Check the topography */
+        char buffer[128];
+        if (flat_topography) {
+                snprintf(buffer, 127, "flat://%lf", zf);
+                topography = buffer;
         }
 
         /* Configure the Earth model. */

@@ -72,8 +72,9 @@ corresponding options are described hereafter.
 reference       string               The reference model: "PREM" (spherical),
                                        "WGS84" (elliptical) or "EGM96" (geoidal).
 sea             boolean              If `true` the Earth is covered with sea.
-topography      string               Path to a folder containing topography data, e.g.
-                                       SRTMGL1.v3 tiles.
+topography      string, number       Path to a folder containing topography data, e.g.
+                                       SRTMGL1.v3 tiles. Alternatively a number can be provided,
+                                       specifying a constant topography altitude.
 material        string               The material composing the topography.
 density         float                The density of the topography, in kg/m^3.
 ```
