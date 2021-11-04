@@ -1,12 +1,12 @@
 # Generic options
-DANTON_DEFAULT_PDF := $(abspath deps/ent/share/pdf/CT14nlo_0000.dat)
-DANTON_DEFAULT_MDF := $(abspath share/materials/materials.xml)
-DANTON_DEFAULT_DEDX := $(abspath share/materials/dedx)
-DANTON_DEFAULT_GEOID := $(abspath share/geoid/egm96.png)
+DANTON_DEFAULT_PDF=   $(abspath deps/ent/share/pdf/CT14nlo_0000.dat)
+DANTON_DEFAULT_MDF=   $(abspath share/materials/materials.xml)
+DANTON_DEFAULT_DEDX=  $(abspath share/materials/dedx)
+DANTON_DEFAULT_GEOID= $(abspath share/geoid/egm96.png)
 
 # Compiler flags
-CFLAGS := -O3 -std=c99 -Wall
-FFLAGS := -O3 -fno-second-underscore -fno-backslash -fno-automatic             \
+CFLAGS= -O3 -std=c99 -Wall
+FFLAGS= -O3 -fno-second-underscore -fno-backslash -fno-automatic               \
 	-ffixed-line-length-132 -std=legacy
 
 # OSX additional flags
@@ -14,8 +14,10 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	CFLAGS += -Wno-unused-command-line-argument
         CFLAGS += -Wno-tautological-compare
+	SOEXT= dylib
 else
 	CFLAGS += -Wno-restrict
+	SOEXT= so
 endif
 
 # Main build targets
@@ -26,11 +28,11 @@ all: bin lib
 bin: bin/danton
 
 clean:
-	@rm -rf bin build lib/*.so lib/*.a
+	@rm -rf bin build lib/*.$(SOEXT)
 
-lib: lib/libdanton.so
+lib: lib/libdanton.$(SOEXT)
 
-bin/danton: src/danton-x.c lib/libdanton.so
+bin/danton: src/danton-x.c lib/libdanton.$(SOEXT)
 	@mkdir -p bin
 	@$(CC) -o $@ $(CFLAGS) $(INCLUDE) $<                                   \
 		-Llib -ldanton -Wl,-rpath $(PWD)/lib
@@ -49,7 +51,7 @@ OBJS += $(addprefix build/,                                                    \
 	client.lo ecef.lo error.lo io.lo list.lo map.lo projection.lo stack.lo \
 	stepper.lo tinydir.lo asc.lo geotiff16.lo grd.lo hgt.lo png16.lo)
 
-lib/libdanton.so: $(OBJS)
+lib/libdanton.$(SOEXT): $(OBJS)
 	@$(CC) -o $@ $(CFLAGS) -shared $(OBJS) -lm -ldl
 
 # Build DANTON
