@@ -1671,7 +1671,7 @@ static int transport_backward(
 static int load_pumas(struct danton_context * context)
 {
         const enum pumas_particle particle = PUMAS_PARTICLE_TAU;
-        const char * dump = ".danton.cfg";
+        const char * dump = DANTON_DEFAULT_DUMP;
 
         /* First, attempt to load any binary dump. */
         FILE * stream = fopen(dump, "rb");

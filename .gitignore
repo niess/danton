@@ -14,6 +14,6 @@ bin/*
 *.o
 
 # Ignore extra data.
-.danton.cfg
 share/*
 !share/danton/
+share/danton/materials/materials.pumas

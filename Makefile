@@ -1,8 +1,9 @@
 # Generic options
-DANTON_DEFAULT_PDF=   $(abspath share/danton/pdf/CT14nlo_0000.dat)
-DANTON_DEFAULT_MDF=   $(abspath share/danton/materials/materials.xml)
 DANTON_DEFAULT_DEDX=  $(abspath share/danton/materials/dedx)
+DANTON_DEFAULT_DUMP=  $(abspath share/danton/materials/materials.pumas)
 DANTON_DEFAULT_GEOID= $(abspath share/danton/geoid/egm96.png)
+DANTON_DEFAULT_MDF=   $(abspath share/danton/materials/materials.xml)
+DANTON_DEFAULT_PDF=   $(abspath share/danton/pdf/CT14nlo_0000.dat)
 
 # Compiler flags
 CFLAGS= -O3 -std=c99 -Wall
@@ -28,7 +29,9 @@ all: bin lib
 bin: bin/danton
 
 clean:
-	@rm -rf bin build lib/*.$(SOEXT)
+	@rm -f bin/danton lib/libdanton.$(SOEXT) $(DANTON_DEFAULT_DUMP)
+	@if [ -d bin ]; then rmdir --ignore-fail-on-non-empty bin; fi
+	@rm -rf build
 
 lib: lib/libdanton.$(SOEXT)
 
@@ -70,6 +73,7 @@ build/danton.lo: src/danton.c
 		-DDANTON_DEFAULT_MDF="\"$(DANTON_DEFAULT_MDF)\""               \
 		-DDANTON_DEFAULT_DEDX="\"$(DANTON_DEFAULT_DEDX)\""             \
 		-DDANTON_DEFAULT_GEOID="\"$(DANTON_DEFAULT_GEOID)\""           \
+		-DDANTON_DEFAULT_DUMP="\"$(DANTON_DEFAULT_DUMP)\""             \
 		$(INCLUDE))
 
 build/%.lo: src/danton/primary/%.c
