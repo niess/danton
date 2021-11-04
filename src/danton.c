@@ -66,6 +66,8 @@ static struct {
 static char * pdf_path = NULL;
 static char * mdf_path = NULL;
 static char * dedx_path = NULL;
+static char * dump_path = NULL;
+static char * geoid_path = NULL;
 
 /* The tau lepton mass, in GeV / c^2. */
 static double tau_mass;
@@ -1671,10 +1673,9 @@ static int transport_backward(
 static int load_pumas(struct danton_context * context)
 {
         const enum pumas_particle particle = PUMAS_PARTICLE_TAU;
-        const char * dump = DANTON_DEFAULT_DUMP;
 
         /* First, attempt to load any binary dump. */
-        FILE * stream = fopen(dump, "rb");
+        FILE * stream = fopen(dump_path, "rb");
         if (stream != NULL) {
                 if (pumas_physics_load(&physics.pumas, stream)
                     != PUMAS_RETURN_SUCCESS) {
@@ -1689,12 +1690,8 @@ static int load_pumas(struct danton_context * context)
         }
 
         /* If no binary dump, initialise from the MDF and dump. */
-        const char * mdf = (mdf_path == NULL) ?
-            DANTON_DEFAULT_MDF : mdf_path;
-        const char * dedx = (dedx_path == NULL) ?
-            DANTON_DEFAULT_DEDX : dedx_path;
-
-        if (pumas_physics_create(&physics.pumas, particle, mdf, dedx, NULL) !=
+        if (pumas_physics_create(
+            &physics.pumas, particle, mdf_path, dedx_path, NULL) !=
             PUMAS_RETURN_SUCCESS) {
                 ERROR_PUMAS(context);
                 return EXIT_FAILURE;
@@ -1702,7 +1699,7 @@ static int load_pumas(struct danton_context * context)
         pumas_physics_particle(physics.pumas, NULL, &tau_ctau0, &tau_mass);
 
         /* Dump the library configuration. */
-        stream = fopen(dump, "wb+");
+        stream = fopen(dump_path, "wb+");
         if (stream == NULL) return EXIT_FAILURE;
         pumas_physics_dump(physics.pumas, stream);
         fclose(stream);
@@ -1712,6 +1709,8 @@ exit:
         mdf_path = NULL;
         free(dedx_path);
         dedx_path = NULL;
+        free(dump_path);
+        dump_path = NULL;
 
         return EXIT_SUCCESS;
 }
@@ -1724,12 +1723,7 @@ static int initialise_physics(struct danton_context * context)
 
         /* Create a new neutrino Physics environment. */
         enum ent_return e_rc;
-        const char * pdf;
-        if (pdf_path == NULL)
-                pdf = DANTON_DEFAULT_PDF;
-        else
-                pdf = pdf_path;
-        if ((e_rc = ent_physics_create(&physics.ent, pdf)) !=
+        if ((e_rc = ent_physics_create(&physics.ent, pdf_path)) !=
             ENT_RETURN_SUCCESS) {
                 ERROR_ENT(context, e_rc, ent_physics_create);
                 if (unlock != NULL) unlock();
@@ -1764,36 +1758,47 @@ static int initialise_physics(struct danton_context * context)
         return EXIT_SUCCESS;
 }
 
-static int copy_config_string(const char * opts, char ** config)
+static int copy_config_string(
+    const char * prefix, const char * suffix, char ** config)
 {
-        if (opts == NULL) return EXIT_SUCCESS;
-
         if (*config != NULL) free(*config);
-        const int n = strlen(opts) + 1;
+        const int m = strlen(prefix);
+        const int n = m + strlen(suffix) + 2;
         *config = malloc(n);
         if (*config == NULL) {
                 danton_error_push(NULL,
                     "%s (%d): could not allocate memory.", __FILE__, __LINE__);
                 return EXIT_FAILURE;
         }
-        memcpy(*config, opts, n);
+        char * s = *config;
+        memcpy(s, prefix, m);
+        s[m] = '/';
+        memcpy(s + m + 1, suffix, n - m - 1);
 
         return EXIT_SUCCESS;
 }
 
 /* Initialise the DANTON library. */
-int danton_initialise(const char * pdf, const char * mdf, const char * dedx,
-    danton_lock_cb * lock_, danton_lock_cb * unlock_)
+int danton_initialise(
+    const char * prefix, danton_lock_cb * lock_, danton_lock_cb * unlock_)
 {
         /* Clear the error status. */
         errno = 0;
 
-        /* Copy the data paths for later use. */
-        if (copy_config_string(pdf, &pdf_path) != EXIT_SUCCESS)
+        /* Set the data paths for later use. */
+        if (prefix == NULL)
+                prefix = DANTON_PREFIX;
+
+        if (copy_config_string(prefix, DANTON_PDF, &pdf_path) != EXIT_SUCCESS)
                 return EXIT_FAILURE;
-        if (copy_config_string(mdf, &mdf_path) != EXIT_SUCCESS)
+        if (copy_config_string(prefix, DANTON_MDF, &mdf_path) != EXIT_SUCCESS)
                 return EXIT_FAILURE;
-        if (copy_config_string(dedx, &dedx_path) != EXIT_SUCCESS)
+        if (copy_config_string(prefix, DANTON_DEDX, &dedx_path) != EXIT_SUCCESS)
+                return EXIT_FAILURE;
+        if (copy_config_string(prefix, DANTON_DUMP, &dump_path) != EXIT_SUCCESS)
+                return EXIT_FAILURE;
+        if (copy_config_string(prefix, DANTON_GEOID, &geoid_path) !=
+            EXIT_SUCCESS)
                 return EXIT_FAILURE;
 
         /* Check and update the lock callbacks. */
@@ -1823,6 +1828,10 @@ void danton_finalise(void)
         mdf_path = NULL;
         free(dedx_path);
         dedx_path = NULL;
+        free(dump_path);
+        dump_path = NULL;
+        free(geoid_path);
+        geoid_path = NULL;
         ent_physics_destroy(&physics.ent);
         pumas_physics_destroy(&physics.pumas);
         turtle_stack_destroy(&earth.stack);
@@ -1848,8 +1857,7 @@ int danton_earth_model(const char * reference, const char * topography,
                         earth.reference = EARTH_WGS84;
                 } else if (strcmp(reference, "EGM96") == 0) {
                         earth.reference = EARTH_EGM96;
-                        if (turtle_map_load(&earth.undulations,
-                            DANTON_DEFAULT_GEOID) !=
+                        if (turtle_map_load(&earth.undulations, geoid_path) !=
                              TURTLE_RETURN_SUCCESS) {
                                 ERROR_TURTLE(NULL);
                                 return EXIT_FAILURE;

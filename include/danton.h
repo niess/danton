@@ -167,8 +167,10 @@ struct danton_recorder;
  * @param  event     Handle for the event data.
  * @return           `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  */
-typedef int danton_event_cb(struct danton_context * context,
-    struct danton_recorder * recorder, const struct danton_event * event);
+typedef int danton_event_cb(
+    struct danton_context * context,
+    struct danton_recorder * recorder,
+    const struct danton_event * event);
 
 /** Callback for recording a grammage value.
  *
@@ -177,8 +179,10 @@ typedef int danton_event_cb(struct danton_context * context,
  * @param  grammage  Handle for the grammage data.
  * @return          `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  */
-typedef int danton_grammage_cb(struct danton_context * context,
-    struct danton_recorder * recorder, const struct danton_grammage * grammage);
+typedef int danton_grammage_cb(
+    struct danton_context * context,
+    struct danton_recorder * recorder,
+    const struct danton_grammage * grammage);
 
 /**
  * Base data for recording the sampled events or grammage computations.
@@ -211,8 +215,11 @@ enum danton_run_event {
  * @param  state   The current particle state.
  * @return         `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  */
-typedef int danton_run_cb(struct danton_context * context,
-    enum danton_run_event event, int medium, struct danton_state * state);
+typedef int danton_run_cb(
+    struct danton_context * context,
+    enum danton_run_event event,
+    int medium,
+    struct danton_state * state);
 
 /** The available run modes. */
 enum danton_mode {
@@ -297,21 +304,28 @@ typedef int danton_lock_cb(void);
 /**
  * Initialise the DANTON library.
  *
- * @param  pdf     Path to the PDF tables for ENT, or `NULL`.
- * @param  mdf     Path to the MDF file for PUMAS, or `NULL`.
- * @param  dedx    Path to the energy loss tables for PUMAS, or `NULL`.
+ * @param  prefix  Library installation prefix, or `NULL`.
  * @param  lock    A locking callback, or `NULL`.
  * @param  unlock  An unlocking callback, or `NULL`.
  * @return         `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
- * Initialise the DANTON library. If no *pdf* path is provided the CT14 NNLO
- * tables are used, shiped with ENT.
+ * Initialise the DANTON library. The installation *prefix* indicates the
+ * location of physics data. If *prefix* is `NULL`, then the value provided at
+ * compile time is used instead.
  *
- * __Warning__ : for multithreaded usage one **must** provide valid *lock* and
- * *unlock* callbacks.
+ * See the `danton_finalise` callback for releasing the library temporary
+ * memory.
+ *
+ * __Note__ : for multithreaded usage one **must** provide valid *lock* and
+ * *unlock* callbacks. Otherwise those can be set to `NULL`.
+ *
+ * __Warning__ : this function must be called before using any other library
+ * functions.
  */
-DANTON_API int danton_initialise(const char * pdf, const char * mdf,
-    const char * dedx, danton_lock_cb * lock, danton_lock_cb * unlock);
+DANTON_API int danton_initialise(
+    const char * prefix,
+    danton_lock_cb * lock,
+    danton_lock_cb * unlock);
 
 /**
  * Finalise the danton library.
@@ -368,8 +382,12 @@ DANTON_API void danton_destroy(void ** any);
  * If a null or negative density is provided the material density is left
  * unchanged. It defaults to 2.650 kg / m^3.
  */
-DANTON_API int danton_earth_model(const char * geodesic,
-    const char * topography, const char * material, double density, int * sea);
+DANTON_API int danton_earth_model(
+    const char * geodesic,
+    const char * topography,
+    const char * material,
+    double density,
+    int * sea);
 
 /**
  * Get the current topography.
@@ -450,7 +468,9 @@ DANTON_API void danton_context_destroy(struct danton_context ** context);
  * option, resulting in all events to be processed.
  */
 DANTON_API int danton_context_run(
-    struct danton_context * context, long events, long requested);
+    struct danton_context * context,
+    long events,
+    long requested);
 
 /**
  * Get a pseudo random number from a DANTON simulation context.
@@ -475,7 +495,8 @@ unsigned long danton_context_random_seed(struct danton_context * context);
  * entropy, using /dev/urandom.
  */
 void danton_context_random_set(
-    struct danton_context * context, const unsigned long * seed);
+    struct danton_context * context,
+    const unsigned long * seed);
 
 /**
  * Get the current number of unprocessed errors.
@@ -508,7 +529,9 @@ DANTON_API const char * danton_error_pop(struct danton_context * context);
  * The format string and variable arguments follow the printf syntax.
  */
 DANTON_API int danton_error_push(
-    struct danton_context * context, const char * format, ...);
+    struct danton_context * context,
+    const char * format,
+    ...);
 
 #ifdef __cplusplus
 }

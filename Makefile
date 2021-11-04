@@ -1,44 +1,54 @@
-# Generic options
-DANTON_DEFAULT_DEDX=  $(abspath share/danton/materials/dedx)
-DANTON_DEFAULT_DUMP=  $(abspath share/danton/materials/materials.pumas)
-DANTON_DEFAULT_GEOID= $(abspath share/danton/geoid/egm96.png)
-DANTON_DEFAULT_MDF=   $(abspath share/danton/materials/materials.xml)
-DANTON_DEFAULT_PDF=   $(abspath share/danton/pdf/CT14nlo_0000.dat)
+# Installation prefix and project name
+PREFIX= $(abspath .)
+NAME=   danton
+
+# Defaul data paths
+DANTON_DEDX=  share/$(NAME)/materials/dedx
+DANTON_DUMP=  share/$(NAME)/materials/materials.pumas
+DANTON_GEOID= share/$(NAME)/geoid/egm96.png
+DANTON_MDF=   share/$(NAME)/materials/materials.xml
+DANTON_PDF=   share/$(NAME)/pdf/CT14nlo_0000.dat
 
 # Compiler flags
-CFLAGS= -O3 -std=c99 -Wall
+CFLAGS= -O3 -Wall
 FFLAGS= -O3 -fno-second-underscore -fno-backslash -fno-automatic               \
 	-ffixed-line-length-132 -std=legacy
 
 # OSX additional flags
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-	CFLAGS += -Wno-unused-command-line-argument
-        CFLAGS += -Wno-tautological-compare
-	SOEXT= dylib
+	SOEXT=  dylib
+	SHARED= -dynamiclib -Wl,-install_name,@rpath/lib$(NAME).$(SOEXT)
+	RPATH=  -Wl,-rpath,@loader_path/../lib
 else
-	CFLAGS += -Wno-restrict
-	SOEXT= so
+	SOEXT=  so
+	SHARED= -shared
+	RPATH=  '-Wl,-rpath,$$ORIGIN/../lib'
 endif
+
+BINDIR= $(PREFIX)/bin
+EXEC=   $(BINDIR)/$(NAME)
+LIBDIR= $(PREFIX)/lib
+LIB=    $(LIBDIR)/lib$(NAME).$(SOEXT)
 
 # Main build targets
 .PHONY: all bin clean lib
 
 all: bin lib
 
-bin: bin/danton
+bin: $(EXEC)
 
 clean:
-	@rm -f bin/danton lib/libdanton.$(SOEXT) $(DANTON_DEFAULT_DUMP)
-	@if [ -d bin ]; then rmdir --ignore-fail-on-non-empty bin; fi
+	@rm -f $(EXEC) $(LIB) $(PREFIX)/$(DANTON_DUMP)
+	@if [ -d $(BINDIR) ]; \
+	    then rmdir --ignore-fail-on-non-empty $(BINDIR); fi
 	@rm -rf build
 
-lib: lib/libdanton.$(SOEXT)
+lib: $(LIB)
 
-bin/danton: src/danton-x.c lib/libdanton.$(SOEXT)
-	@mkdir -p bin
-	@$(CC) -o $@ $(CFLAGS) $(INCLUDE) $<                                   \
-		-Llib -ldanton -Wl,-rpath $(PWD)/lib
+$(EXEC): src/danton-x.c $(LIB)
+	@mkdir -p $(BINDIR)
+	@$(CC) -o $@ $(CFLAGS) $(INCLUDE) $< -L$(LIBDIR) -l$(NAME) $(RPATH)
 
 OBJS := $(addprefix build/,danton.lo text.lo discrete.lo powerlaw.lo)
 # ALOUETTE
@@ -54,8 +64,8 @@ OBJS += $(addprefix build/,                                                    \
 	client.lo ecef.lo error.lo io.lo list.lo map.lo projection.lo stack.lo \
 	stepper.lo tinydir.lo asc.lo geotiff16.lo grd.lo hgt.lo png16.lo)
 
-lib/libdanton.$(SOEXT): $(OBJS)
-	@$(CC) -o $@ $(CFLAGS) -shared $(OBJS) -lm -ldl
+$(LIB): $(OBJS)
+	@$(CC) -o $@ $(CFLAGS) $(SHARED) $(OBJS) -lm -ldl
 
 # Build DANTON
 INCLUDE := -Iinclude -Ideps/ent/include -Ideps/pumas/include                   \
@@ -69,11 +79,12 @@ define build_c
 endef
 
 build/danton.lo: src/danton.c
-	@$(call build_c,-DDANTON_DEFAULT_PDF="\"$(DANTON_DEFAULT_PDF)\""       \
-		-DDANTON_DEFAULT_MDF="\"$(DANTON_DEFAULT_MDF)\""               \
-		-DDANTON_DEFAULT_DEDX="\"$(DANTON_DEFAULT_DEDX)\""             \
-		-DDANTON_DEFAULT_GEOID="\"$(DANTON_DEFAULT_GEOID)\""           \
-		-DDANTON_DEFAULT_DUMP="\"$(DANTON_DEFAULT_DUMP)\""             \
+	@$(call build_c,-DDANTON_PREFIX="\"$(PREFIX)\""                        \
+		-DDANTON_PDF="\"$(DANTON_PDF)\""                               \
+		-DDANTON_MDF="\"$(DANTON_MDF)\""                               \
+		-DDANTON_DEDX="\"$(DANTON_DEDX)\""                             \
+		-DDANTON_GEOID="\"$(DANTON_GEOID)\""                           \
+		-DDANTON_DUMP="\"$(DANTON_DUMP)\""                             \
 		$(INCLUDE))
 
 build/%.lo: src/danton/primary/%.c

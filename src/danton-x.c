@@ -536,8 +536,22 @@ int main(int argc, char * argv[])
          */
         if (argc <= 1) exit_with_help(EXIT_SUCCESS);
 
+        /* Format the runtime prefix. */
+        const int n = strlen(argv[0]) + 1;
+        char prefix[n + 4];
+        {
+                char * end = strrchr(argv[0], '/');
+                if (end == NULL) {
+                        memcpy(prefix, "./..", 5);
+                } else {
+                        const size_t m = end - argv[0];
+                        memcpy(prefix, argv[0], m);
+                        memcpy(prefix + m, "/..", 4);
+                }
+        }
+
         /* Initialise DANTON. */
-        if (danton_initialise(NULL, NULL, NULL, NULL, NULL) != EXIT_SUCCESS) {
+        if (danton_initialise(prefix, NULL, NULL) != EXIT_SUCCESS) {
                 ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
                     danton_error_pop(NULL));
         }
