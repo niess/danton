@@ -6,13 +6,12 @@ DANTON_DEFAULT_GEOID := $(abspath share/geoid/egm96.png)
 
 # Compiler flags
 CFLAGS := -O3 -std=c99 -Wall
-FFLAGS := -O2 -fno-second-underscore -fno-backslash -fno-automatic             \
+FFLAGS := -O3 -fno-second-underscore -fno-backslash -fno-automatic             \
 	-ffixed-line-length-132 -std=legacy
 
 # OSX additional flags
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-        CFLAGS += -L"$(shell dirname `$(FC) --print-file-name libgfortran.dylib`)"
 	CFLAGS += -Wno-unused-command-line-argument
         CFLAGS += -Wno-tautological-compare
 else
@@ -38,12 +37,7 @@ bin/danton: src/danton-x.c lib/libdanton.so
 
 OBJS := $(addprefix build/,danton.lo text.lo discrete.lo powerlaw.lo)
 # ALOUETTE
-OBJS += $(addprefix build/,                                                    \
-	formf.lo tauola.lo curr_cleo.lo pkorb.lo f3pi.lo tauola_extras.lo      \
-	f3pi_rcht.lo funct_3pi.lo funct_rpt.lo value_parameter.lo FA1RCHL.lo   \
-	ffwid3pi.lo initA1TabKKpi.lo wid_a1_fit.lo initA1Tab.lo                \
-	wid_a1_fitKKpi.lo gaus_integr.lo gfact.lo frho_pi_belle.lo             \
-	alouette.lo)
+OBJS += $(addprefix build/,tauola.lo alouette.lo)
 # ENT
 OBJS += build/ent.lo
 # JSMN-TEA
@@ -56,7 +50,7 @@ OBJS += $(addprefix build/,                                                    \
 	stepper.lo tinydir.lo asc.lo geotiff16.lo grd.lo hgt.lo png16.lo)
 
 lib/libdanton.so: $(OBJS)
-	@$(CC) -o $@ $(CFLAGS) -shared $(OBJS) -lgfortran -lm -ldl
+	@$(CC) -o $@ $(CFLAGS) -shared $(OBJS) -lm -ldl
 
 # Build DANTON
 INCLUDE := -Iinclude -Ideps/ent/include -Ideps/pumas/include                   \
@@ -91,20 +85,9 @@ define build_fortran
 	@$(FC) -o $@ $(FFLAGS) -fPIC -c $<
 endef
 
-TAUSRC = deps/alouette/src/tauola
-
-build/%.lo: $(TAUSRC)/%.f
+build/%.lo: deps/alouette/src/%.f
 	@$(call build_fortran)
 
-build/%.lo: $(TAUSRC)/new-currents/RChL-currents/rcht_3pi/%.f
-	@$(call build_fortran)
-
-build/%.lo: $(TAUSRC)/new-currents/RChL-currents/rcht_common/%.f
-	@$(call build_fortran)
-	
-build/%.lo: $(TAUSRC)/new-currents/other-currents/%.f
-	@$(call build_fortran)
-	
 # Build ENT
 build/%.lo: deps/ent/src/%.c
 	@$(call build_c,-Ideps/ent/include)

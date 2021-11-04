@@ -870,8 +870,8 @@ static double random_uniform01(struct simulation_context * context)
         y ^= (y << 15) & 0xefc60000UL;
         y ^= (y >> 18);
 
-        /* Convert to a floating point and return. */
-        return y * (1.0 / 4294967295.0);
+        /* Convert to a 32 bits floating point in (0,1) and return. */
+        return (((double)y) + 0.5) * (1.0 / 4294967296.0);
 }
 
 /* Encapsulation of the random engine for PUMAS. */
@@ -886,6 +886,14 @@ static double random_ent(struct ent_context * context)
 {
         struct simulation_context * c = ent2context(context);
         return random_uniform01(c);
+}
+
+/* Encapsulation of the random engine for ALOUETTE. */
+static struct simulation_context * alouette_current_context = NULL;
+
+static float random_alouette(void)
+{
+        return random_uniform01(alouette_current_context);
 }
 
 double danton_get_uniform01(struct danton_context * context)
@@ -1214,6 +1222,8 @@ static int transport_forward(struct simulation_context * context,
                                         p * tau->direction[1],
                                         p * tau->direction[2] };
                                 int trials;
+                                if (lock != NULL) lock();
+                                alouette_current_context = context;
                                 for (trials = 0; trials < 20; trials++) {
                                         if (alouette_decay(product.pid,
                                                 momentum, tau->direction) ==
@@ -1258,6 +1268,7 @@ static int transport_forward(struct simulation_context * context,
                                         record_copy_product(
                                             context, pid, momentum);
                                 }
+                                if (unlock != NULL) unlock();
                                 if (context->record->api.n_products > 0) {
                                         context->record->api.generation =
                                             generation;
@@ -1557,6 +1568,8 @@ static int transport_backward(
                                 state->energy * state->direction[2] };
                         double weight;
                         int trials;
+                        if (lock != NULL) lock();
+                        alouette_current_context = context;
                         for (trials = 0; trials < 20; trials++) {
                                 if (alouette_undecay(state->pid, momentum,
                                         &polarisation_cb, DECAY_BIAS,
@@ -1567,8 +1580,11 @@ static int transport_backward(
                         int pid1;
                         if ((alouette_product(&pid1, momentum) !=
                                 ALOUETTE_RETURN_SUCCESS) ||
-                            (abs(pid1) != ENT_PID_TAU))
+                            (abs(pid1) != ENT_PID_TAU)) {
+                                if (unlock != NULL) unlock();
                                 return EXIT_SUCCESS;
+                        }
+                        if (unlock != NULL) unlock();
                         const double p12 = momentum[0] * momentum[0] +
                             momentum[1] * momentum[1] +
                             momentum[2] * momentum[2];
@@ -1640,6 +1656,8 @@ static int transport_backward(
                 p * context->record->final.direction[1],
                 p * context->record->final.direction[2] };
         int trials;
+        if (lock != NULL) lock();
+        alouette_current_context = context;
         for (trials = 0; trials < 20; trials++) {
                 if (alouette_decay(
                         pid, momentum, context->record->final.direction) ==
@@ -1654,6 +1672,7 @@ static int transport_backward(
                         continue;
                 record_copy_product(context, pid1, momentum);
         }
+        if (unlock != NULL) unlock();
         if (record_publish(context) != EXIT_SUCCESS) return EXIT_FAILURE;
         return EXIT_SUCCESS;
 }
@@ -1735,12 +1754,13 @@ static int initialise_physics(struct danton_context * context)
 
         /* Initialise ALOUETTE/TAUOLA. */
         enum alouette_return a_rc;
-        if ((a_rc = alouette_initialise(1, NULL)) != ALOUETTE_RETURN_SUCCESS) {
+        if ((a_rc = alouette_initialise(NULL)) != ALOUETTE_RETURN_SUCCESS) {
                 danton_error_push(context, "%s (%d): alouette_initialise, %s.",
-                    __FILE__, __LINE__, alouette_strerror(a_rc));
+                    __FILE__, __LINE__, alouette_message());
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
         }
+        alouette_random = &random_alouette;
 
         /* Initialise the material tables */
         if (initialise_materials(context) != EXIT_SUCCESS) {
@@ -1815,7 +1835,6 @@ void danton_finalise(void)
         dedx_path = NULL;
         ent_physics_destroy(&physics.ent);
         pumas_physics_destroy(&physics.pumas);
-        alouette_finalise();
         turtle_stack_destroy(&earth.stack);
         turtle_map_destroy(&earth.undulations);
 }
