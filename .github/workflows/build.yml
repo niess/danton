@@ -15,7 +15,7 @@ jobs:
 
     - name: Examples
       run: |
-        ./bin/danton share/cards/grammage.json
+        ./bin/danton examples/cards/grammage.json
 
   OSX:
     runs-on: macOS-latest
@@ -30,4 +30,4 @@ jobs:
 
     - name: Examples
       run: |
-        ./bin/danton share/cards/grammage.json
+        ./bin/danton examples/cards/grammage.json

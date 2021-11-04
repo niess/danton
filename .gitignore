@@ -1,25 +1,19 @@
 # Ignore any library object.
-lib/*.so
+*.so
+*.dylib
 
 # Ignore temporary builds
-build
+build/*
 
 # Ignore python bytecode objects.
-lib/python/*.pyo
-lib/python/*.pyc
+*.pyo
+*.pyc
 
 # Ignore any binary object.
-bin
+bin/*
 *.o
 
-# Ignore ctags.
-.tags
-
-# Ignore temporary data.
-.danton.*
-*.dat
-share/topography
-share/scripts
-
-# Ignore the API doc
-docs
+# Ignore extra data.
+.danton.cfg
+share/*
+!share/danton/

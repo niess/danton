@@ -51,7 +51,7 @@ A documentation of the `libdanton` API is available [online][API:docs].
 ## Steering files
 
 A syntaxic summary of the steering files parameters is provided here. Examples
-can also be found in the [share/cards](share/cards) folder.
+can also be found in the [examples/cards](examples/cards) folder.
 
 ### Root items
 ```

@@ -1,8 +1,8 @@
 # Generic options
-DANTON_DEFAULT_PDF=   $(abspath deps/ent/share/pdf/CT14nlo_0000.dat)
-DANTON_DEFAULT_MDF=   $(abspath share/materials/materials.xml)
-DANTON_DEFAULT_DEDX=  $(abspath share/materials/dedx)
-DANTON_DEFAULT_GEOID= $(abspath share/geoid/egm96.png)
+DANTON_DEFAULT_PDF=   $(abspath share/danton/pdf/CT14nlo_0000.dat)
+DANTON_DEFAULT_MDF=   $(abspath share/danton/materials/materials.xml)
+DANTON_DEFAULT_DEDX=  $(abspath share/danton/materials/dedx)
+DANTON_DEFAULT_GEOID= $(abspath share/danton/geoid/egm96.png)
 
 # Compiler flags
 CFLAGS= -O3 -std=c99 -Wall
