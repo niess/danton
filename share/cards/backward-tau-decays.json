@@ -1,6 +1,7 @@
 {
         "events" : 100,
         "requested" : -1,
+        "seed" : null,
         "output-file" : null,
 
         "mode" : "backward",

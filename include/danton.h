@@ -385,13 +385,6 @@ DANTON_API int danton_earth_model(const char * geodesic,
 void * danton_get_topography(void);
 
 /**
- * Get a random number from DANTON's stream.
- * @param  context A simulation context or `NULL`.
- * @return         A pseudo random number in [0,1], uniformly.
- */
-double danton_get_uniform01(struct danton_context * context);
-
-/**
  * Get the PDG particle number for a given DANTON particle index.
  *
  * @param  particle  The DANTON particle index.
@@ -456,8 +449,33 @@ DANTON_API void danton_context_destroy(struct danton_context ** context);
  * scan is done. Note that setting *requested* to zero or less ignores this
  * option, resulting in all events to be processed.
  */
-DANTON_API int danton_run(
+DANTON_API int danton_context_run(
     struct danton_context * context, long events, long requested);
+
+/**
+ * Get a pseudo random number from a DANTON simulation context.
+ * @param  context A simulation context.
+ * @return         A pseudo random number in (0,1), uniformly distributed.
+ */
+double danton_context_random(struct danton_context * context);
+
+/**
+ * Get the random seed of a DANTON simulation context.
+ * @param  context A simulation context.
+ * @return         The PRNG random seed.
+ */
+unsigned long danton_context_random_seed(struct danton_context * context);
+
+/**
+ * Reset the PRNG of a DANTON simulation context.
+ * @param  context A simulation context.
+ * @param  seed    A random seed or `NULL`.
+ *
+ * If a `NULL` seed is provided, then the PRNG is initialised from the OS
+ * entropy, using /dev/urandom.
+ */
+void danton_context_random_set(
+    struct danton_context * context, const unsigned long * seed);
 
 /**
  * Get the current number of unprocessed errors.

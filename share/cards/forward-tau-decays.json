@@ -1,6 +1,7 @@
 {
         "events" : 10000,
         "requested" : -1,
+        "seed" : null,
         "output-file" : null,
 
         "mode" : "forward",

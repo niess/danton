@@ -61,6 +61,8 @@ longitudinal    boolean              If `true` the transverse transport is disab
 mode            string               The run mode, one of "backward", "forward" or "grammage".
 output-file     string, null         The output file name or `null` for `stdout`.
 requested       integer              The requested number of valid Monte-Carlo events
+seed            unsigned, null       The simulation random seed. If null, then the seed is set
+                                       from the OS entropy using /dev/urandom.
 ```
 
 In addition to the previous general parameters one also has the following keys :
@@ -72,9 +74,9 @@ corresponding options are described hereafter.
 reference       string               The reference model: "PREM" (spherical),
                                        "WGS84" (elliptical) or "EGM96" (geoidal).
 sea             boolean              If `true` the Earth is covered with sea.
-topography      string, number       Path to a folder containing topography data, e.g.
-                                       SRTMGL1.v3 tiles. Alternatively a number can be provided,
-                                       specifying a constant topography altitude.
+topography      string, float        Path to a folder containing topography data, e.g.
+                                       SRTMGL1.v3 tiles. Alternatively a float value can be
+                                       provided, specifying a constant topography altitude.
 material        string               The material composing the topography.
 density         float                The density of the topography, in kg/m^3.
 ```
@@ -100,7 +102,8 @@ The valid *particle* names are `"nu_tau"`, `"nu_tau~"`, `"nu_mu"`, `"nu_mu~"`,
 
 ### Primary flux
 ```
-$particle       [$model, {...}]      The primary spectrum model for the corresponding particle.
+$particle       [$model, {...}]      The primary spectrum model for the corresponding
+                                       particle.
 ```
 
 Note that for a primary flux `$particle` can't be a `"tau"` or `"tau~"`. The

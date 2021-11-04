@@ -160,6 +160,18 @@ static void card_update_mode(void)
         }
 }
 
+/* Update DANTON's PRNG seed according to the data card. */
+static void card_update_seed(int * seeded, unsigned long * seed)
+{
+        handler.pre = &catch_error;
+        int rc = jsmn_tea_next_null(tea);
+        handler.pre = NULL;
+        if (rc < 0) {
+                jsmn_tea_next_number(tea, JSMN_TEA_TYPE_UNSIGNED_LONG, seed);
+                *seeded = 1;
+        }
+}
+
 /* List of particle names, following DANTON's ordering. */
 static const char * particle_name[DANTON_PARTICLE_N] = { "nu_tau~", "nu_mu~",
         "nu_e~", "nu_e", "nu_mu", "nu_tau", "tau~", "tau" };
@@ -435,7 +447,8 @@ static void card_update_stepping(void)
 }
 
 /* Update DANTON's configuration according to the content of the data card. */
-static void card_update(int * n_events, int * n_requested)
+static void card_update(
+    int * n_events, int * n_requested, int * seeded, unsigned long * seed)
 {
         /* Loop over the fields. */
         int i;
@@ -451,6 +464,8 @@ static void card_update(int * n_events, int * n_requested)
                         card_update_recorder();
                 else if (strcmp(tag, "mode") == 0)
                         card_update_mode();
+                else if (strcmp(tag, "seed") == 0)
+                        card_update_seed(seeded, seed);
                 else if (strcmp(tag, "decay") == 0)
                         jsmn_tea_next_bool(tea, &context->decay);
                 else if (strcmp(tag, "longitudinal") == 0)
@@ -535,12 +550,18 @@ int main(int argc, char * argv[])
         }
 
         /* Set the input arguments from the JSON card(s). */
-        int n_events = 10000, n_requested = 0;
+        int n_events = 10000, n_requested = 0, seeded = 0;
+        unsigned long seed;
         for (argv++; *argv != NULL; argv++) {
                 tea = jsmn_tea_create(*argv, JSMN_TEA_MODE_LOAD, &handler);
                 card_path = *argv;
-                card_update(&n_events, &n_requested);
+                card_update(&n_events, &n_requested, &seeded, &seed);
                 jsmn_tea_destroy(&tea);
+        }
+
+        /* Update the PRNG, if needed. */
+        if (seeded) {
+                danton_context_random_set(context, &seed);
         }
 
         /* Initialise any stepping dump. */
@@ -561,7 +582,7 @@ int main(int argc, char * argv[])
         }
 
         /* Run the simulation. */
-        if (danton_run(context, n_events, n_requested) != EXIT_SUCCESS)
+        if (danton_context_run(context, n_events, n_requested) != EXIT_SUCCESS)
                 ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
                     danton_error_pop(context));
 

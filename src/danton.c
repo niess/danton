@@ -240,6 +240,7 @@ struct simulation_context {
         /* Data for the Mersenne Twister PRNG. */
         struct {
 #define MT_PERIOD 624
+                unsigned long seed;
                 int index;
                 unsigned long data[MT_PERIOD];
         } random_mt;
@@ -801,11 +802,16 @@ static int random_get_seed(unsigned long * seed)
 }
 
 /* Initialise the PRNG random seed. */
-static void random_initialise(struct simulation_context * context)
+static void random_initialise(
+    struct simulation_context * context, const unsigned long * seed_ptr)
 {
-        /* Get a seed from /dev/urandom*/
         unsigned long seed;
-        if (random_get_seed(&seed) != EXIT_SUCCESS) goto error;
+        if (seed_ptr == NULL) {
+                /* Get a seed from /dev/urandom*/
+                if (random_get_seed(&seed) != EXIT_SUCCESS) goto error;
+        } else {
+                seed = *seed_ptr;
+        }
 
         /* Set the Mersenne Twister initial state. */
         context->random_mt.data[0] = seed & 0xffffffffUL;
@@ -894,22 +900,6 @@ static struct simulation_context * alouette_current_context = NULL;
 static float random_alouette(void)
 {
         return random_uniform01(alouette_current_context);
-}
-
-double danton_get_uniform01(struct danton_context * context)
-{
-        if (context == NULL) {
-                static int initialised = 0;
-                if (!initialised) {
-                        unsigned long seed = 0;
-                        random_get_seed(&seed);
-                        initialised = 1;
-                        srand((unsigned int)seed);
-                }
-                return rand() / (double)RAND_MAX;
-        } else {
-                return random_uniform01((struct simulation_context *)context);
-        }
 }
 
 /* Set a neutrino state from a tau decay product. */
@@ -2068,7 +2058,7 @@ struct danton_context * danton_context_create(void)
         }
 
         /* Initialise the random engine. */
-        random_initialise(context);
+        random_initialise(context, NULL);
 
         /* Initialise the Monte-Carlo contexts and the recorder.
          */
@@ -2123,6 +2113,27 @@ void danton_context_destroy(struct danton_context ** context)
         free(context_->record);
         free(context_);
         *context = NULL;
+}
+
+/* Get a pseudo random number in (0, 1). */
+double danton_context_random(struct danton_context * context)
+{
+        return random_uniform01((struct simulation_context *)context);
+}
+
+/* Get the seed of the context PRNG. */
+unsigned long danton_context_random_seed(struct danton_context * context)
+{
+        struct simulation_context * c = (void *)context;
+        return c->random_mt.seed;
+}
+
+/* Reset the context PRNG with a new seed. */
+void danton_context_random_set(
+    struct danton_context * context, const unsigned long * seed)
+{
+        struct simulation_context * c = (void *)context;
+        random_initialise(c, seed);
 }
 
 /* Get the PDG number corresponding to the given table index. */
@@ -2201,7 +2212,8 @@ static double sample_log_or_linear(
 }
 
 /* Run a DANTON simulation. */
-int danton_run(struct danton_context * context, long events, long requested)
+int danton_context_run(
+    struct danton_context * context, long events, long requested)
 {
         /* Unpack the various objects. */
         struct simulation_context * context_ =
