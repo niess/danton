@@ -16,6 +16,3 @@
 [submodule "turtle"]
 	path = deps/turtle
 	url = https://github.com/niess/turtle
-[submodule "whereami"]
-	path = deps/whereami
-	url = https://github.com/gpakosz/whereami.git

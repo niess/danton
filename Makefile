@@ -9,12 +9,14 @@ DANTON_GEOID= share/$(NAME)/geoid/egm96.png
 DANTON_MDF=   share/$(NAME)/materials/materials.xml
 DANTON_PDF=   share/$(NAME)/pdf/CT14nlo_0000.dat
 
-# Compiler flags
-CFLAGS= -O3 -Wall
+# Compiler options
+CC=gcc
+FC=gcc
+CFLAGS= -O3 -Wall -std=c99
 FFLAGS= -O3 -fno-second-underscore -fno-backslash -fno-automatic               \
 	-ffixed-line-length-132 -std=legacy
 
-# OSX additional flags
+# OS dependent flags
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	SOEXT=  dylib
@@ -24,6 +26,8 @@ else
 	SOEXT=  so
 	SHARED= -shared
 	RPATH=  '-Wl,-rpath,$$ORIGIN/../lib'
+
+	TINYDIR_CFLAGS= -Wno-restrict
 endif
 
 BINDIR= $(PREFIX)/bin
@@ -48,8 +52,8 @@ lib: $(LIB)
 
 # Build the danton executable
 EXE_INCLUDES= -Iinclude -Ideps/jsmn-tea/include -Ideps/roar/include            \
-              -Ideps/turtle/src/deps -Ideps/whereami/src
-EXE_SRCS=     src/danton-x.c deps/whereami/src/whereami.c
+              -Ideps/turtle/src/deps
+EXE_SRCS=     src/danton-x.c
 
 $(EXEC): $(EXE_SRCS) $(LIB)
 	@mkdir -p $(BINDIR)
@@ -73,6 +77,7 @@ LIB_OBJS += $(addprefix build/,                                                \
             png16.lo)
 
 $(LIB): $(LIB_OBJS)
+	@mkdir -p $(LIBDIR)
 	@$(CC) -o $@ $(CFLAGS) $(SHARED) $(LIB_OBJS) -lm -ldl
 
 LIB_INCLUDES= -Iinclude -Ideps/ent/include -Ideps/pumas/include                \
@@ -119,8 +124,8 @@ build/%.lo: deps/ent/src/%.c
 # Build JSMN-TEA
 build/%.lo: deps/jsmn-tea/src/%.c deps/jsmn-tea/include/%.h
 	@$(call build_c,-Ideps/jsmn-tea/include -Ideps/turtle/src/deps         \
-		-Ideps/roar/include -DROAR_IMPLEMENTATION)
-	
+                        -Ideps/roar/include -DROAR_IMPLEMENTATION)
+
 # Build PUMAS
 build/%.lo: deps/pumas/src/%.c
 	@$(call build_c,-Ideps/pumas/include)
@@ -139,4 +144,5 @@ build/%.lo: deps/turtle/src/%.c deps/turtle/include/%.h
 	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src)
 
 build/%.lo: deps/turtle/src/deps/%.c deps/turtle/src/deps/%.h
-	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src)
+	@$(call build_c,-Ideps/turtle/include -Ideps/turtle/src                \
+	                $(TINYDIR_CFLAGS))

@@ -36,9 +36,6 @@
 /* Jasmine with some tea, for parsing the data card in JSON format. */
 #include "jsmn-tea.h"
 
-/* The whereami library, for getting the runtime prefix. */
-#include "whereami.h"
-
 /* Handle for the simulation context. */
 static struct danton_context * context = NULL;
 
@@ -527,48 +524,6 @@ static int dump_steps(struct danton_context * context,
         return EXIT_SUCCESS;
 }
 
-static char * get_prefix(void)
-{
-        /* Get the runtime path using whereami. */
-        char * prefix = NULL;
-        const int length = wai_getExecutablePath(NULL, 0, NULL);
-        if (length < 0) goto error;
-
-        size_t size = (length > 4) ? length + 1 : 5;
-        prefix = malloc(size);
-        if (prefix == NULL) goto error;
-
-        wai_getExecutablePath(prefix, length, NULL);
-        prefix[length] = 0x0;
-
-        /* Get the runtime directory name. */
-        char * end = strrchr(prefix, '/');
-        if (end == NULL) {
-                /* A relative path is returned and the executable is called from
-                 * within the same directory.  Since an absolute path is
-                 * returned, this is not expected to happen. But to be safe let
-                 * us handle this case anyway.
-                 */
-                memcpy(prefix, "./..", 5);
-                return prefix;
-        } else {
-                *end = 0x0;
-        }
-
-        /* Get the directory above, i.e. the actual prefix since the runtime
-         * is expected to be located under bin.
-         */
-        end = strrchr(prefix, '/');
-        if (end == NULL) goto error;
-        *end = 0x0;
-
-        return prefix;
-error:
-        free(prefix);
-        fprintf(stderr, "error: could not resolve the runtime prefix\n");
-        exit(EXIT_FAILURE);
-}
-
 int main(int argc, char * argv[])
 {
         /* Configure the error handler. */
@@ -582,9 +537,8 @@ int main(int argc, char * argv[])
         if (argc <= 1) exit_with_help(EXIT_SUCCESS);
 
         /* Initialise DANTON. */
-        char * prefix = get_prefix();
+        char * prefix = getenv("DANTON_PREFIX");
         const int rc = danton_initialise(prefix, NULL, NULL);
-        free(prefix);
         if (rc != EXIT_SUCCESS) {
                 ROAR_ERRWP_MESSAGE(&handler, &main, -1, "danton error",
                     danton_error_pop(NULL));
