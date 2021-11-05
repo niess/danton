@@ -61,7 +61,7 @@ struct danton_primary;
  *
  * @param  primary  Handle for the primary data.
  * @param  energy   The energy of the primary neutrino, in GeV.
- * @return          The corresponding flux.
+ * @return The corresponding flux.
  */
 typedef double danton_primary_cb(
     struct danton_primary * primary, double energy);
@@ -165,7 +165,7 @@ struct danton_recorder;
  * @param  context   Handle for the simulation context.
  * @param  recorder  Handle for the recorder data.
  * @param  event     Handle for the event data.
- * @return           `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  */
 typedef int danton_event_cb(
     struct danton_context * context,
@@ -177,7 +177,7 @@ typedef int danton_event_cb(
  * @param  context   Handle for the simulation context.
  * @param  recorder  Handle for the recorder data.
  * @param  grammage  Handle for the grammage data.
- * @return          `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  */
 typedef int danton_grammage_cb(
     struct danton_context * context,
@@ -213,7 +213,7 @@ enum danton_run_event {
  * @param  context Handle for the simulation context.
  * @param  event   Flag signing the occuring event.
  * @param  state   The current particle state.
- * @return         `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  */
 typedef int danton_run_cb(
     struct danton_context * context,
@@ -293,7 +293,7 @@ struct danton_context {
 /**
  * Generic lock or unlock callback.
  *
- * @return  `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * For multithreaded usage the user must supply a pair of lock and unlock
  * callbacks ensuring exclusive access to critical data by the simulation
@@ -307,7 +307,7 @@ typedef int danton_lock_cb(void);
  * @param  prefix  Library installation prefix, or `NULL`.
  * @param  lock    A locking callback, or `NULL`.
  * @param  unlock  An unlocking callback, or `NULL`.
- * @return         `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * Initialise the DANTON library. The installation *prefix* indicates the
  * location of physics data. If *prefix* is `NULL`, then the value provided at
@@ -347,12 +347,12 @@ DANTON_API void danton_destroy(void ** any);
 /**
  * Set or update the global Earth model.
  *
- * @param reference  The reference system for the sea level, or `NULL`.
+ * @param geodesic   The reference system for the sea level, or `NULL`.
  * @param topography Topography model, path to any topographic data, or `NULL`.
  * @param material   Material for the topography.
  * @param density    Density of the topography material in kg / m^3.
  * @param sea        Pointer to a flag to enable or disable sea(s), or `NULL`.
- * @return           `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * __Warning__ : this function is **not** thread safe. It sets the Earth
  * model globally.
@@ -361,9 +361,12 @@ DANTON_API void danton_destroy(void ** any);
  * spherical Earth fully covered with a 3km deep sea.
  *
  * The supported *reference* values for the sea level are:
- *   - PREM (spherical)
- *   - WGS84 (GPS ellipsoid)
- *   - EGM96 (GPS ellipsoid + geoid undulations)
+ *
+ *     - PREM  : spherical Earth
+ *
+ *     - WGS84 : GPS ellipsoid
+ *
+ *     - EGM96 : GPS ellipsoid + geoid undulations
  *
  * If let `NULL`, then the PREM system is used.
  *
@@ -391,7 +394,7 @@ DANTON_API int danton_earth_model(
 
 /**
  * Get the current topography.
- * @return  A `turtle_stack` pointer, or `NULL`.
+ * @return A `turtle_stack` pointer, or `NULL`.
  *
  * This routines provides access to the topography used by DANTON as
  * a`turtle_stack` object.  It can be used, e.g. for querying the topography
@@ -406,7 +409,7 @@ void * danton_get_topography(void);
  * Get the PDG particle number for a given DANTON particle index.
  *
  * @param  particle  The DANTON particle index.
- * @return           The corresponding PDG number.
+ * @return The corresponding PDG number.
  */
 DANTON_API int danton_particle_pdg(enum danton_particle particle);
 
@@ -414,13 +417,13 @@ DANTON_API int danton_particle_pdg(enum danton_particle particle);
  * Get the DANTON particle index for a given PDG number.
  *
  * @param  pdg  The PDG number.
- * @return      The corresponding DANTON index.
+ * @return The corresponding DANTON index.
  */
 DANTON_API enum danton_particle danton_particle_index(int pdg);
 
 /**
  * Create a particle sampler.
- * @return  A handle for the sampler or `NULL` on failure.
+ * @return A handle for the sampler or `NULL` on failure.
  */
 DANTON_API struct danton_sampler * danton_sampler_create(void);
 
@@ -428,7 +431,7 @@ DANTON_API struct danton_sampler * danton_sampler_create(void);
  * Update a particle sampler according to its current settings.
  *
  * @param  sampler  The handler for the particle sampler.
- * @return          `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * Note that a sampler must be updated **before** it can be used.
  */
@@ -437,7 +440,7 @@ DANTON_API int danton_sampler_update(struct danton_sampler * sampler);
 /**
  * Create a simulation context.
  *
- * @return  A handle for the context or `NULL` on failure.
+ * @return A handle for the context or `NULL` on failure.
  *
  * The simulation context is initialised empty. It **must** be assigned a
  * *sampler* and a *recorder*. For Monte-Carlo runs a *primary* flux model is
@@ -461,7 +464,7 @@ DANTON_API void danton_context_destroy(struct danton_context ** context);
  * @param  context      The simulation context to use.
  * @param  events       The maximum number of Monte-carlo events or scan points.
  * @param  requested    The number of requested events to log.
- * @return              `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * Depending on the context *mode* a Monte-Carlo simulation or a grammage
  * scan is done. Note that setting *requested* to zero or less ignores this
@@ -475,14 +478,14 @@ DANTON_API int danton_context_run(
 /**
  * Get a pseudo random number from a DANTON simulation context.
  * @param  context A simulation context.
- * @return         A pseudo random number in (0,1), uniformly distributed.
+ * @return A pseudo random number in (0,1), uniformly distributed.
  */
 double danton_context_random(struct danton_context * context);
 
 /**
  * Get the random seed of a DANTON simulation context.
  * @param  context A simulation context.
- * @return         The PRNG random seed.
+ * @return The PRNG random seed.
  */
 unsigned long danton_context_random_seed(struct danton_context * context);
 
@@ -502,7 +505,7 @@ void danton_context_random_set(
  * Get the current number of unprocessed errors.
  *
  * @param  context  The context of interest or `NULL`.
- * @return          The corresponding error count.
+ * @return The corresponding error count.
  *
  * If no *context* is provided the number of global errors is returned.
  */
@@ -512,7 +515,7 @@ DANTON_API int danton_error_count(struct danton_context * context);
  * Retrieve the last error in the stack.
  *
  * @param  context  The context of interest or `NULL`.
- * @return          A string describing the last error.
+ * @return A string describing the last error.
  *
  * If no *context* is provided the error is taken from the global stack.
  */
@@ -524,7 +527,7 @@ DANTON_API const char * danton_error_pop(struct danton_context * context);
  * @param  context  The context where the error occurred or `NULL`.
  * @param  format   A format string for the error message.
  * @param  VARARGS  Variable arguments matching the format.
- * @return          `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * The format string and variable arguments follow the printf syntax.
  */

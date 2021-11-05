@@ -23,9 +23,9 @@ detailed topography can be provided from world wide elevation models, e.g.
 [SRTMGL1]: https://lpdaac.usgs.gov/dataset_discovery/measures/measures_products_table/srtmgl1_v003
 
 ## Installation
-DANTON has been tested on both Linux and OSX. Not on Windows though. The
-provided [Makefile](Makefile) builds `libdanton` as a shared library as well
-as the `danton` executable, e.g. as:
+DANTON requires a UNIX system, eg. Linux or OSX. The provided
+[Makefile](Makefile) builds `libdanton` as a shared library as well as the
+`danton` executable, e.g. as:
 ```bash
 # Fetch the source and deps from GitHub
 git clone --recursive https://github.com/niess/danton.git
@@ -38,11 +38,8 @@ make
 ./bin/danton path/to/card.json
 ```
 
-DANTON requires `gfortran` in order to compile TAUOLA. In addition, the default Makefile
-expects `libpng` and `libtiff` to be installed. Those are required by some topography
-models. They can be disabled by editing the `USE_PNG` and `USE_TIFF` flags in the
-Makefile.
- 
+Note that `gfortran` is required in order to compile TAUOLA.
+
 ## API documentation
 A documentation of the `libdanton` API is available [online][API:docs].
 
