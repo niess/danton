@@ -46,32 +46,39 @@ clean:
 
 lib: $(LIB)
 
-$(EXEC): src/danton-x.c $(LIB)
+# Build the danton executable
+EXE_INCLUDES= -Iinclude -Ideps/jsmn-tea/include -Ideps/roar/include            \
+              -Ideps/turtle/src/deps -Ideps/whereami/src
+EXE_SRCS=     src/danton-x.c deps/whereami/src/whereami.c
+
+$(EXEC): $(EXE_SRCS) $(LIB)
 	@mkdir -p $(BINDIR)
-	@$(CC) -o $@ $(CFLAGS) $(INCLUDE) $< -L$(LIBDIR) -l$(NAME) $(RPATH)
+	@$(CC) -o $@ $(CFLAGS) $(EXE_INCLUDES) $(EXE_SRCS)                     \
+               -L$(LIBDIR) -l$(NAME) $(RPATH)
 
-OBJS := $(addprefix build/,danton.lo text.lo discrete.lo powerlaw.lo)
+# Build the DANTON library
+LIB_OBJS=  $(addprefix build/,danton.lo text.lo discrete.lo powerlaw.lo)
 # ALOUETTE
-OBJS += $(addprefix build/,tauola.lo alouette.lo)
+LIB_OBJS+= $(addprefix build/,tauola.lo alouette.lo)
 # ENT
-OBJS += build/ent.lo
+LIB_OBJS+= build/ent.lo
 # JSMN-TEA
-OBJS += build/jsmn.lo build/jsmn-tea.lo
+LIB_OBJS+= build/jsmn.lo build/jsmn-tea.lo
 # PUMAS
-OBJS += build/pumas.lo
+LIB_OBJS += build/pumas.lo
 # TURTLE
-OBJS += $(addprefix build/,                                                    \
-	client.lo ecef.lo error.lo io.lo list.lo map.lo projection.lo stack.lo \
-	stepper.lo tinydir.lo asc.lo geotiff16.lo grd.lo hgt.lo png16.lo)
+LIB_OBJS += $(addprefix build/,                                                \
+            client.lo ecef.lo error.lo io.lo list.lo map.lo projection.lo      \
+            stack.lo stepper.lo tinydir.lo asc.lo geotiff16.lo grd.lo hgt.lo   \
+            png16.lo)
 
-$(LIB): $(OBJS)
-	@$(CC) -o $@ $(CFLAGS) $(SHARED) $(OBJS) -lm -ldl
+$(LIB): $(LIB_OBJS)
+	@$(CC) -o $@ $(CFLAGS) $(SHARED) $(LIB_OBJS) -lm -ldl
 
-# Build DANTON
-INCLUDE := -Iinclude -Ideps/ent/include -Ideps/pumas/include                   \
-	-Ideps/alouette/include -Ideps/jsmn-tea/include                        \
-	-Ideps/roar/include -Ideps/turtle/include -Ideps/turtle/src            \
-	-Ideps/turtle/src/deps
+LIB_INCLUDES= -Iinclude -Ideps/ent/include -Ideps/pumas/include                \
+              -Ideps/alouette/include -Ideps/jsmn-tea/include                  \
+              -Ideps/roar/include -Ideps/turtle/include -Ideps/turtle/src      \
+              -Ideps/turtle/src/deps
 
 define build_c
 	@mkdir -p build
@@ -80,18 +87,18 @@ endef
 
 build/danton.lo: src/danton.c
 	@$(call build_c,-DDANTON_PREFIX="\"$(PREFIX)\""                        \
-		-DDANTON_PDF="\"$(DANTON_PDF)\""                               \
-		-DDANTON_MDF="\"$(DANTON_MDF)\""                               \
-		-DDANTON_DEDX="\"$(DANTON_DEDX)\""                             \
-		-DDANTON_GEOID="\"$(DANTON_GEOID)\""                           \
-		-DDANTON_DUMP="\"$(DANTON_DUMP)\""                             \
-		$(INCLUDE))
+                -DDANTON_PDF="\"$(DANTON_PDF)\""                               \
+                -DDANTON_MDF="\"$(DANTON_MDF)\""                               \
+                -DDANTON_DEDX="\"$(DANTON_DEDX)\""                             \
+                -DDANTON_GEOID="\"$(DANTON_GEOID)\""                           \
+                -DDANTON_DUMP="\"$(DANTON_DUMP)\""                             \
+                $(LIB_INCLUDES))
 
 build/%.lo: src/danton/primary/%.c
-	@$(call build_c,$(INCLUDE))
+	@$(call build_c,$(LIB_INCLUDES))
 
 build/%.lo: src/danton/recorder/%.c
-	@$(call build_c,$(INCLUDE))
+	@$(call build_c,$(LIB_INCLUDES))
 
 # Build ALOUETTE
 build/%.lo: deps/alouette/src/%.c
