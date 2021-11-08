@@ -4,7 +4,7 @@
 ## Description
 DANTON is a __C99 library__ dedicated to the sampling of decaying taus from
 ultra high energy neutrinos interacting in the Earth. It can run in forward or
-backward Monte-Carlo. it can also be configured to sample tau fluxes instead of
+backward Monte Carlo. it can also be configured to sample tau fluxes instead of
 decay densities, or to sample transmitted neutrinos fluxes.
 
 The library is shipped with an __executable__, `danton` which takes a *data
@@ -23,9 +23,22 @@ detailed topography can be provided from world wide elevation models, e.g.
 [SRTMGL1]: https://lpdaac.usgs.gov/dataset_discovery/measures/measures_products_table/srtmgl1_v003
 
 ## Installation
-DANTON requires a UNIX system, eg. Linux or OSX. The provided
-[Makefile](Makefile) builds `libdanton` as a shared library as well as the
-`danton` executable, e.g. as:
+DANTON requires a UNIX system, eg. Linux or OSX. On Linux, the latest version of
+the danton executable is available as an AppImage, from the
+[releases](https://github.com/niess/danton/releases) assets, e.g. as:
+```bash
+# Fetch the danton AppImage from GitHub
+wget https://github.com/niess/danton/releases/download/v0.3/danton-x86_64.AppImage
+
+# Make the downloaded binary executable
+chmod u+x danton-x86_64.AppImage
+
+# Run the AppImage
+./danton-x86_64.AppImage path/to/card.json
+```
+
+Alternatively, the provided [Makefile](Makefile) builds `libdanton` as a shared
+library as well as the `danton` executable, e.g. as:
 ```bash
 # Fetch the source and deps from GitHub
 git clone --recursive https://github.com/niess/danton.git
@@ -53,11 +66,11 @@ can also be found in the [examples/cards](examples/cards) folder.
 ### Root items
 ```
 decay           boolean              If `true` the sampled taus are decayed.
-events          integer              The number of Monte-Carlo events to run.
+events          integer              The number of Monte Carlo events to run.
 longitudinal    boolean              If `true` the transverse transport is disabled.
 mode            string               The run mode, one of "backward", "forward" or "grammage".
 output-file     string, null         The output file name or `null` for `stdout`.
-requested       integer              The requested number of valid Monte-Carlo events
+requested       integer              The requested number of valid Monte Carlo events
 seed            unsigned, null       The simulation random seed. If null, then the seed is set
                                        from the OS entropy using /dev/urandom.
 ```
@@ -123,7 +136,7 @@ weight          float                The weight of the primary, i.e. the integra
 ```
 append          boolean              If `true`, append to the output file.
 path            string               Path to the output file.
-verbosity       integer              Verbosity level for recording Monte-Carlo steps.
+verbosity       integer              Verbosity level for recording Monte Carlo steps.
 ```
 
 ## License

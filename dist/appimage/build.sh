@@ -1,5 +1,8 @@
 #! /bin/bash
 
+# Script base directory.
+basedir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 # Generate the binaries
 SCRIPT=$(cat <<-END
 echo "building danton with \$(gcc --version | head -n 1)"
@@ -23,20 +26,13 @@ cp -rL include AppDir
 ./AppDir/bin/danton examples/cards/backward-tau-decays.json > /dev/null
 rm -f steps.json
 
-# Bundle AppImage meta and entry point
-cat << END > AppDir/danton.desktop
-[Desktop Entry]
-Type=Application
-Name=danton
-Exec=danton
-Comment=Simulate the coupled transport of ultra high energy taus and neutrinos through the Earth, by Monte-Carlo
-Icon=danton
-Categories=Science;
-Terminal=true
-END
+# Bundle AppImage meta and AppRun
+cp ${basedir}/danton.desktop AppDir
+cp ${basedir}/danton.png AppDir
+cp ${basedir}/danton.appdata.xml AppDir
+cp ${basedir}/AppRun AppDir
 
-cat << END > AppDir/AppRun
-#! /bin/bash
-DANTON_PREFIX=\$APPDIR \$APPDIR/bin/danton \$*
-END
-chmod u+x AppDir/AppRun
+# Build the AppImage
+appimagetool=appimagetool-$(arch).AppImage
+[ -e ${appimagetool} ] || wget https://github.com/AppImage/AppImageKit/releases/download/continuous/${appimagetool} && chmod u+x ${appimagetool}
+./${appimagetool} AppDir
