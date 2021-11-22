@@ -1213,12 +1213,17 @@ static int transport_forward(struct simulation_context * context,
                                 double momentum[3] = { p * tau->direction[0],
                                         p * tau->direction[1],
                                         p * tau->direction[2] };
+                                const double sgn = (product.pid > 0) ? -1. : 1.;
+                                double polarisation[3] = {
+                                    sgn * tau->direction[0],
+                                    sgn * tau->direction[1],
+                                    sgn * tau->direction[2]};
                                 int trials;
                                 if (lock != NULL) lock();
                                 alouette_current_context = context;
                                 for (trials = 0; trials < 20; trials++) {
                                         if (alouette_decay(product.pid,
-                                                momentum, tau->direction) ==
+                                                momentum, polarisation) ==
                                             ALOUETTE_RETURN_SUCCESS)
                                                 break;
                                 }
@@ -1380,6 +1385,9 @@ static void polarisation_cb(
                 return;
         }
         nrm = 1. / sqrt(nrm);
+        if (pid > 0) {
+                nrm = -nrm;
+        }
         polarisation[0] = momentum[0] * nrm;
         polarisation[1] = momentum[1] * nrm;
         polarisation[2] = momentum[2] * nrm;
@@ -1650,9 +1658,12 @@ static int transport_backward(
         int trials;
         if (lock != NULL) lock();
         alouette_current_context = context;
+        const double sgn = (pid > 0) ? -1. : 1.;
+        const double * const dir = context->record->final.direction;
+        double polarisation[3] = {sgn * dir[0], sgn * dir[1], sgn * dir[2]};
         for (trials = 0; trials < 20; trials++) {
                 if (alouette_decay(
-                        pid, momentum, context->record->final.direction) ==
+                        pid, momentum, polarisation) ==
                     ALOUETTE_RETURN_SUCCESS)
                         break;
         }
