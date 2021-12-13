@@ -76,8 +76,8 @@ seed            unsigned, null       The simulation random seed. If null, then t
 ```
 
 In addition to the previous general parameters one also has the following keys :
-`"earth-model"`, `"particle-sampler"`, `"primary-flux"` and `"stepping"`. The
-corresponding options are described hereafter.
+`"earth-model"`, `"particle-sampler"`, `"physics"`, `"primary-flux"`, and
+`"stepping"`. The corresponding options are described hereafter.
 
 ### Earth model
 ```
@@ -109,6 +109,27 @@ weight          {$particle:float}    The name and weight of the particles to sam
 
 The valid *particle* names are `"nu_tau"`, `"nu_tau~"`, `"nu_mu"`, `"nu_mu~"`,
 `"nu_e"`, `"nu_e~"`, `"tau"` and `"tau~"`.
+
+### Physics
+```
+bremsstrahlung  string, null         Model for the bremsstrahlung process, for taus.
+pair-production string, null         Model for the pair production process, for taus.
+photonuclear    string, null         Model for photonuclear interactions, for taus.
+DIS             string, null         Model for Deep Inelastic Scattering (DIS),
+                                       for neutrinos.
+```
+
+For tau energy losses (`"bremsstrahlung"`, `"pair-production"` and
+`"photonuclear"`) the model must correspond to one available in
+[PUMAS](https://pumas.readthedocs.io/en/latest/api/#HEAD/type/pumas_physics_settings).
+For DIS cross-sections, the supported models are `"LO"` (Leading Order
+computation, see e.g. [Gandhi et al., (1995)](https://arxiv.org/abs/hep-ph/9512364))
+and `"CSMS"` ([Cooper-Sarkar, Mertsch and Sarkar](https://arxiv.org/abs/1106.3723)).
+Alternatively, one can provide a path to a file containing cross-section values
+in [ENT](https://github.com/niess/ent)'s format.
+
+_Note that `"physics"` options must be set **before** `"earth"` ones in the
+data-card._
 
 ### Primary flux
 ```

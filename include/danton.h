@@ -544,14 +544,20 @@ DANTON_API int danton_error_push(
  * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
  * The supported *process* values are: `"bremsstrahlung"`, `"pair-production"`
- * and `"photonuclear"`, for tau energy losses, and `"DIS(CC)"` and `"DIS(NC)"`
- * for neutrino Deep Inelastic Scattering (DIS).
+ * and `"photonuclear"`, for tau energy losses, and `"DIS"` for neutrino Deep
+ * Inelastic Scattering (DIS).
  *
  * The corresponding *model* parameter can be set to `NULL`, in which case
  * Danton's default model is used. Otherwise, for tau energy losses, the model
- * value must be one defined by PUMAS, see e.g. reference below.
+ * value must correspond to one available in PUMAS, see e.g. reference below.
+ *
+ * For DIS cross-sections, the supported models are `"LO"` (Leading Order
+ * computation) and `"CSMS"` (Cooper-Sarkar, Mertsch and Sarkar). Alternatively,
+ * one can provide a path to a file containing cross-section values in ENT's
+ * format.
  *
  * References:
+ *    ENT: https://github.com/niess/ent
  *    PUMAS: https://pumas.readthedocs.io/en/latest/api/#HEAD/type/pumas_physics_settings
  */
 DANTON_API int danton_physics_set(const char * process, const char * model);

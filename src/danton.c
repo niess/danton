@@ -64,6 +64,7 @@ static struct {
 
 /* Path for data sets. */
 static char * pdf_path = NULL;
+static char * cs_path = NULL;
 static char * mdf_path = NULL;
 static char * dedx_path = NULL;
 static char * dump_path = NULL;
@@ -74,8 +75,7 @@ static struct {
         char * bremsstrahlung;
         char * pair_production;
         char * photonuclear;
-        char * dis_cc;
-        char * dis_nc;
+        char * dis;
 } physics_model = {0};
 
 /* The tau lepton mass, in GeV / c^2. */
@@ -1775,8 +1775,18 @@ static int initialise_physics(struct danton_context * context)
         if (physics.ent != NULL) return EXIT_SUCCESS;
 
         /* Create a new neutrino Physics environment. */
+        const char * dis_cs;
+        if ((physics_model.dis == NULL) ||
+            (strcmp(physics_model.dis, "CSMS") == 0)) {
+                dis_cs = cs_path;
+        } else if (strcmp(physics_model.dis, "LO") == 0) {
+                dis_cs = NULL;
+        } else {
+                dis_cs = physics_model.dis;
+        }
+
         enum ent_return e_rc;
-        if ((e_rc = ent_physics_create(&physics.ent, pdf_path)) !=
+        if ((e_rc = ent_physics_create(&physics.ent, pdf_path, dis_cs)) !=
             ENT_RETURN_SUCCESS) {
                 ERROR_ENT(context, e_rc, ent_physics_create);
                 if (unlock != NULL) unlock();
@@ -1807,6 +1817,8 @@ static int initialise_physics(struct danton_context * context)
 
         free(pdf_path);
         pdf_path = NULL;
+        free(cs_path);
+        cs_path = NULL;
         if (unlock != NULL) unlock();
         return EXIT_SUCCESS;
 }
@@ -1844,6 +1856,8 @@ int danton_initialise(
 
         if (copy_config_string(prefix, DANTON_PDF, &pdf_path) != EXIT_SUCCESS)
                 return EXIT_FAILURE;
+        if (copy_config_string(prefix, DANTON_CS, &cs_path) != EXIT_SUCCESS)
+                return EXIT_FAILURE;
         if (copy_config_string(prefix, DANTON_MDF, &mdf_path) != EXIT_SUCCESS)
                 return EXIT_FAILURE;
         if (copy_config_string(prefix, DANTON_DEDX, &dedx_path) != EXIT_SUCCESS)
@@ -1877,6 +1891,8 @@ void danton_finalise(void)
 {
         free(pdf_path);
         pdf_path = NULL;
+        free(cs_path);
+        cs_path = NULL;
         free(mdf_path);
         mdf_path = NULL;
         free(dedx_path);
@@ -1891,10 +1907,8 @@ void danton_finalise(void)
         physics_model.pair_production = NULL;
         free(physics_model.photonuclear);
         physics_model.photonuclear = NULL;
-        free(physics_model.dis_cc);
-        physics_model.dis_cc = NULL;
-        free(physics_model.dis_nc);
-        physics_model.dis_nc = NULL;
+        free(physics_model.dis);
+        physics_model.dis = NULL;
         ent_physics_destroy(&physics.ent);
         pumas_physics_destroy(&physics.pumas);
         turtle_stack_destroy(&earth.stack);
@@ -2931,29 +2945,28 @@ DANTON_API int danton_physics_set(const char * process, const char * model)
                             __FILE__, __LINE__, model, process);
                         return EXIT_FAILURE;
                 }
-        } else if ((strcmp(process, "DIS(CC)") == 0) ||
-                   (strcmp(process, "DIS(NC)") == 0)) {
-                if (process[4] == 'C') {
-                        value_ptr = &physics_model.dis_cc;
-                } else {
-                        value_ptr = &physics_model.dis_nc;
-                }
-                /* XXX Check model. */
+        } else if (strcmp(process, "DIS") == 0) {
+                value_ptr = &physics_model.dis;
         } else {
                 danton_error_push(NULL,
                     "%s (%d): bad process %s.", __FILE__, __LINE__, process);
                 return EXIT_FAILURE;
         }
 
-        const int n = strlen(model) + 1;
-        char * tmp = malloc(n);
-        if (tmp == NULL) {
-                danton_error_push(NULL,
-                    "%s (%d): could not allocate memory", __FILE__, __LINE__);
-                return EXIT_FAILURE;
+        if (model == NULL) {
+                *value_ptr = NULL;
+        } else {
+                const int n = strlen(model) + 1;
+                char * tmp = realloc(*value_ptr, n);
+                if (tmp == NULL) {
+                        danton_error_push(NULL,
+                            "%s (%d): could not allocate memory",
+                            __FILE__, __LINE__);
+                        return EXIT_FAILURE;
+                }
+                memcpy(tmp, model, n);
+                *value_ptr = tmp;
         }
-        memcpy(tmp, model, n);
-        *value_ptr = tmp;
 
         return EXIT_SUCCESS;
 }

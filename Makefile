@@ -8,6 +8,7 @@ DANTON_DUMP=  share/$(NAME)/materials/materials.pumas
 DANTON_GEOID= share/$(NAME)/geoid/egm96.png
 DANTON_MDF=   share/$(NAME)/materials/materials.xml
 DANTON_PDF=   share/$(NAME)/pdf/CT14nlo_0000.dat
+DANTON_CS=    share/$(NAME)/cs/CSMS.txt
 
 # Compiler options
 CC=gcc
@@ -93,6 +94,7 @@ endef
 build/danton.lo: src/danton.c
 	@$(call build_c,-DDANTON_PREFIX="\"$(PREFIX)\""                        \
                 -DDANTON_PDF="\"$(DANTON_PDF)\""                               \
+                -DDANTON_CS="\"$(DANTON_CS)\""                                 \
                 -DDANTON_MDF="\"$(DANTON_MDF)\""                               \
                 -DDANTON_DEDX="\"$(DANTON_DEDX)\""                             \
                 -DDANTON_GEOID="\"$(DANTON_GEOID)\""                           \

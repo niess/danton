@@ -8,6 +8,13 @@
         "longitudinal" : false,
         "decay" : true,
 
+        "physics" : {
+                "bremsstrahlung" : "SSR",
+                "pair-production" : "SSR",
+                "photonuclear" : "DRSS",
+                "DIS" : "CSMS"
+        },
+
         "earth-model" : {
                 "reference" : "EGM96",
                 "topography" : "share/topography",

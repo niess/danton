@@ -11,7 +11,8 @@
         "physics" : {
                 "bremsstrahlung" : "SSR",
                 "pair-production" : "SSR",
-                "photonuclear" : "DRSS"
+                "photonuclear" : "DRSS",
+                "DIS" : "CSMS"
         },
 
         "earth-model" : { "sea" : true },
