@@ -8,6 +8,12 @@
         "longitudinal" : false,
         "decay" : true,
 
+        "physics" : {
+                "bremsstrahlung" : "SSR",
+                "pair-production" : "SSR",
+                "photonuclear" : "DRSS"
+        },
+
         "earth-model" : { "sea" : true },
 
         "particle-sampler" : {

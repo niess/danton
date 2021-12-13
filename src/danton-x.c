@@ -446,6 +446,22 @@ static void card_update_stepping(void)
         }
 }
 
+/* Update physics model(s) according to the data card. */
+static void card_update_physics(void)
+{
+        /* Parse the data card. */
+        int i;
+        for (jsmn_tea_next_object(tea, &i); i; i--) {
+                char * process, * model;
+                jsmn_tea_next_string(tea, 1, &process);
+                jsmn_tea_next_string(tea, 0, &model);
+                if (danton_physics_set(process, model) != EXIT_SUCCESS) {
+                        ROAR_ERRWP_MESSAGE(&handler, &card_update_physics, -1,
+                            "danton error", danton_error_pop(NULL));
+                }
+        }
+}
+
 /* Update DANTON's configuration according to the content of the data card. */
 static void card_update(
     int * n_events, int * n_requested, int * seeded, unsigned long * seed)
@@ -478,6 +494,8 @@ static void card_update(
                         card_update_earth_model();
                 else if (strcmp(tag, "stepping") == 0)
                         card_update_stepping();
+                else if (strcmp(tag, "physics") == 0)
+                        card_update_physics(); /* XXX order matters ... */
                 else {
                         ROAR_ERRNO_FORMAT(&handler, &card_update_sampler,
                             EINVAL, "[%s #%d] invalid key `%s`", card_path,

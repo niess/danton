@@ -69,6 +69,15 @@ static char * dedx_path = NULL;
 static char * dump_path = NULL;
 static char * geoid_path = NULL;
 
+/* Physics settings. */
+static struct {
+        char * bremsstrahlung;
+        char * pair_production;
+        char * photonuclear;
+        char * dis_cc;
+        char * dis_nc;
+} physics_model = {0};
+
 /* The tau lepton mass, in GeV / c^2. */
 static double tau_mass;
 
@@ -1684,6 +1693,11 @@ static int transport_backward(
 static int load_pumas(struct danton_context * context)
 {
         const enum pumas_particle particle = PUMAS_PARTICLE_TAU;
+        struct pumas_physics_settings pumas_settings = {
+                .bremsstrahlung = physics_model.bremsstrahlung,
+                .pair_production = physics_model.pair_production,
+                .photonuclear = physics_model.photonuclear
+        };
 
         /* First, attempt to load any binary dump. */
         FILE * stream = fopen(dump_path, "rb");
@@ -1695,14 +1709,42 @@ static int load_pumas(struct danton_context * context)
                         return EXIT_FAILURE;
                 }
                 fclose(stream);
+
+                /* Check the physics settings of the binary dump. */
+                const char * model, * reference;
+                pumas_physics_dcs(physics.pumas, PUMAS_PROCESS_BREMSSTRAHLUNG,
+                    &model, NULL);
+                reference =
+                    (physics_model.bremsstrahlung == NULL) ?
+                    pumas_dcs_default(PUMAS_PROCESS_BREMSSTRAHLUNG) :
+                    physics_model.bremsstrahlung;
+                if (strcmp(model, reference) != 0) goto create_physics;
+
+                pumas_physics_dcs(physics.pumas, PUMAS_PROCESS_PAIR_PRODUCTION,
+                    &model, NULL);
+                reference =
+                    (physics_model.pair_production == NULL) ?
+                    pumas_dcs_default(PUMAS_PROCESS_PAIR_PRODUCTION) :
+                    physics_model.pair_production;
+                if (strcmp(model, reference) != 0) goto create_physics;
+
+                pumas_physics_dcs(physics.pumas, PUMAS_PROCESS_PHOTONUCLEAR,
+                    &model, NULL);
+                reference =
+                    (physics_model.photonuclear == NULL) ?
+                    pumas_dcs_default(PUMAS_PROCESS_PHOTONUCLEAR) :
+                    physics_model.photonuclear;
+                if (strcmp(model, reference) != 0) goto create_physics;
+
                 pumas_physics_particle(
                     physics.pumas, NULL, &tau_ctau0, &tau_mass);
                 goto exit;
         }
 
-        /* If no binary dump, initialise from the MDF and dump. */
+        /* If no valid binary dump, initialise from the MDF and dump. */
+create_physics:
         if (pumas_physics_create(
-            &physics.pumas, particle, mdf_path, dedx_path, NULL) !=
+            &physics.pumas, particle, mdf_path, dedx_path, &pumas_settings) !=
             PUMAS_RETURN_SUCCESS) {
                 ERROR_PUMAS(context);
                 return EXIT_FAILURE;
@@ -1843,6 +1885,16 @@ void danton_finalise(void)
         dump_path = NULL;
         free(geoid_path);
         geoid_path = NULL;
+        free(physics_model.bremsstrahlung);
+        physics_model.bremsstrahlung = NULL;
+        free(physics_model.pair_production);
+        physics_model.pair_production = NULL;
+        free(physics_model.photonuclear);
+        physics_model.photonuclear = NULL;
+        free(physics_model.dis_cc);
+        physics_model.dis_cc = NULL;
+        free(physics_model.dis_nc);
+        physics_model.dis_nc = NULL;
         ent_physics_destroy(&physics.ent);
         pumas_physics_destroy(&physics.pumas);
         turtle_stack_destroy(&earth.stack);
@@ -2844,4 +2896,64 @@ const char * danton_error_pop(struct danton_context * context)
         error->size = n;
         error->count--;
         return s;
+}
+
+/* API function for setting a physics model. */
+DANTON_API int danton_physics_set(const char * process, const char * model)
+{
+        if (physics.ent != NULL) {
+                danton_error_push(NULL,
+                    "%s (%d): physics already initialised.",
+                    __FILE__, __LINE__);
+                return EXIT_FAILURE;
+        }
+
+        char ** value_ptr = NULL;
+
+        if ((strcmp(process, "bremsstrahlung") == 0) ||
+            (strcmp(process, "pair-production") == 0) ||
+            (strcmp(process, "photonuclear") == 0)) {
+                pumas_dcs_t * dcs;
+                enum pumas_process proc;
+                if (process[0] == 'b') {
+                        proc = PUMAS_PROCESS_BREMSSTRAHLUNG;
+                        value_ptr = &physics_model.bremsstrahlung;
+                } else if (process[1] == 'a') {
+                        proc = PUMAS_PROCESS_PAIR_PRODUCTION;
+                        value_ptr = &physics_model.pair_production;
+                } else {
+                        proc = PUMAS_PROCESS_PHOTONUCLEAR;
+                        value_ptr = &physics_model.photonuclear;
+                }
+                if (pumas_dcs_get(proc, model, &dcs) != PUMAS_RETURN_SUCCESS) {
+                        danton_error_push(NULL,
+                            "%s (%d): bad model %s for process %s.",
+                            __FILE__, __LINE__, model, process);
+                        return EXIT_FAILURE;
+                }
+        } else if ((strcmp(process, "DIS(CC)") == 0) ||
+                   (strcmp(process, "DIS(NC)") == 0)) {
+                if (process[4] == 'C') {
+                        value_ptr = &physics_model.dis_cc;
+                } else {
+                        value_ptr = &physics_model.dis_nc;
+                }
+                /* XXX Check model. */
+        } else {
+                danton_error_push(NULL,
+                    "%s (%d): bad process %s.", __FILE__, __LINE__, process);
+                return EXIT_FAILURE;
+        }
+
+        const int n = strlen(model) + 1;
+        char * tmp = malloc(n);
+        if (tmp == NULL) {
+                danton_error_push(NULL,
+                    "%s (%d): could not allocate memory", __FILE__, __LINE__);
+                return EXIT_FAILURE;
+        }
+        memcpy(tmp, model, n);
+        *value_ptr = tmp;
+
+        return EXIT_SUCCESS;
 }

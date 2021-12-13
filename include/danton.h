@@ -29,7 +29,7 @@ extern "C" {
 #define DANTON_API
 #endif
 
-/** Indices of DANTON particles. */
+/** Indices of Danton particles. */
 enum danton_particle {
         /**  */
         DANTON_PARTICLE_UNKNOWN = -1,
@@ -535,6 +535,26 @@ DANTON_API int danton_error_push(
     struct danton_context * context,
     const char * format,
     ...);
+
+/**
+ * Set the physics model for a specific process.
+ *
+ * @param model  The process name.
+ * @param value  The model to use or `NULL`.
+ * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ *
+ * The supported *process* values are: `"bremsstrahlung"`, `"pair-production"`
+ * and `"photonuclear"`, for tau energy losses, and `"DIS(CC)"` and `"DIS(NC)"`
+ * for neutrino Deep Inelastic Scattering (DIS).
+ *
+ * The corresponding *model* parameter can be set to `NULL`, in which case
+ * Danton's default model is used. Otherwise, for tau energy losses, the model
+ * value must be one defined by PUMAS, see e.g. reference below.
+ *
+ * References:
+ *    PUMAS: https://pumas.readthedocs.io/en/latest/api/#HEAD/type/pumas_physics_settings
+ */
+DANTON_API int danton_physics_set(const char * process, const char * model);
 
 #ifdef __cplusplus
 }
