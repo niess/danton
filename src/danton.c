@@ -1230,19 +1230,25 @@ static int transport_forward(struct simulation_context * context,
                                 int trials;
                                 if (lock != NULL) lock();
                                 alouette_current_context = context;
+                                struct alouette_products products;
                                 for (trials = 0; trials < 20; trials++) {
-                                        if (alouette_decay(product.pid,
-                                                momentum, polarisation) ==
+                                        if (alouette_decay(0, product.pid,
+                                                momentum, polarisation,
+                                                &products) ==
                                             ALOUETTE_RETURN_SUCCESS)
                                                 break;
                                 }
-                                int pid;
                                 struct generic_state nu_e_data, nu_t_data;
                                 memset(&nu_e_data, 0x0, sizeof(nu_e_data));
                                 memset(&nu_t_data, 0x0, sizeof(nu_t_data));
                                 struct ent_state *nu_e = NULL, *nu_t = NULL;
-                                while (alouette_product(&pid, momentum) ==
-                                    ALOUETTE_RETURN_SUCCESS) {
+                                int j;
+                                for (j = 0; j < products.size; j++) {
+                                        const int pid = products.pid[j];
+                                        momentum[0] = products.P[j][0];
+                                        momentum[1] = products.P[j][1];
+                                        momentum[2] = products.P[j][2];
+
                                         if (abs(pid) == 16) {
                                                 /* Update the neutrino state
                                                  * with the nu_tau daughter.
@@ -1579,20 +1585,34 @@ static int transport_backward(
                         int trials;
                         if (lock != NULL) lock();
                         alouette_current_context = context;
+                        struct alouette_products products;
+                        int mother;
+                        double bias;
+                        if (state->pid > 0) {
+                                mother = ENT_PID_NU_TAU;
+                                bias = -1;
+                        } else {
+                                mother = ENT_PID_NU_BAR_TAU;
+                                bias = 1.;
+                        }
                         for (trials = 0; trials < 20; trials++) {
-                                if (alouette_undecay(state->pid, momentum,
-                                        &polarisation_cb, DECAY_BIAS,
-                                        &weight) == ALOUETTE_RETURN_SUCCESS)
+                                if (alouette_undecay(0, state->pid, mother,
+                                    momentum, &polarisation_cb, bias,
+                                    &products)
+                                    == ALOUETTE_RETURN_SUCCESS)
                                         break;
                         }
+                        weight = products.weight;
 
-                        int pid1;
-                        if ((alouette_product(&pid1, momentum) !=
-                                ALOUETTE_RETURN_SUCCESS) ||
+                        const int pid1 = products.pid[0];
+                        if ((products.size <= 0) ||
                             (abs(pid1) != ENT_PID_TAU)) {
                                 if (unlock != NULL) unlock();
                                 return EXIT_SUCCESS;
                         }
+                        momentum[0] = products.P[0][0];
+                        momentum[1] = products.P[0][1];
+                        momentum[2] = products.P[0][2];
                         if (unlock != NULL) unlock();
                         const double p12 = momentum[0] * momentum[0] +
                             momentum[1] * momentum[1] +
@@ -1667,21 +1687,26 @@ static int transport_backward(
         int trials;
         if (lock != NULL) lock();
         alouette_current_context = context;
+        struct alouette_products products;
         const double sgn = (pid > 0) ? -1. : 1.;
         const double * const dir = context->record->final.direction;
         double polarisation[3] = {sgn * dir[0], sgn * dir[1], sgn * dir[2]};
         for (trials = 0; trials < 20; trials++) {
                 if (alouette_decay(
-                        pid, momentum, polarisation) ==
+                        0, pid, momentum, polarisation, &products) ==
                     ALOUETTE_RETURN_SUCCESS)
                         break;
         }
 
-        int pid1;
-        while (alouette_product(&pid1, momentum) == ALOUETTE_RETURN_SUCCESS) {
+        int j;
+        for (j = 0; j < products.size; j++) {
+                const int pid1 = products.pid[j];
                 if (abs(pid1 == 12) || (abs(pid1) == 13) || (abs(pid1) == 14) ||
                     (abs(pid1) == 16))
                         continue;
+                momentum[0] = products.P[j][0];
+                momentum[1] = products.P[j][1];
+                momentum[2] = products.P[j][2];
                 record_copy_product(context, pid1, momentum);
         }
         if (unlock != NULL) unlock();
