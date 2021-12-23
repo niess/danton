@@ -12,7 +12,7 @@
                 "bremsstrahlung" : "SSR",
                 "pair-production" : "SSR",
                 "photonuclear" : "DRSS",
-                "DIS" : "CSMS"
+                "DIS" : "BGR18"
         },
 
         "earth-model" : {

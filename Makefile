@@ -3,12 +3,12 @@ PREFIX= $(abspath .)
 NAME=   danton
 
 # Defaul data paths
-DANTON_DEDX=  share/$(NAME)/materials/dedx
-DANTON_DUMP=  share/$(NAME)/materials/materials.pumas
-DANTON_GEOID= share/$(NAME)/geoid/egm96.png
-DANTON_MDF=   share/$(NAME)/materials/materials.xml
-DANTON_PDF=   share/$(NAME)/pdf/CT14nlo_0000.dat
-DANTON_CS=    share/$(NAME)/cs/CSMS.txt
+DANTON_DEDX=    share/$(NAME)/materials/dedx
+DANTON_DUMP=    share/$(NAME)/materials/materials.pumas
+DANTON_GEOID=   share/$(NAME)/geoid/egm96.png
+DANTON_MDF=     share/$(NAME)/materials/materials.xml
+DANTON_PDF_DIR= share/$(NAME)/pdf
+DANTON_CS_DIR=  share/$(NAME)/cs
 
 # Compiler options
 CC=gcc
@@ -93,8 +93,8 @@ endef
 
 build/danton.lo: src/danton.c
 	@$(call build_c,-DDANTON_PREFIX="\"$(PREFIX)\""                        \
-                -DDANTON_PDF="\"$(DANTON_PDF)\""                               \
-                -DDANTON_CS="\"$(DANTON_CS)\""                                 \
+                -DDANTON_PDF_DIR="\"$(DANTON_PDF_DIR)\""                       \
+                -DDANTON_CS_DIR="\"$(DANTON_CS_DIR)\""                         \
                 -DDANTON_MDF="\"$(DANTON_MDF)\""                               \
                 -DDANTON_DEDX="\"$(DANTON_DEDX)\""                             \
                 -DDANTON_GEOID="\"$(DANTON_GEOID)\""                           \

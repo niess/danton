@@ -117,16 +117,25 @@ pair-production string, null         Model for the pair production process, for 
 photonuclear    string, null         Model for photonuclear interactions, for taus.
 DIS             string, null         Model for Deep Inelastic Scattering (DIS),
                                        for neutrinos.
+PDF             string, null         Use a specific PDF set for neutrinos DIS.
 ```
 
 For tau energy losses (`"bremsstrahlung"`, `"pair-production"` and
 `"photonuclear"`) the model must correspond to one available in
 [PUMAS](https://pumas.readthedocs.io/en/latest/api/#HEAD/type/pumas_physics_settings).
+
 For DIS cross-sections, the supported models are `"LO"` (Leading Order
-computation, see e.g. [Gandhi et al., (1995)](https://arxiv.org/abs/hep-ph/9512364))
-and `"CSMS"` ([Cooper-Sarkar, Mertsch and Sarkar](https://arxiv.org/abs/1106.3723)).
+computation, see e.g. [Gandhi et al.,
+(1995)](https://arxiv.org/abs/hep-ph/9512364)), `"CSMS"` ([Cooper-Sarkar,
+Mertsch and Sarkar](https://arxiv.org/abs/1106.3723)).  and  `"BGR18"`
+([Bertone, Gold and Rojo (2018)](https://arxiv.org/abs/1808.02034)).
 Alternatively, one can provide a path to a file containing cross-section values
 in [ENT](https://github.com/niess/ent)'s format.
+
+For PDF sets, the built-in models are `"HERAPDF15NLO"`, `"CT14nlo"` and
+`"NNPDF31sx"`.  Alternatively, one can provide a path to a file containing
+cross-section values in Les Houches Accord (LHA) format.
+
 
 _Note that `"physics"` options must be set **before** `"earth"` ones in the
 data-card._

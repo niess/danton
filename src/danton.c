@@ -76,6 +76,7 @@ static struct {
         char * pair_production;
         char * photonuclear;
         char * dis;
+        char * pdf;
 } physics_model = {0};
 
 /* The tau lepton mass, in GeV / c^2. */
@@ -1793,6 +1794,21 @@ exit:
         return EXIT_SUCCESS;
 }
 
+/* Concatenate a dirname and a filename. */
+char * path_concat(const char * dirname, const char * filename)
+{
+        const int n0 = strlen(dirname);
+        const int n1 = strlen(filename);
+
+        char * s = malloc(n0 + n1 + 2);
+        if (s == NULL) return NULL;
+        memcpy(s, dirname, n0);
+        memcpy(s + n0 + 1, filename, n1 + 1);
+        s[n0] = '/';
+
+        return s;
+}
+
 /* Low level routine for initialising the Physics engines. */
 static int initialise_physics(struct danton_context * context)
 {
@@ -1800,19 +1816,55 @@ static int initialise_physics(struct danton_context * context)
         if (physics.ent != NULL) return EXIT_SUCCESS;
 
         /* Create a new neutrino Physics environment. */
-        const char * dis_cs;
-        if ((physics_model.dis == NULL) ||
-            (strcmp(physics_model.dis, "CSMS") == 0)) {
-                dis_cs = cs_path;
-        } else if (strcmp(physics_model.dis, "LO") == 0) {
-                dis_cs = NULL;
-        } else {
-                dis_cs = physics_model.dis;
+        char * tmp_pdf = NULL;
+        const char * dis_pdf = NULL;
+        if (physics_model.pdf != NULL) {
+                if (strcmp(physics_model.pdf, "NNPDF31sx") == 0) {
+                        dis_pdf = tmp_pdf = path_concat(pdf_path,
+                            "NNPDF31sx_nlo_as_0118_LHCb_nf_6_0000.dat");
+                } else if (strcmp(physics_model.pdf, "HERAPDF15NLO") == 0) {
+                        dis_pdf = tmp_pdf = path_concat(
+                            pdf_path, "HERAPDF15NLO_EIG_0000.dat");
+                } else if (strcmp(physics_model.pdf, "CT14nlo") == 0) {
+                        dis_pdf = tmp_pdf = path_concat(
+                            pdf_path, "CT14nlo_0000.dat");
+                } else {
+                        dis_pdf = physics_model.pdf;
+                }
         }
 
-        enum ent_return e_rc;
-        if ((e_rc = ent_physics_create(&physics.ent, pdf_path, dis_cs)) !=
-            ENT_RETURN_SUCCESS) {
+        char * tmp_cs = NULL;
+        const char * dis_cs = NULL;
+        if ((physics_model.dis == NULL) ||
+            (strcmp(physics_model.dis, "BGR18") == 0)) {
+                dis_cs = tmp_cs = path_concat(cs_path, "BGR18.txt");
+                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(pdf_path,
+                    "NNPDF31sx_nlo_as_0118_LHCb_nf_6_0000.dat");
+        } else if (strcmp(physics_model.dis, "CSMS") == 0) {
+                dis_cs = tmp_cs = path_concat(cs_path, "CSMS.txt");
+                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(
+                    pdf_path, "HERAPDF15NLO_EIG_0000.dat");
+        } else if (strcmp(physics_model.dis, "LO") == 0) {
+                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(
+                    pdf_path, "CT14nlo_0000.dat");
+        } else {
+                dis_cs = physics_model.dis;
+                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(
+                    pdf_path, "CT14nlo_0000.dat");
+        }
+
+        if (dis_pdf == NULL) {
+                danton_error_push(context,
+                    "%s (%d): could not allocate memory.", __FILE__, __LINE__);
+                if (unlock != NULL) unlock();
+                return EXIT_FAILURE;
+        }
+
+        const enum ent_return e_rc =
+            ent_physics_create(&physics.ent, dis_pdf, dis_cs);
+        free(tmp_pdf);
+        free(tmp_cs);
+        if (e_rc != ENT_RETURN_SUCCESS) {
                 ERROR_ENT(context, e_rc, ent_physics_create);
                 if (unlock != NULL) unlock();
                 return EXIT_FAILURE;
@@ -1879,9 +1931,10 @@ int danton_initialise(
         if (prefix == NULL)
                 prefix = DANTON_PREFIX;
 
-        if (copy_config_string(prefix, DANTON_PDF, &pdf_path) != EXIT_SUCCESS)
+        if (copy_config_string(prefix, DANTON_PDF_DIR, &pdf_path) !=
+            EXIT_SUCCESS)
                 return EXIT_FAILURE;
-        if (copy_config_string(prefix, DANTON_CS, &cs_path) != EXIT_SUCCESS)
+        if (copy_config_string(prefix, DANTON_CS_DIR, &cs_path) != EXIT_SUCCESS)
                 return EXIT_FAILURE;
         if (copy_config_string(prefix, DANTON_MDF, &mdf_path) != EXIT_SUCCESS)
                 return EXIT_FAILURE;
@@ -1934,6 +1987,8 @@ void danton_finalise(void)
         physics_model.photonuclear = NULL;
         free(physics_model.dis);
         physics_model.dis = NULL;
+        free(physics_model.pdf);
+        physics_model.pdf = NULL;
         ent_physics_destroy(&physics.ent);
         pumas_physics_destroy(&physics.pumas);
         turtle_stack_destroy(&earth.stack);
@@ -2984,6 +3039,8 @@ DANTON_API int danton_physics_set(const char * process, const char * model)
                 }
         } else if (strcmp(process, "DIS") == 0) {
                 value_ptr = &physics_model.dis;
+        } else if (strcmp(process, "PDF") == 0) {
+                value_ptr = &physics_model.pdf;
         } else {
                 danton_error_push(NULL,
                     "%s (%d): bad process %s.", __FILE__, __LINE__, process);

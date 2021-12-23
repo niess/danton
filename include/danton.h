@@ -545,16 +545,21 @@ DANTON_API int danton_error_push(
  *
  * The supported *process* values are: `"bremsstrahlung"`, `"pair-production"`
  * and `"photonuclear"`, for tau energy losses, and `"DIS"` for neutrino Deep
- * Inelastic Scattering (DIS).
+ * Inelastic Scattering (DIS). In addition, one can specificy a specific PDF
+ * set for DIS processe using the `"PDF"` keyword.
  *
  * The corresponding *model* parameter can be set to `NULL`, in which case
  * Danton's default model is used. Otherwise, for tau energy losses, the model
  * value must correspond to one available in PUMAS, see e.g. reference below.
  *
  * For DIS cross-sections, the supported models are `"LO"` (Leading Order
- * computation) and `"CSMS"` (Cooper-Sarkar, Mertsch and Sarkar). Alternatively,
- * one can provide a path to a file containing cross-section values in ENT's
- * format.
+ * computation), `"CSMS"` (Cooper-Sarkar, Mertsch and Sarkar) and `"BGR18"`
+ * (Bertone, Gold and Rojo).  Alternatively, one can provide a path to a file
+ * containing cross-section values in ENT's format.
+ *
+ * For PDF sets, the built-in models are `"HERAPDF15NLO"`, `"CT14nlo"` and
+ * `"NNPDF31sx"`.  Alternatively, one can provide a path to a file containing
+ * cross-section values in Les Houches Accord (LHA) format.
  *
  * References:
  *    ENT: https://github.com/niess/ent
