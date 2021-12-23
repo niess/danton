@@ -248,6 +248,9 @@ struct simulation_context {
         /* Flag to check if a flux sampling is requested. */
         int sample_flux;
 
+        /* Flag to check if the event was published. */
+        int published;
+
         /* Data for the Mersenne Twister PRNG. */
         struct {
 #define MT_PERIOD 624
@@ -980,9 +983,6 @@ static void record_copy_product(
         record->api.n_products++;
 }
 
-/* Counter for the number of published events. */
-static long n_published = 0;
-
 /* Publish the event record to the recorder. */
 static int record_publish(struct simulation_context * context)
 {
@@ -1030,8 +1030,8 @@ static int record_publish(struct simulation_context * context)
         /* Reset the record for new data. */
         record->api.n_products = 0;
 
-        /* Update the event count. */
-        n_published++;
+        /* Flag the event as published. */
+        context->published = 1;
 
         return rc;
 }
@@ -2518,7 +2518,7 @@ int danton_context_run(
         /* Configure the event count. */
         if ((context->mode == DANTON_MODE_GRAMMAGE) || (requested <= 0))
                 requested = events;
-        n_published = 0;
+        long n_published = 0;
 
         /* Compute the generation cosine. */
         double cos_theta[2];
@@ -2631,6 +2631,7 @@ int danton_context_run(
                         };
 
                         /* Initialise the event record. */
+                        context_->published = 0;
                         context_->record->api.id = i;
                         context_->record->api.weight = weight;
                         context_->record->api.vertex = NULL;
@@ -2653,6 +2654,9 @@ int danton_context_run(
                         if (transport_forward(context_,
                                 (struct ent_state *)&state, 1) != EXIT_SUCCESS)
                                 return EXIT_FAILURE;
+
+                        /* Update the published count. */
+                        if (context_->published) n_published++;
 
                         /* Call any custom final run action. */
                         if (context->run_action != NULL) {
@@ -2697,6 +2701,8 @@ int danton_context_run(
                             context_, sampler->energy, &weight);
                         const double z0 = sample_log_or_linear(
                             context_, sampler->altitude, &weight);
+
+                        context_->published = 0;
 
                         if (context->mode != DANTON_MODE_GRAMMAGE) {
                                 context_->record->api.id = i;
@@ -2748,6 +2754,9 @@ int danton_context_run(
                                     EXIT_SUCCESS)
                                         return EXIT_FAILURE;
 
+                                /* Update the published count. */
+                                if (context_->published) n_published++;
+
                                 /* Call any custom final run action. */
                                 if (context->run_action != NULL) {
                                         if (context->run_action(context,
@@ -2795,6 +2804,9 @@ int danton_context_run(
                                 if (transport_backward(context_, &state) !=
                                     EXIT_SUCCESS)
                                         return EXIT_FAILURE;
+
+                                /* Update the published count. */
+                                if (context_->published) n_published++;
 
                                 /* Call any custom final run action. */
                                 if (context->run_action != NULL) {
