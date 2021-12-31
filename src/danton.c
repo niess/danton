@@ -1038,6 +1038,61 @@ static int record_publish(struct simulation_context * context)
         return rc;
 }
 
+static void stepping_pumas_flux(struct pumas_context * context,
+    struct pumas_state * state_, struct pumas_medium * medium,
+    enum pumas_event event)
+{
+        struct generic_state * state = (void *)state_;
+        if (state->context->api.decay || (state->has_crossed < 0)) {
+                return;
+        }
+
+        /* Update the last location in forward MC, for the flux crossing. */
+        const double * const position = state_->position;
+        const double * const direction = state_->direction;
+
+        double a, b, r2;
+        ellipsoid_parameters_intersection(position, direction, &a, &b, &r2);
+        const double r = sqrt(r2);
+
+        double altitude = -DBL_MAX;
+        altitude = compute_geodetic(r, position, NULL, NULL);
+        const double zi = state->context->api.sampler->altitude[0];
+        state->is_inside = (altitude < zi) ? 1 : 0;
+}
+
+static void stepping_pumas(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium * medium_,
+    enum pumas_event event)
+{
+        if (context->recorder->user_data != EXIT_SUCCESS)
+                return;
+
+        if (context->mode.direction == PUMAS_MODE_FORWARD) {
+                /* Forward MC case */
+                stepping_pumas_flux(context, state, medium_, event);
+        }
+
+        struct danton_state s;
+        record_copy_pumas(&s, state);
+
+        int medium;
+        if (medium_ == NULL)
+                medium = -1;
+        else if (medium_ == &topography_pumas)
+                medium = MEDIUM_TOPOGRAPHY;
+        else
+                medium = (int)(medium_ - media_pumas);
+
+        struct generic_state * g = (void *)state;
+        struct danton_context * c = (void *)g->context;
+        const int rc = c->run_action(c, DANTON_RUN_EVENT_STEP, medium, &s);
+
+        if (rc != EXIT_SUCCESS) {
+                context->recorder->user_data = (void *)EXIT_FAILURE;
+        }
+}
+
 /* Encapsulation of pumas' calls with run action(s). */
 static int call_pumas(
     struct simulation_context * context_, struct generic_state * state)
@@ -1045,17 +1100,7 @@ static int call_pumas(
         struct danton_context * context = (struct danton_context *)context_;
 
         if (context->run_action != NULL) {
-                /* Create a recorder if not already done. */
-                if (context_->pumas->recorder == NULL) {
-                        struct pumas_recorder * recorder;
-                        if (pumas_recorder_create(&recorder, 0)
-                            != PUMAS_RETURN_SUCCESS) {
-                                ERROR_PUMAS(context);
-                                return EXIT_FAILURE;
-                        }
-                        recorder->period = 0;
-                        context_->pumas->recorder = recorder;
-                }
+                context_->pumas->recorder->user_data = (void *)EXIT_SUCCESS;
         }
 
         /* Call PUMAS. */
@@ -1067,27 +1112,8 @@ static int call_pumas(
         }
 
         if (context->run_action != NULL) {
-                /* Loop over the recorded states and call the event callback. */
-                struct pumas_frame * frame;
-                for (frame = context_->pumas->recorder->first->next;
-                     frame != NULL; frame = frame->next) {
-                        struct danton_state s;
-                        record_copy_pumas(&s, &frame->state);
-                        int medium;
-                        if (frame->medium == NULL)
-                                medium = -1;
-                        else if (frame->medium == &topography_pumas)
-                                medium = MEDIUM_TOPOGRAPHY;
-                        else
-                                medium = (int)(frame->medium - media_pumas);
-                        const int rc = context->run_action(
-                            context, DANTON_RUN_EVENT_STEP, medium, &s);
-                        if (rc != EXIT_SUCCESS) {
-                                pumas_recorder_clear(context_->pumas->recorder);
-                                return EXIT_FAILURE;
-                        }
-                }
-                pumas_recorder_clear(context_->pumas->recorder);
+                if (context_->pumas->recorder->user_data != EXIT_SUCCESS)
+                        return EXIT_FAILURE;
         }
 
         return EXIT_SUCCESS;
@@ -1126,8 +1152,6 @@ static enum ent_return stepping_ent(struct ent_context * context,
                 stepping_ent_flux(context, medium, state);
         }
 
-        struct danton_context * c = (struct danton_context *)((char *)context -
-            offsetof(struct simulation_context, ent));
         struct danton_state s;
         record_copy_ent(&s, state);
         int m;
@@ -1137,7 +1161,11 @@ static enum ent_return stepping_ent(struct ent_context * context,
                 m = MEDIUM_TOPOGRAPHY;
         else
                 m = (int)(medium - media_ent);
+
+        struct generic_state * g = (void *)state;
+        struct danton_context * c = (void *)g->context;
         int rc = c->run_action(c, DANTON_RUN_EVENT_STEP, m, &s);
+
         if (rc == EXIT_SUCCESS)
                 return ENT_RETURN_SUCCESS;
         else
@@ -2397,6 +2425,23 @@ static double sample_log_or_linear(
         return xi;
 }
 
+/* Helper function for creating a PUMAS recorder */
+static int create_pumas_recorder(
+    struct simulation_context * context, pumas_recorder_cb * record)
+{
+        struct pumas_recorder * recorder;
+        if (pumas_recorder_create(&recorder, 0)
+            != PUMAS_RETURN_SUCCESS) {
+                ERROR_PUMAS(&context->api);
+                return EXIT_FAILURE;
+        }
+        recorder->period = 0;
+        recorder->record = record;
+        context->pumas->recorder = recorder;
+
+        return EXIT_SUCCESS;
+}
+
 /* Run a DANTON simulation. */
 int danton_context_run(
     struct danton_context * context, long events, long requested)
@@ -2511,12 +2556,25 @@ int danton_context_run(
         }
 
         /* Check for any custom run action and configure accordingly. */
-        if (context->run_action != NULL)
+        if (context->run_action != NULL) {
                 context_->ent.stepping_action = &stepping_ent;
-        else if (context->mode == DANTON_MODE_FORWARD) {
+                if (context_->pumas != NULL) {
+                        if (create_pumas_recorder(context_, &stepping_pumas) !=
+                            EXIT_SUCCESS)
+                                return EXIT_FAILURE;
+                }
+        } else if (context->mode == DANTON_MODE_FORWARD) {
                 context_->ent.stepping_action = &stepping_ent_flux;
+                if (context_->pumas != NULL) {
+                        if (create_pumas_recorder(
+                            context_, &stepping_pumas_flux) != EXIT_SUCCESS)
+                                return EXIT_FAILURE;
+                }
         } else {
                 context_->ent.stepping_action = NULL;
+                if (context_->pumas != NULL) {
+                        pumas_recorder_destroy(&context_->pumas->recorder);
+                }
         }
 
         if (context->mode != DANTON_MODE_GRAMMAGE) {
@@ -2572,6 +2630,17 @@ int danton_context_run(
                 context_->pumas->mode.decay = PUMAS_MODE_RANDOMISED;
                 context_->pumas->mode.scattering = context->longitudinal ?
                         PUMAS_MODE_DISABLED : PUMAS_MODE_MIXED;
+
+                /* Configure any custom run action. */
+                if (context->run_action != NULL) {
+                        if (create_pumas_recorder(context_, &stepping_pumas) !=
+                            EXIT_SUCCESS)
+                                return EXIT_FAILURE;
+                } else if (context->mode == DANTON_MODE_FORWARD) {
+                        if (create_pumas_recorder(
+                            context_, &stepping_pumas_flux) != EXIT_SUCCESS)
+                                return EXIT_FAILURE;
+                }
 
                 /* Create the event record, if not already done.
                  */
