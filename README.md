@@ -166,7 +166,6 @@ weight          float                The weight of the primary, i.e. the integra
 ```
 append          boolean              If `true`, append to the output file.
 path            string               Path to the output file.
-verbosity       integer              Verbosity level for recording Monte Carlo steps.
 ```
 
 ## License

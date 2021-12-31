@@ -52,8 +52,7 @@ static const char * card_path = NULL;
 static struct {
         char * path;
         int append;
-        int verbosity;
-} stepping_options = { NULL, 0, 0 };
+} stepping_options = { NULL, 0 };
 
 /* Finalise and exit to the OS. */
 static int gracefully_exit(int rc)
@@ -435,9 +434,6 @@ static void card_update_stepping(void)
                                 stepping_options.path = malloc(n);
                                 memcpy(stepping_options.path, s, n);
                         }
-                } else if (strcmp(field, "verbosity") == 0) {
-                        jsmn_tea_next_number(tea, JSMN_TEA_TYPE_INT,
-                            &stepping_options.verbosity);
                 } else {
                         ROAR_ERRNO_FORMAT(&handler, &card_update_stepping,
                             EINVAL, "[%s #%d] invalid key `%s`", card_path,
