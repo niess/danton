@@ -262,29 +262,29 @@ struct danton_context {
          * Array of pointers to the primary flux models for each neutrino
          * flavour.
          *
-         * Set an entry to `ǸULL` in order to disable the corresponding
+         * Set an entry to `NULL` in order to disable the corresponding
          * neutrino as a primary. **Note** that in Monte-Carlo modes (Forward,
-         * or Backward) at least one entry **must** be non `ǸULL.
+         * or Backward) at least one entry **must** be non `NULL`.
          */
         struct danton_primary * primary[DANTON_PARTICLE_N_NU];
         /**
          * Handle for the event sampler.
          *
-         * Starts initialised to `ǸULL`. One must provide a sampler before
+         * Starts initialised to `NULL`. One must provide a sampler before
          * running.
          */
         struct danton_sampler * sampler;
         /**
          * Handle for the event recorder.
          *
-         * Starts initialised to `ǸULL`. One must provide a recorder before
+         * Starts initialised to `NULL`. One must provide a recorder before
          * running.
          */
         struct danton_recorder * recorder;
         /**
          * Callback for custom run action(s).
          *
-         * Starts initialised to `ǸULL`, i.e. disabled. Providing additional
+         * Starts initialised to `NULL`, i.e. disabled. Providing additional
          * run action(s) is optionnal.
          */
         danton_run_cb * run_action;
@@ -350,7 +350,7 @@ DANTON_API void danton_destroy(void ** any);
  * @param geodesic   The reference system for the sea level, or `NULL`.
  * @param topography Topography model, path to any topographic data, or `NULL`.
  * @param material   Material for the topography.
- * @param density    Density of the topography material in kg / m^3.
+ * @param density    Density of the topography material in kg / m^(3).
  * @param sea        Pointer to a flag to enable or disable sea(s), or `NULL`.
  * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
@@ -360,7 +360,7 @@ DANTON_API void danton_destroy(void ** any);
  * The default Earth model is the Preliminary Reference Earth Model, i.e. a
  * spherical Earth fully covered with a 3km deep sea.
  *
- * The supported *reference* values for the sea level are:
+ * The supported values for the *geodesic* system are:
  *
  *     - PREM  : spherical Earth
  *
@@ -368,7 +368,7 @@ DANTON_API void danton_destroy(void ** any);
  *
  *     - EGM96 : GPS ellipsoid + geoid undulations
  *
- * If let `NULL`, then the PREM system is used.
+ * If *geodesic* is left `NULL`, then the PREM system is used.
  *
  * The *topography* parameter can either specify a path to topographic data
  * (e.g. SRTMGL1 tiles) or encode a flat topography as `flat://${z}`, where
@@ -537,25 +537,26 @@ DANTON_API int danton_error_push(
     ...);
 
 /**
- * Set the physics model for a specific process.
+ * Set a named physics parameter.
  *
- * @param model  The process name.
- * @param value  The model to use or `NULL`.
+ * @param parameter  The physics parameter.
+ * @param value      The parameter value or `NULL`.
  * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
  *
- * The supported *process* values are: `"bremsstrahlung"`, `"pair-production"`
+ * The supported *parameter* values are: `"bremsstrahlung"`, `"pair-production"`
  * and `"photonuclear"`, for tau energy losses, and `"DIS"` for neutrino Deep
  * Inelastic Scattering (DIS). In addition, one can specificy a specific PDF
  * set for DIS processe using the `"PDF"` keyword.
  *
- * The corresponding *model* parameter can be set to `NULL`, in which case
- * Danton's default model is used. Otherwise, for tau energy losses, the model
- * value must correspond to one available in PUMAS, see e.g. reference below.
+ * The corresponding parameter *value* can be set to `NULL`, resulting in
+ * Danton's default value to be used. Otherwise, for tau energy losses, the
+ * parameter value must correspond to a model available in PUMAS, see e.g.
+ * reference below.
  *
- * For DIS cross-sections, the supported models are `"LO"` (Leading Order
- * computation), `"CSMS"` (Cooper-Sarkar, Mertsch and Sarkar) and `"BGR18"`
- * (Bertone, Gold and Rojo).  Alternatively, one can provide a path to a file
- * containing cross-section values in ENT's format.
+ * For DIS cross-sections, the supported parameter values are `"LO"` (Leading
+ * Order computation using the PDF), `"CSMS"` (Cooper-Sarkar, Mertsch and
+ * Sarkar) and `"BGR18"` (Bertone, Gold and Rojo).  Alternatively, one can
+ * provide a path to a file containing cross-section values in ENT's format.
  *
  * For PDF sets, the built-in models are `"HERAPDF15NLO"`, `"CT14nlo"` and
  * `"NNPDF31sx"`.  Alternatively, one can provide a path to a file containing

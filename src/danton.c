@@ -290,7 +290,7 @@ struct generic_state {
         int is_tau;
         int is_inside;
         int has_crossed;
-        int cross_count;
+        int flux_direction;
 };
 
 /* Supported reference systems for the Earth model */
@@ -500,8 +500,9 @@ static double medium(const double * position, const double * direction,
                 const double zi = state->context->api.sampler->altitude[0];
                 if (state->is_inside < 0)
                         state->is_inside = (altitude < zi) ? 1 : 0;
-                else if ((state->is_inside && (altitude >= zi)) ||
-                    (!state->is_inside && (altitude <= zi))) {
+                else if (((state->flux_direction >= 0) && state->is_inside &&
+                    (altitude >= zi)) || ((state->flux_direction <= 0) &&
+                    (!state->is_inside) && (altitude <= zi))) {
                         state->has_crossed = 1;
                         return step;
                 }
@@ -1093,9 +1094,38 @@ static int call_pumas(
 }
 
 /* Custom stepping action for ENT. */
+static enum ent_return stepping_ent_flux(struct ent_context * context,
+    struct ent_medium * medium, struct ent_state * state_)
+{
+        struct generic_state * state = (void *)state_;
+        if (state->context->api.decay || (state->has_crossed < 0)) {
+                return ENT_RETURN_SUCCESS;
+        }
+
+        /* Update the last location in forward MC, for the flux crossing. */
+        const double * const position = state_->position;
+        const double * const direction = state_->direction;
+
+        double a, b, r2;
+        ellipsoid_parameters_intersection(position, direction, &a, &b, &r2);
+        const double r = sqrt(r2);
+
+        double altitude = -DBL_MAX;
+        altitude = compute_geodetic(r, position, NULL, NULL);
+        const double zi = state->context->api.sampler->altitude[0];
+        state->is_inside = (altitude < zi) ? 1 : 0;
+
+        return ENT_RETURN_SUCCESS;
+}
+
 static enum ent_return stepping_ent(struct ent_context * context,
     struct ent_medium * medium, struct ent_state * state)
 {
+        if (context->ancestor == NULL) {
+                /* Forward MC case */
+                stepping_ent_flux(context, medium, state);
+        }
+
         struct danton_context * c = (struct danton_context *)((char *)context -
             offsetof(struct simulation_context, ent));
         struct danton_state s;
@@ -1138,7 +1168,13 @@ static int transport_forward(struct simulation_context * context,
         if (context->api.longitudinal)
                 memcpy(direction, neutrino->direction, sizeof(direction));
 
-        struct danton_sampler * const sampler = context->api.sampler;
+        int flux_direction;
+        {
+                struct generic_state * g_state =
+                    (struct generic_state *)neutrino;
+                flux_direction = g_state->flux_direction;
+        }
+
         struct ent_state product;
         enum ent_event event;
         for (;;) {
@@ -1156,22 +1192,12 @@ static int transport_forward(struct simulation_context * context,
                         struct generic_state * g_state =
                             (struct generic_state *)neutrino;
                         if (g_state->has_crossed) {
-                                g_state->cross_count++;
-                                if (g_state->cross_count == 2) {
-                                        context->record->api.generation =
-                                            generation;
-                                        record_copy_ent(
-                                            context->record->api.final,
-                                            neutrino);
-                                        if (record_publish(context) !=
-                                            EXIT_SUCCESS)
-                                                return EXIT_FAILURE;
-                                        break;
-                                } else {
-                                        g_state->is_inside = -1;
-                                        g_state->has_crossed = 0;
-                                        continue;
-                                }
+                                context->record->api.generation = generation;
+                                record_copy_ent(
+                                    context->record->api.final, neutrino);
+                                if (record_publish(context) != EXIT_SUCCESS)
+                                        return EXIT_FAILURE;
+                                break;
                         }
                 }
                 if (event == ENT_EVENT_EXIT) break;
@@ -1205,7 +1231,7 @@ static int transport_forward(struct simulation_context * context,
                                 .is_inside = -1,
                                 .has_crossed =
                                     (context->sample_flux) ? 0 : -1,
-                                .cross_count = 0
+                                .flux_direction = flux_direction
                         };
                         struct pumas_state * tau = &tau_data.base.pumas;
                         memcpy(&tau->position, &product.position,
@@ -1292,22 +1318,18 @@ static int transport_forward(struct simulation_context * context,
                                 generation++;
 
                                 /* Process any additional nu_e~ or nu_tau. */
-                                const double tau_altitude = compute_geodetic(
-                                    tau_data.x, tau->position, NULL, NULL);
-
                                 if (nu_e != NULL) {
                                         nu_e_data.context = context;
                                         if (context->sample_flux) {
                                                 nu_e_data.is_inside = -1;
-                                                nu_e_data.has_crossed = 0;
-                                                nu_e_data.cross_count =
-                                                    (tau_altitude <=
-                                                        sampler->altitude[0] +
-                                                            FLT_EPSILON) ?
-                                                    1 :
-                                                    0;
+                                                nu_e_data.has_crossed =
+                                                    (context->sample_flux) ?
+                                                    0 : -1,
+                                                nu_e_data.flux_direction =
+                                                    flux_direction;
                                         } else {
                                                 nu_e_data.has_crossed = -1;
+                                                nu_e_data.flux_direction = 0;
                                         }
                                         if (transport_forward(context, nu_e,
                                                 generation) != EXIT_SUCCESS)
@@ -1317,15 +1339,14 @@ static int transport_forward(struct simulation_context * context,
                                         nu_t_data.context = context;
                                         if (context->sample_flux) {
                                                 nu_t_data.is_inside = -1;
-                                                nu_t_data.has_crossed = 0;
-                                                nu_t_data.cross_count =
-                                                    (tau_altitude <=
-                                                        sampler->altitude[0] +
-                                                            FLT_EPSILON) ?
-                                                    1 :
-                                                    0;
+                                                nu_t_data.has_crossed =
+                                                    (context->sample_flux) ?
+                                                    0 : -1,
+                                                nu_t_data.flux_direction =
+                                                    flux_direction;
                                         } else {
                                                 nu_t_data.has_crossed = -1;
+                                                nu_t_data.flux_direction = 0;
                                         }
                                         if (transport_forward(context, nu_t,
                                                 generation) != EXIT_SUCCESS)
@@ -1522,7 +1543,7 @@ static int transport_backward(
                 g_state.is_tau = 0;
                 g_state.is_inside = -1;
                 g_state.has_crossed = -1;
-                g_state.cross_count = 0;
+                g_state.flux_direction = 0;
 
                 struct ent_medium * medium;
                 medium_ent(&context->ent, state, &medium);
@@ -1650,7 +1671,7 @@ static int transport_backward(
                         g->is_tau = 1;
                         g->is_inside = -1;
                         g->has_crossed = -1;
-                        g->cross_count = 0;
+                        g->flux_direction = 0;
                         context->record->api.generation++;
                         return transport_backward(context, g);
                 }
@@ -2492,8 +2513,11 @@ int danton_context_run(
         /* Check for any custom run action and configure accordingly. */
         if (context->run_action != NULL)
                 context_->ent.stepping_action = &stepping_ent;
-        else
+        else if (context->mode == DANTON_MODE_FORWARD) {
+                context_->ent.stepping_action = &stepping_ent_flux;
+        } else {
                 context_->ent.stepping_action = NULL;
+        }
 
         if (context->mode != DANTON_MODE_GRAMMAGE) {
                 /* Check that there is a valid primary flux. */
@@ -2636,6 +2660,13 @@ int danton_context_run(
                         compute_ecef_direction(sampler->latitude,
                             sampler->longitude, azimuth, ct, u0);
 
+                        int flux_direction;
+                        if (fabs(ct) <= FLT_EPSILON) {
+                                flux_direction = 0;
+                        } else {
+                                flux_direction = (ct > 0.) ? 1 : -1;
+                        }
+
                         /* Backward translate the primary state. */
                         double a, b, r2;
                         ellipsoid_parameters_intersection(
@@ -2682,7 +2713,7 @@ int danton_context_run(
                                 .is_tau = 0,
                                 .is_inside = -1,
                                 .has_crossed = crossed,
-                                .cross_count = 0
+                                .flux_direction = flux_direction
                         };
 
                         /* Initialise the event record. */
@@ -2788,7 +2819,7 @@ int danton_context_run(
                                         .is_tau = 1,
                                         .is_inside = -1,
                                         .has_crossed = -1,
-                                        .cross_count = 0
+                                        .flux_direction = 0
                                 };
 
                                 /* Call any custom initial run action. */
@@ -2840,7 +2871,7 @@ int danton_context_run(
                                         .is_tau = 0,
                                         .is_inside = -1,
                                         .has_crossed = -1,
-                                        .cross_count = 0
+                                        .flux_direction = 0
                                 };
 
                                 /* Call any custom initial run action. */
@@ -2894,7 +2925,7 @@ int danton_context_run(
                                         .is_tau = 0,
                                         .is_inside = -1,
                                         .has_crossed = -1,
-                                        .cross_count = 0
+                                        .flux_direction = 0
                                 };
 
                                 /* Call any custom initial run action. */
