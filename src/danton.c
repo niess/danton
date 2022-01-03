@@ -1644,10 +1644,10 @@ static int transport_backward(
                         int mother;
                         double bias;
                         if (state->pid > 0) {
-                                mother = ENT_PID_NU_TAU;
+                                mother = ENT_PID_TAU;
                                 bias = -1;
                         } else {
-                                mother = ENT_PID_NU_BAR_TAU;
+                                mother = ENT_PID_TAU_BAR;
                                 bias = 1.;
                         }
                         for (trials = 0; trials < 20; trials++) {
