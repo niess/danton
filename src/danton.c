@@ -1006,8 +1006,13 @@ static int record_publish(struct simulation_context * context)
                 for (j = 0; j < DANTON_PARTICLE_N; j++) {
                         if (sampler->weight[j] > 0.) {
                                 if (pid == danton_particle_pdg(j)) {
-                                        selected = 1;
-                                        break;
+                                        const double energy =
+                                            record->final.energy;
+                                        if ((energy >= sampler->energy[0]) &&
+                                            (energy <= sampler->energy[1])) {
+                                                selected = 1;
+                                                break;
+                                        }
                                 }
                         }
                 }
