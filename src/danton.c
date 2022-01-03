@@ -2723,10 +2723,13 @@ int danton_context_run(
                         /* Sample the projection of the primary state
                          * uniformly.
                          */
+                        double weight = 1.;
                         const double ct =
-                            sample_linear(context_, cos_theta, i, 0, NULL);
+                            sample_linear(context_, cos_theta, i, 0, &weight);
                         const double azimuth = sample_linear(
-                            context_, sampler->azimuth, i, 0, NULL);
+                            context_, sampler->azimuth, i, 0, &weight);
+                        if (sampler->azimuth[1] > sampler->azimuth[0])
+                                weight *= M_PI / 180.;
                         const double z0 = sampler->altitude[0];
                         double ecef0[3], u0[3];
                         compute_ecef_position(
@@ -2757,21 +2760,22 @@ int danton_context_run(
                         /* Sample the primary flavour and its
                          * energy. */
                         int j;
-                        double weight = 0., energy;
-                        while (weight == 0.) {
+                        double we = 0., energy;
+                        while (we == 0.) {
                                 const double u = random_uniform01(context_) *
                                     primary_p[DANTON_PARTICLE_N_NU - 1];
                                 struct danton_primary ** p;
                                 for (j = 0, p = context->primary;
                                      j < DANTON_PARTICLE_N_NU - 1; j++, p++)
                                         if (u <= primary_p[j]) break;
-                                weight = 1.;
+                                we = 1.;
                                 energy = sample_log_or_linear(
-                                    context_, (*p)->energy, &weight);
-                                if ((weight > 0.) &&
+                                    context_, (*p)->energy, &we);
+                                if ((we > 0.) &&
                                     ((*p)->energy[0] < (*p)->energy[1]))
-                                        weight *= (*p)->flux(*p, energy);
+                                        we *= (*p)->flux(*p, energy);
                         }
+                        weight *= we;
                         const int pid = danton_particle_pdg(j);
 
                         /* Configure the primary state. */
