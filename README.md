@@ -28,7 +28,7 @@ the danton executable is available as an AppImage, from the
 [releases](https://github.com/niess/danton/releases) assets, e.g. as:
 ```bash
 # Fetch the danton AppImage from GitHub
-wget https://github.com/niess/danton/releases/download/v0.3/danton-x86_64.AppImage
+wget https://github.com/niess/danton/releases/download/v0.4/danton-x86_64.AppImage
 
 # Make the downloaded binary executable
 chmod u+x danton-x86_64.AppImage
