@@ -1,8 +1,8 @@
-# DANTON ![Build](https://github.com/niess/danton/workflows/Build/badge.svg)
+# Danton ![Build](https://github.com/niess/danton/workflows/Build/badge.svg)
 ( **D**ec**A**yi**N**g **T**aus fr**O**m **N**eutrinos )
 
 ## Description
-DANTON is a __C99 library__ dedicated to the sampling of decaying taus from
+Danton is a __C99 library__ dedicated to the sampling of decaying taus from
 ultra high energy neutrinos interacting in the Earth. It can run in forward or
 backward Monte Carlo. it can also be configured to sample tau fluxes instead of
 decay densities, or to sample transmitted neutrinos fluxes.
@@ -23,7 +23,7 @@ detailed topography can be provided from world wide elevation models, e.g.
 [SRTMGL1]: https://lpdaac.usgs.gov/dataset_discovery/measures/measures_products_table/srtmgl1_v003
 
 ## Installation
-DANTON requires a UNIX system, eg. Linux or OSX. On Linux, the latest version of
+Danton requires a UNIX system, eg. Linux or OSX. On Linux, the latest version of
 the danton executable is available as an AppImage, from the
 [releases](https://github.com/niess/danton/releases) assets, e.g. as:
 ```bash
@@ -43,7 +43,7 @@ library as well as the `danton` executable, e.g. as:
 # Fetch the source and deps from GitHub
 git clone --recursive https://github.com/niess/danton.git
 
-# Build DANTON
+# Build Danton
 cd danton
 make
 
@@ -66,11 +66,11 @@ can also be found in the [examples/cards](examples/cards) folder.
 ### Root items
 ```
 decay           boolean              If `true` the sampled taus are decayed.
-events          integer              The number of Monte Carlo events to run.
+events          integer              The number of tentative Monte Carlo events.
 longitudinal    boolean              If `true` the transverse transport is disabled.
 mode            string               The run mode, one of "backward", "forward" or "grammage".
 output-file     string, null         The output file name or `null` for `stdout`.
-requested       integer              The requested number of valid Monte Carlo events
+requested       integer              The requested number of valid Monte Carlo events.
 seed            unsigned, null       The simulation random seed. If null, then the seed is set
                                        from the OS entropy using /dev/urandom.
 ```
@@ -91,8 +91,9 @@ material        string               The material composing the topography.
 density         float                The density of the topography, in kg/m^3.
 ```
 
-Note that the legacy PREM has an external layer of 3km of sea water. If the sea
-is disabled this layer is replaced with [Standard Rock][1].
+Note that the legacy PREM has an external layer of 3km of sea water with a
+density of 1.02 g/cm</sup>3</sup>. If the sea is disabled this layer is replaced
+with [Standard Rock][1].
 
 [1]: http://pdg.lbl.gov/2017/AtomicNuclearProperties/HTML/standard_rock.html
 
@@ -164,10 +165,13 @@ weight          float                The weight of the primary, i.e. the integra
 
 ### Stepping
 ```
-append          boolean              If `true`, append to the output file.
-path            string               Path to the output file.
+append          boolean              If `true`, append to an existing stepping file,
+                                       instead of overwriting.
+path            string               Path to the stepping file.
 ```
 
+The stepping file contains a summary of Monte Carlo steps, in JSON format.
+
 ## License
-The sources are under the **GNU LGPLv3** license. See the provided
-[LICENSE](LICENSE) and [COPYING.LESSER](COPYING.LESSER) files.
+The Danton source is distributed under the **GNU LGPLv3** license. See the
+provided [LICENSE](LICENSE) and [COPYING.LESSER](COPYING.LESSER) files.
