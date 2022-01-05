@@ -551,20 +551,17 @@ DANTON_API int danton_error_push(
  * The corresponding parameter *value* can be set to `NULL`, resulting in
  * Danton's default value to be used. Otherwise, for tau energy losses, the
  * parameter value must correspond to a model available in PUMAS, see e.g.
- * reference below.
+ * [pumas_physics_settings](https://pumas.readthedocs.io/en/latest/api/#HEAD/type/pumas_physics_settings).
  *
  * For DIS cross-sections, the supported parameter values are `"LO"` (Leading
  * Order computation using the PDF), `"CSMS"` (Cooper-Sarkar, Mertsch and
  * Sarkar) and `"BGR18"` (Bertone, Gold and Rojo).  Alternatively, one can
- * provide a path to a file containing cross-section values in ENT's format.
+ * provide a path to a file containing cross-section values in
+ * [ENT](https://github.com/niess/ent/tree/master/share/cs)'s format.
  *
  * For PDF sets, the built-in models are `"HERAPDF15NLO"`, `"CT14nlo"` and
  * `"NNPDF31sx"`.  Alternatively, one can provide a path to a file containing
  * cross-section values in Les Houches Accord (LHA) format.
- *
- * References:
- *    ENT: https://github.com/niess/ent
- *    PUMAS: https://pumas.readthedocs.io/en/latest/api/#HEAD/type/pumas_physics_settings
  */
 DANTON_API int danton_physics_set(const char * process, const char * model);
 
