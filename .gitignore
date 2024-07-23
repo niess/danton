@@ -2,18 +2,13 @@
 *.so
 *.dylib
 
-# Ignore temporary builds
-build/*
+# Ignore build artefacts.
+Cargo.lock
+/target
 
 # Ignore python bytecode objects.
 *.pyo
 *.pyc
 
-# Ignore any binary object.
-bin/*
-*.o
-
-# Ignore extra data.
-share/*
-!share/danton/
-share/danton/materials/materials.pumas
+# Ignore PUMAS dumps.
+*.pumas

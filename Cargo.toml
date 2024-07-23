@@ -1,0 +1,18 @@
+[package]
+name = "danton"
+version = "1.0.0"
+edition = "2021"
+license = "LGPL-3.0-only"
+
+[dependencies]
+derive_more = "0.99"
+enum-variants-strings = "0.3"
+process_path = "0.1"
+pyo3 = { version = "0.21", features = ["abi3", "extension-module"] }
+
+[build-dependencies]
+cc = "1.1"
+
+[lib]
+name = "danton"
+crate-type = ["lib", "cdylib"]

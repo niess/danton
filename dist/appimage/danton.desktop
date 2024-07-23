@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=danton
-Exec=danton
-Comment=Simulate the coupled transport of ultra high energy taus and neutrinos through the Earth, by Monte-Carlo
-Icon=danton
-Categories=Science;
-Terminal=true

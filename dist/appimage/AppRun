@@ -1,2 +1,0 @@
-#! /bin/bash
-DANTON_PREFIX=$APPDIR $APPDIR/bin/danton $*
