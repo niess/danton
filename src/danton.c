@@ -437,7 +437,7 @@ static void compute_ecef_direction(
                 const double cp = cos(phi);
 
                 const double R[3][3] = { { -sp, cp, 0. },
-                        { ct * cp, ct * sp, -st }, { st * cp, st * sp, ct } };
+                        { -ct * cp, -ct * sp, st }, { st * cp, st * sp, ct } };
 
                 /* Compute the local direction. */
                 const double p = (90. - azimuth) * deg;

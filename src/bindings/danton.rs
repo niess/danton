@@ -23,6 +23,8 @@ pub const START: c_uint = 0;
 pub const STOP: c_uint = 1;
 pub const STEP: c_uint = 2;
 
+pub const PREM_EARTH_RADIUS: f64 = 6371.0E+03;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Primary {
