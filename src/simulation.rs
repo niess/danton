@@ -12,6 +12,9 @@ pub mod recorder;
 mod sampler;
 
 
+// XXX Add Physics interface.
+// XXX Add forward mode.
+
 #[pyclass(module="danton")]
 pub struct Simulation {
     #[pyo3(get, set)]
@@ -46,7 +49,7 @@ impl Simulation {
 
     /// Flag controlling the decay of tau final states.
     #[getter]
-    fn get_decay(&self, py: Python) -> bool {
+    fn get_decay(&self, py: Python) -> bool { // XXX move to run method?
         self.context(py).decay != 0
     }
 

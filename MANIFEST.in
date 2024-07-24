@@ -1,0 +1,13 @@
+recursive-include src *
+include deps/alouette/include/alouette.h
+include deps/alouette/src/alouette.c
+include deps/alouette/src/tauola.f
+include deps/ent/include/ent.h
+include deps/ent/src/ent.c
+include deps/pumas/include/pumas.h
+include deps/pumas/src/pumas.c
+include deps/turtle/include/turtle.h
+recursive-include deps/turtle/src *
+include Cargo.toml
+global-exclude */__pycache__/*
+global-exclude *.py[cod]

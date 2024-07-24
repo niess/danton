@@ -9,6 +9,8 @@ mod bindings;
 mod simulation;
 mod utils;
 
+// XXX Document interface etc.
+
 
 static PREFIX: GILOnceCell<String> = GILOnceCell::new();
 
