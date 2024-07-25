@@ -127,16 +127,6 @@ impl<'a> From<Error<'a>> for PyErr {
 //
 // ===============================================================================================
 
-pub fn variant_error(header: &str, value: &str, options: &[&str]) -> PyErr {
-    let explain = variant_explain(value, options);
-    let message = format!(
-        "{} ({})",
-        header,
-        explain,
-    );
-    PyValueError::new_err(message)
-}
-
 pub fn variant_explain(value: &str, options: &[&str]) -> String {
     let n = options.len();
     let options = match n {

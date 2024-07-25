@@ -17,11 +17,16 @@ pub struct Recorder {
     pub mode: Mode,
     pub decay: bool,
     pub geodesic: Geodesic,
+    grammages: Option<Vec<f64>>,
     primaries: Option<Vec<Primary>>,
     secondaries: Option<Vec<Secondary>>,
     products: Option<Vec<Product>>,
     vertices: Option<Vec<Vertex>>,
 }
+
+#[derive(AsMut, AsRef, From)]
+#[pyclass(module="danton")]
+struct GrammagesExport (Export<f64>);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -84,6 +89,7 @@ impl Recorder {
             mode: Mode::Backward,
             decay: true,
             geodesic: Geodesic::Prem,
+            grammages: None,
             primaries: None,
             secondaries: None,
             products: None,
@@ -97,6 +103,14 @@ impl Recorder {
     }
 
     pub fn export(&mut self, py: Python) -> PyResult<PyObject> {
+        if let Mode::Grammage = self.mode {
+            let grammages = match self.grammages.take() {
+                None => py.None(),
+                Some(grammages) => Export::export::<GrammagesExport>(py, grammages)?,
+            };
+            return Ok(grammages)
+        }
+
         let products = match self.products.take() {
             None => py.None(),
             Some(products) => Export::export::<ProductsExport>(py, products)?,
@@ -136,7 +150,7 @@ impl Recorder {
                     RESULT.instance(py, (secondaries, vertices))?.unbind()
                 }
             },
-            Mode::Grammage => unimplemented!(),
+            Mode::Grammage => unreachable!(),
         };
 
         Ok(result)
@@ -233,9 +247,17 @@ impl Recorder {
 
     unsafe extern "C" fn record_grammage(
         _context: *mut danton::Context,
-        _recorder: *mut danton::Recorder,
-        _grammage: *const danton::Grammage,
+        recorder: *mut danton::Recorder,
+        grammage: *const danton::Grammage,
     ) -> c_int {
-        unimplemented!();
+        let recorder = unsafe { &mut *(recorder as *mut Self) };
+        let grammage = unsafe { &*grammage };
+
+        match recorder.grammages.as_mut() {
+            None => recorder.grammages = Some(vec![grammage.value]),
+            Some(grammages) => grammages.push(grammage.value),
+        };
+
+        danton::SUCCESS
     }
 }

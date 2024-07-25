@@ -55,7 +55,7 @@ impl Geometry {
             density: 2.65E+03,
             sea: true,
             instance: INSTANCES.fetch_add(1, Ordering::SeqCst),
-            modified: false,
+            modified: true,
         }
     }
 

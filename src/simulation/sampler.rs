@@ -1,8 +1,7 @@
 use crate::bindings::danton;
 use crate::simulation::particles::Particle;
 use crate::utils::convert::Mode;
-use crate::utils::error::{Error, to_result};
-use crate::utils::error::ErrorKind::NotImplementedError;
+use crate::utils::error::to_result;
 use pyo3::prelude::*;
 use ::std::ffi::{c_int, c_void};
 
@@ -21,7 +20,7 @@ impl danton::Sampler {
         match mode {
             Mode::Backward => self.set_backward(particle),
             Mode::Forward => self.set_forward(decay, particle),
-            Mode::Grammage => Err(Error::new(NotImplementedError).to_err()),
+            Mode::Grammage => self.set_grammage(particle),
         }
     }
 
@@ -56,6 +55,22 @@ impl danton::Sampler {
         self.energy = [danton::Primary::ENERGY_MIN, danton::Primary::ENERGY_MAX];
         for i in 0..self.weight.len() {
             self.weight[i] = 1.0;
+        }
+        to_result(
+            unsafe { danton::sampler_update(self as *mut Self) },
+            None,
+        )
+    }
+
+    fn set_grammage(&mut self, particle: &Particle) -> PyResult<()> {
+        self.latitude = particle.latitude;
+        self.longitude = particle.longitude;
+        self.altitude = [particle.altitude; 2];
+        self.azimuth = [particle.azimuth + 180.0; 2];
+        self.elevation = [-particle.elevation; 2];
+        self.energy = [danton::Primary::ENERGY_MIN, danton::Primary::ENERGY_MAX];
+        for i in 0..self.weight.len() {
+            self.weight[i] = 0.0;
         }
         to_result(
             unsafe { danton::sampler_update(self as *mut Self) },

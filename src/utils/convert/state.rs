@@ -55,7 +55,7 @@ impl From<(&danton::State, Geodesic)> for Particle {
             }
         }
         fn tozero(f: f64) -> f64 {
-            if f.abs() <= 5.0 * ::std::f64::EPSILON {
+            if f.abs() <= ::std::f32::EPSILON as f64 {
                 0.0
             } else {
                 f
