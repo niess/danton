@@ -68,7 +68,7 @@ pub struct Event {
     pub primary: *mut State,
     pub generation: c_int,
     pub vertex: *mut State,
-    pub final_: *mut State,
+    pub secondary: *mut State,
     pub n_products: c_int,
     pub product: *mut Product,
 }

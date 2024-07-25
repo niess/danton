@@ -1,6 +1,6 @@
 use crate::bindings::danton;
 use crate::simulation::particles::Particle;
-use crate::utils::convert::Geodesic;
+use crate::utils::convert::{Geodesic, Mode};
 use crate::utils::export::Export;
 use crate::utils::float::f64x3;
 use crate::utils::tuple::NamedTuple;
@@ -14,8 +14,11 @@ use ::std::pin::Pin;
 pub struct Recorder {
     base: danton::Recorder,
     pub event: usize,
+    pub mode: Mode,
+    pub decay: bool,
     pub geodesic: Geodesic,
     primaries: Option<Vec<Primary>>,
+    secondaries: Option<Vec<Secondary>>,
     products: Option<Vec<Product>>,
     vertices: Option<Vec<Vertex>>,
 }
@@ -31,6 +34,17 @@ pub struct Primary {
 #[derive(AsMut, AsRef, From)]
 #[pyclass(module="danton")]
 struct PrimariesExport (Export<Primary>);
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Secondary {
+    event: usize,
+    particle: Particle,
+}
+
+#[derive(AsMut, AsRef, From)]
+#[pyclass(module="danton")]
+struct SecondariesExport (Export<Secondary>);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -67,8 +81,11 @@ impl Recorder {
         let recorder = Self {
             base,
             event: 0,
+            mode: Mode::Backward,
+            decay: true,
             geodesic: Geodesic::Prem,
             primaries: None,
+            secondaries: None,
             products: None,
             vertices: None
         };
@@ -80,10 +97,6 @@ impl Recorder {
     }
 
     pub fn export(&mut self, py: Python) -> PyResult<PyObject> {
-        let primaries = match self.primaries.take() {
-            None => py.None(),
-            Some(primaries) => Export::export::<PrimariesExport>(py, primaries)?,
-        };
         let products = match self.products.take() {
             None => py.None(),
             Some(products) => Export::export::<ProductsExport>(py, products)?,
@@ -92,10 +105,40 @@ impl Recorder {
             None => py.None(),
             Some(vertices) => Export::export::<VerticesExport>(py, vertices)?,
         };
+        let result = match self.mode {
+            Mode::Backward => {
+                let primaries = match self.primaries.take() {
+                    None => py.None(),
+                    Some(primaries) => Export::export::<PrimariesExport>(py, primaries)?,
+                };
+                if self.decay {
+                    static RESULT: NamedTuple<3> = NamedTuple::new(
+                        "Result", ["primaries", "products", "vertices"]);
+                    RESULT.instance(py, (primaries, products, vertices))?.unbind()
+                } else {
+                    static RESULT: NamedTuple<2> = NamedTuple::new(
+                        "Result", ["primaries", "vertices"]);
+                    RESULT.instance(py, (primaries, vertices))?.unbind()
+                }
+            },
+            Mode::Forward => {
+                let secondaries = match self.secondaries.take() {
+                    None => py.None(),
+                    Some(secondaries) => Export::export::<SecondariesExport>(py, secondaries)?,
+                };
+                if self.decay {
+                    static RESULT: NamedTuple<3> = NamedTuple::new(
+                        "Result", ["secondaries", "products", "vertices"]);
+                    RESULT.instance(py, (secondaries, products, vertices))?.unbind()
+                } else {
+                    static RESULT: NamedTuple<2> = NamedTuple::new(
+                        "Result", ["secondaries", "vertices"]);
+                    RESULT.instance(py, (secondaries, vertices))?.unbind()
+                }
+            },
+            Mode::Grammage => unimplemented!(),
+        };
 
-        static RESULT: NamedTuple<3> = NamedTuple::new(
-            "Result", ["primaries", "products", "vertices"]);
-        let result = RESULT.instance(py, (primaries, products, vertices))?.unbind();
         Ok(result)
     }
 
@@ -107,61 +150,82 @@ impl Recorder {
         let recorder = unsafe { &mut *(recorder as *mut Self) };
         let event = unsafe { &*event };
 
-        let primary = {
-            let state = unsafe { &*event.primary };
-            let particle: Particle = (state, recorder.geodesic).into();
-            Primary {
-                event: recorder.event,
-                particle,
-                weight: event.weight,
-            }
-        };
-        match recorder.primaries.as_mut() {
-            None => recorder.primaries = Some(vec![primary]),
-            Some(primaries) => primaries.push(primary),
-        };
+        if let Mode::Backward = recorder.mode {
+            let primary = {
+                let state = unsafe { &*event.primary };
+                let particle: Particle = (state, recorder.geodesic).into();
+                Primary {
+                    event: recorder.event,
+                    particle,
+                    weight: event.weight,
+                }
+            };
+            match recorder.primaries.as_mut() {
+                None => recorder.primaries = Some(vec![primary]),
+                Some(primaries) => primaries.push(primary),
+            };
+        }
 
-        let vertex = {
-            let state = unsafe { &*event.vertex };
-            let particle: Particle = (state, recorder.geodesic).into();
-            Vertex {
-                event: recorder.event,
-                particle,
-                generation: event.generation,
-            }
-        };
-        match recorder.vertices.as_mut() {
-            None => recorder.vertices = Some(vec![vertex]),
-            Some(vertices) => vertices.push(vertex),
-        };
+        if let Mode::Forward = recorder.mode {
+            let secondary = {
+                let state = unsafe { &*event.secondary };
+                let particle: Particle = (state, recorder.geodesic).into();
+                Secondary {
+                    event: recorder.event,
+                    particle,
+                }
+            };
+            match recorder.secondaries.as_mut() {
+                None => recorder.secondaries = Some(vec![secondary]),
+                Some(secondaries) => secondaries.push(secondary),
+            };
+        }
 
-        let state = unsafe { &*event.primary };
-        let u: f64x3 = (&state.direction).into();
-        let (v, w) = u.covectors();
-        for i in 0..event.n_products {
-            let product = unsafe { &*event.product.offset(i as isize) };
-            let p: f64x3 = (&product.momentum).into();
-            let momentum = p.norm();
-            let cos_theta = (p.dot(u) / momentum).clamp(-1.0, 1.0);
-            let theta = cos_theta.acos() * 180.0 / ::std::f64::consts::PI;
-            let phi = if theta == 0.0 {
-                0.0
-            } else {
-                let x = p.dot(v);
-                let y = p.dot(w);
-                y.atan2(x) * 180.0 / ::std::f64::consts::PI
+        if !event.vertex.is_null() {
+            let vertex = {
+                let state = unsafe { &*event.vertex };
+                let particle: Particle = (state, recorder.geodesic).into();
+                Vertex {
+                    event: recorder.event,
+                    particle,
+                    generation: event.generation,
+                }
             };
-            let product = Product {
-                event: recorder.event,
-                pid: product.pid,
-                momentum,
-                theta,
-                phi,
+            match recorder.vertices.as_mut() {
+                None => recorder.vertices = Some(vec![vertex]),
+                Some(vertices) => vertices.push(vertex),
             };
-            match recorder.products.as_mut() {
-                None => recorder.products = Some(vec![product]),
-                Some(products) => products.push(product),
-            };
+        }
+
+        if recorder.decay {
+            let state = unsafe { &*event.secondary };
+            let u: f64x3 = (&state.direction).into();
+            let (v, w) = u.covectors();
+            for i in 0..event.n_products {
+                let product = unsafe { &*event.product.offset(i as isize) };
+                let p: f64x3 = (&product.momentum).into();
+                let momentum = p.norm();
+                let cos_theta = (p.dot(u) / momentum).clamp(-1.0, 1.0);
+                let theta = cos_theta.acos() * 180.0 / ::std::f64::consts::PI;
+                let phi = if theta == 0.0 {
+                    0.0
+                } else {
+                    let x = p.dot(v);
+                    let y = p.dot(w);
+                    y.atan2(x) * 180.0 / ::std::f64::consts::PI
+                };
+                let product = Product {
+                    event: recorder.event,
+                    pid: product.pid,
+                    momentum,
+                    theta,
+                    phi,
+                };
+                match recorder.products.as_mut() {
+                    None => recorder.products = Some(vec![product]),
+                    Some(products) => products.push(product),
+                };
+            }
         }
 
         danton::SUCCESS
