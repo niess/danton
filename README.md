@@ -1,4 +1,4 @@
-# Danton
+# Danton [![Documentation Status](https://readthedocs.org/projects/danton/badge/?version=latest)](https://danton.readthedocs.io/en/latest/?badge=latest)
 ( **D**ec**A**yi**N**g **T**aus fr**O**m **N**eutrinos )
 
 > [!WARNING]
