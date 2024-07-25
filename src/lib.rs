@@ -10,6 +10,7 @@ mod simulation;
 mod utils;
 
 // XXX Document interface etc.
+// XXX Upgrade PRNG.
 
 
 static PREFIX: GILOnceCell<String> = GILOnceCell::new();

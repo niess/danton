@@ -101,14 +101,20 @@ pub struct Recorder {
     pub record_grammage: RecordGrammage,
 }
 
-pub type RunAction = Option<
+pub type Call = Option<
     unsafe extern "C" fn(
         context: *mut Context,
+        run_action: *mut RunAction,
         event: c_uint,
         medium: c_int,
         state: *mut State,
     ) -> c_int,
 >;
+
+#[repr(C)]
+pub struct RunAction {
+    pub call: Call,
+}
 
 #[repr(C)]
 pub struct Context {
@@ -118,7 +124,7 @@ pub struct Context {
     pub primary: [*mut Primary; 6],
     pub sampler: *mut Sampler,
     pub recorder: *mut Recorder,
-    pub run_action: RunAction,
+    pub run_action: *mut RunAction,
 }
 
 pub type Lock = Option<

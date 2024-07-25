@@ -3,6 +3,7 @@ use crate::utils::convert::Mode;
 use crate::utils::error::{Error, to_result};
 use crate::utils::error::ErrorKind::NotImplementedError;
 use crate::utils::numpy::PyArray;
+use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
 use ::std::pin::Pin;
 use ::std::ptr::null_mut;
@@ -12,9 +13,11 @@ pub mod particles;
 mod primary;
 pub mod recorder;
 mod sampler;
+pub mod stepper;
 
 
 // XXX Add Physics interface.
+// XXX Arbitrary ndarrays as input.
 
 #[pyclass(module="danton")]
 pub struct Simulation {
@@ -23,6 +26,7 @@ pub struct Simulation {
     context: *mut danton::Context,
     recorder: Pin<Box<recorder::Recorder>>,
     primaries: [Pin<Box<danton::Primary>>; 6],
+    stepper: Option<Pin<Box<stepper::Stepper>>>,
 }
 
 unsafe impl Send for Simulation {}
@@ -37,14 +41,14 @@ impl Simulation {
         let context = unsafe {
             let context = danton::context_create();
             (*context).sampler = danton::sampler_create();
-            let recorder: &mut danton::Recorder = recorder::Recorder::base(&mut recorder);
+            let recorder = recorder::Recorder::base(&mut recorder);
             (*context).recorder = recorder;
             for i in 0..primaries.len() {
                 (*context).primary[i] = &mut *primaries[i];
             }
             context
         };
-        let simulation = Self { geometry, context, recorder, primaries };
+        let simulation = Self { geometry, context, recorder, primaries, stepper: None };
         Ok(simulation)
     }
 
@@ -86,6 +90,29 @@ impl Simulation {
         self.context_mut(py).mode = value.into();
     }
 
+    /// Flag to enable Monte Carlo steps recording.
+    #[getter]
+    fn get_stepping(&self) -> bool {
+        self.stepper.is_some()
+    }
+
+    #[setter]
+    fn set_stepping(&mut self, py: Python, value: bool) {
+        if value != self.stepper.is_some() {
+            match value {
+                true => {
+                    let mut stepper = stepper::Stepper::new();
+                    self.context_mut(py).run_action = stepper::Stepper::base(&mut stepper);
+                    self.stepper = Some(stepper);
+                },
+                false => {
+                    self.context_mut(py).run_action = null_mut();
+                    self.stepper = None;
+                },
+            }
+        }
+    }
+
     fn run(
         &mut self,
         py: Python,
@@ -93,19 +120,28 @@ impl Simulation {
     ) -> PyResult<PyObject> {
         let mode = self.get_mode(py);
         let decay = self.get_decay(py);
-        self.recorder.geodesic = {
+        let (geodesic, sea) = {
             let mut geometry = self.geometry.bind(py).borrow_mut();
             geometry.apply()?;
-            geometry.geodesic
+            (geometry.geodesic, geometry.sea)
         };
+        self.recorder.geodesic = geodesic;
         self.recorder.mode = mode;
         self.recorder.decay = decay;
+        if let Some(stepper) = self.stepper.as_mut() {
+            stepper.mode = mode;
+            stepper.geodesic = geodesic;
+            stepper.sea = sea;
+        }
         let n = particles.size();
         for i in 0..n {
             self.recorder.event = i;
-            let particle = particles.get(i)?;
+            if let Some(stepper) = self.stepper.as_mut() {
+                stepper.event = i;
+            }
 
             // Configure the particles sampler.
+            let particle = particles.get(i)?;
             self.sampler_mut(py).set(mode, decay, &particle)?;
 
             // Configure primaries.
@@ -133,7 +169,53 @@ impl Simulation {
                 Some(self.context),
             )?;
         }
-        self.recorder.export(py)
+
+        // Export the collected results.
+        let records = self.recorder.export(py)?;
+        let result = match self.stepper.as_mut() {
+            None => records,
+            Some(stepper) => {
+                let steps = stepper.export(py)?;
+                match mode {
+                    Mode::Backward => {
+                        let records = records.bind(py);
+                        let primaries = records.getattr("primaries").unwrap();
+                        let vertices = records.getattr("vertices").unwrap();
+                        if decay {
+                            let products = records.getattr("products").unwrap();
+                            static RESULT: NamedTuple<4> = NamedTuple::new(
+                                "Result", ["primaries", "products", "vertices", "steps"]);
+                            RESULT.instance(py, (primaries, products, vertices, steps))?.unbind()
+                        } else {
+                            static RESULT: NamedTuple<3> = NamedTuple::new(
+                                "Result", ["primaries", "vertices", "steps"]);
+                            RESULT.instance(py, (primaries, vertices, steps))?.unbind()
+                        }
+                    },
+                    Mode::Forward => {
+                        let records = records.bind(py);
+                        let secondaries = records.getattr("secondaries").unwrap();
+                        let vertices = records.getattr("vertices").unwrap();
+                        if decay {
+                            let products = records.getattr("products").unwrap();
+                            static RESULT: NamedTuple<4> = NamedTuple::new(
+                                "Result", ["secondaries", "products", "vertices", "steps"]);
+                            RESULT.instance(py, (secondaries, products, vertices, steps))?.unbind()
+                        } else {
+                            static RESULT: NamedTuple<3> = NamedTuple::new(
+                                "Result", ["secondaries", "vertices", "steps"]);
+                            RESULT.instance(py, (secondaries, vertices, steps))?.unbind()
+                        }
+                    },
+                    Mode::Grammage => {
+                        static RESULT: NamedTuple<2> = NamedTuple::new(
+                            "Result", ["grammages", "steps"]);
+                        RESULT.instance(py, (records, steps))?.unbind()
+                    },
+                }
+            },
+        };
+        Ok(result)
     }
 }
 

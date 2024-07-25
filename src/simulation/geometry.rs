@@ -21,7 +21,7 @@ pub struct Geometry {
     #[pyo3(get)]
     density: f64,
     #[pyo3(get)]
-    sea: bool,
+    pub sea: bool,
 
     instance: usize,
     modified: bool,

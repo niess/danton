@@ -207,6 +207,7 @@ enum danton_run_event {
         DANTON_RUN_N
 };
 
+struct danton_run_action;
 /**
  * Callback for custom run actions.
  *
@@ -217,9 +218,20 @@ enum danton_run_event {
  */
 typedef int danton_run_cb(
     struct danton_context * context,
+    struct danton_run_action * run_action,
     enum danton_run_event event,
     int medium,
     struct danton_state * state);
+
+/**
+ * Base data for custom run actions.
+ *
+ * This is the minimalistic representation of a run action. Any
+ * concrete implementation should conform to this.
+ */
+struct danton_run_action {
+        danton_run_cb * call;
+};
 
 /** The available run modes. */
 enum danton_mode {
@@ -282,12 +294,12 @@ struct danton_context {
          */
         struct danton_recorder * recorder;
         /**
-         * Callback for custom run action(s).
+         * Handle for custom run action(s).
          *
          * Starts initialised to `NULL`, i.e. disabled. Providing additional
          * run action(s) is optionnal.
          */
-        danton_run_cb * run_action;
+        struct danton_run_action * run_action;
 };
 
 /**

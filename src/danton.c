@@ -1091,7 +1091,8 @@ static void stepping_pumas(struct pumas_context * context,
 
         struct generic_state * g = (void *)state;
         struct danton_context * c = (void *)g->context;
-        const int rc = c->run_action(c, DANTON_RUN_EVENT_STEP, medium, &s);
+        struct danton_run_action * a = c->run_action;
+        const int rc = a->call(c, a, DANTON_RUN_EVENT_STEP, medium, &s);
 
         if (rc != EXIT_SUCCESS) {
                 context->recorder->user_data = (void *)EXIT_FAILURE;
@@ -1169,7 +1170,8 @@ static enum ent_return stepping_ent(struct ent_context * context,
 
         struct generic_state * g = (void *)state;
         struct danton_context * c = (void *)g->context;
-        int rc = c->run_action(c, DANTON_RUN_EVENT_STEP, m, &s);
+        struct danton_run_action * a = c->run_action;
+        int rc = a->call(c, a, DANTON_RUN_EVENT_STEP, m, &s);
 
         if (rc == EXIT_SUCCESS)
                 return ENT_RETURN_SUCCESS;
@@ -2807,7 +2809,9 @@ int danton_context_run(
                         if (context->run_action != NULL) {
                                 medium(state.base.ent.position,
                                     state.base.ent.direction, &state);
-                                if (context->run_action(context,
+                                struct danton_run_action * action =
+                                    context->run_action;
+                                if (action->call(context, action,
                                         DANTON_RUN_EVENT_START, state.medium,
                                         context_->record->api.primary) !=
                                     EXIT_SUCCESS)
@@ -2824,7 +2828,9 @@ int danton_context_run(
 
                         /* Call any custom final run action. */
                         if (context->run_action != NULL) {
-                                if (context->run_action(context,
+                                struct danton_run_action * action =
+                                    context->run_action;
+                                if (action->call(context, action,
                                         DANTON_RUN_EVENT_STOP, -1,
                                         context_->record->api.final) !=
                                     EXIT_SUCCESS)
@@ -2907,7 +2913,9 @@ int danton_context_run(
                                         struct danton_state s;
                                         record_copy_pumas(
                                             &s, &state.base.pumas);
-                                        if (context->run_action(context,
+                                        struct danton_run_action * action =
+                                            context->run_action;
+                                        if (action->call(context, action,
                                                 DANTON_RUN_EVENT_START,
                                                 state.medium,
                                                 &s) != EXIT_SUCCESS)
@@ -2923,7 +2931,9 @@ int danton_context_run(
 
                                 /* Call any custom final run action. */
                                 if (context->run_action != NULL) {
-                                        if (context->run_action(context,
+                                        struct danton_run_action * action =
+                                            context->run_action;
+                                        if (action->call(context, action,
                                                 DANTON_RUN_EVENT_STOP, -1,
                                                 context_->record->api
                                                     .primary) != EXIT_SUCCESS)
@@ -2958,7 +2968,9 @@ int danton_context_run(
                                             state.base.ent.direction, &state);
                                         struct danton_state s;
                                         record_copy_ent(&s, &state.base.ent);
-                                        if (context->run_action(context,
+                                        struct danton_run_action * action =
+                                            context->run_action;
+                                        if (action->call(context, action,
                                                 DANTON_RUN_EVENT_START,
                                                 state.medium,
                                                 &s) != EXIT_SUCCESS)
@@ -2974,7 +2986,9 @@ int danton_context_run(
 
                                 /* Call any custom final run action. */
                                 if (context->run_action != NULL) {
-                                        if (context->run_action(context,
+                                        struct danton_run_action * action =
+                                            context->run_action;
+                                        if (action->call(context, action,
                                                 DANTON_RUN_EVENT_STOP, -1,
                                                 context_->record->api
                                                     .primary) != EXIT_SUCCESS)
@@ -3014,7 +3028,9 @@ int danton_context_run(
                                             &g_state);
                                         struct danton_state s;
                                         record_copy_ent(&s, state);
-                                        if (context->run_action(context,
+                                        struct danton_run_action * action =
+                                            context->run_action;
+                                        if (action->call(context, action,
                                                 DANTON_RUN_EVENT_START,
                                                 g_state.medium,
                                                 &s) != EXIT_SUCCESS)
@@ -3034,7 +3050,9 @@ int danton_context_run(
                                 if (context->run_action != NULL) {
                                         struct danton_state s;
                                         record_copy_ent(&s, state);
-                                        if (context->run_action(context,
+                                        struct danton_run_action * action =
+                                            context->run_action;
+                                        if (action->call(context, action,
                                                 DANTON_RUN_EVENT_STOP, -1,
                                                 &s) != EXIT_SUCCESS)
                                                 return EXIT_FAILURE;

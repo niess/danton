@@ -1,5 +1,6 @@
 use crate::simulation::particles::Particle;
 use crate::simulation::recorder::{Primary, Product, Secondary, Vertex};
+use crate::simulation::stepper::Step;
 // PyO3 interface.
 use pyo3::prelude::*;
 use pyo3::{ffi, pyobject_native_type_extract, pyobject_native_type_named, PyTypeInfo};
@@ -28,6 +29,7 @@ struct ArrayInterface {
     dtype_primary: PyObject,
     dtype_product: PyObject,
     dtype_secondary: PyObject,
+    dtype_step: PyObject,
     dtype_vertex: PyObject,
     type_ndarray: PyObject,
     // Functions.
@@ -170,6 +172,23 @@ pub fn initialise(py: Python) -> PyResult<()> {
             .into_py(py)
     };
 
+    let dtype_step: PyObject = {
+        let arg: [_; 9] = [
+            ("event", "u8"),
+            ("pid", "i4"),
+            ("energy", "f8"),
+            ("latitude", "f8"),
+            ("longitude", "f8"),
+            ("altitude", "f8"),
+            ("azimuth", "f8"),
+            ("elevation", "f8"),
+            ("medium", "S16"),
+        ];
+        dtype
+            .call1((arg, true))?
+            .into_py(py)
+    };
+
     let dtype_vertex: PyObject = {
         let arg: [_; 9] = [
             ("event", "u8"),
@@ -212,6 +231,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
         dtype_primary,
         dtype_product,
         dtype_secondary,
+        dtype_step,
         dtype_vertex,
         type_ndarray: object(2),
         // Functions.
@@ -676,6 +696,13 @@ impl Dtype for Secondary {
     #[inline]
     fn dtype(py: Python) -> PyResult<PyObject> {
         Ok(api(py).dtype_secondary.clone_ref(py))
+    }
+}
+
+impl Dtype for Step {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_step.clone_ref(py))
     }
 }
 

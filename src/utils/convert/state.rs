@@ -36,7 +36,11 @@ impl From<(&danton::State, Geodesic)> for Particle {
                 let vz = R[2][0] * u[0] + R[2][1] * u[1] + R[2][2] * u[2];
                 let rho = (vx * vx + vy * vy).sqrt();
                 elevation = 90.0 - rho.atan2(vz) * DEG;
-                azimuth = 90.0 - vy.atan2(vx) * DEG;
+                azimuth = if elevation.abs() == 90.0 {
+                    0.0
+                } else {
+                    90.0 - vy.atan2(vx) * DEG
+                };
             },
             _ => unsafe {
                 turtle::ecef_to_geodetic(
