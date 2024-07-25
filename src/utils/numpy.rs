@@ -25,6 +25,7 @@ struct ArrayInterface {
     capsule: PyObject,
     // Type objects.
     dtype_f64: PyObject,
+    dtype_i32: PyObject,
     dtype_particle: PyObject,
     dtype_primary: PyObject,
     dtype_product: PyObject,
@@ -109,6 +110,10 @@ pub fn initialise(py: Python) -> PyResult<()> {
 
     let dtype_f64: PyObject = dtype
         .call1(("f8",))?
+        .into_py(py);
+
+    let dtype_i32: PyObject = dtype
+        .call1(("i4",))?
         .into_py(py);
 
     let dtype_particle: PyObject = {
@@ -227,6 +232,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
         capsule: capsule.into(),
         // Type objects.
         dtype_f64,
+        dtype_i32,
         dtype_particle,
         dtype_primary,
         dtype_product,
@@ -668,6 +674,13 @@ impl Dtype for f64 {
     #[inline]
     fn dtype(py: Python) -> PyResult<PyObject> {
         Ok(api(py).dtype_f64.clone_ref(py))
+    }
+}
+
+impl Dtype for i32 {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_i32.clone_ref(py))
     }
 }
 

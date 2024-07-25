@@ -102,13 +102,21 @@ impl Recorder {
         &mut recorder.base
     }
 
-    pub fn export(&mut self, py: Python) -> PyResult<PyObject> {
+    pub fn export(&mut self, py: Python, steps: Option<PyObject>) -> PyResult<PyObject> {
         if let Mode::Grammage = self.mode {
             let grammages = match self.grammages.take() {
                 None => py.None(),
                 Some(grammages) => Export::export::<GrammagesExport>(py, grammages)?,
             };
-            return Ok(grammages)
+            let result = match steps {
+                None => grammages,
+                Some(steps) => {
+                    static RESULT: NamedTuple<2> = NamedTuple::new(
+                        "Result", ["grammages", "steps"]);
+                    RESULT.instance(py, (grammages, steps))?.unbind()
+                },
+            };
+            return Ok(result)
         }
 
         let products = match self.products.take() {
@@ -126,13 +134,31 @@ impl Recorder {
                     Some(primaries) => Export::export::<PrimariesExport>(py, primaries)?,
                 };
                 if self.decay {
-                    static RESULT: NamedTuple<3> = NamedTuple::new(
-                        "Result", ["primaries", "products", "vertices"]);
-                    RESULT.instance(py, (primaries, products, vertices))?.unbind()
+                    match steps {
+                        None => {
+                            static RESULT: NamedTuple<3> = NamedTuple::new(
+                                "Result", ["primaries", "products", "vertices"]);
+                            RESULT.instance(py, (primaries, products, vertices))?.unbind()
+                        },
+                        Some(steps) => {
+                            static RESULT: NamedTuple<4> = NamedTuple::new(
+                                "Result", ["primaries", "products", "vertices", "steps"]);
+                            RESULT.instance(py, (primaries, products, vertices, steps))?.unbind()
+                        },
+                    }
                 } else {
-                    static RESULT: NamedTuple<2> = NamedTuple::new(
-                        "Result", ["primaries", "vertices"]);
-                    RESULT.instance(py, (primaries, vertices))?.unbind()
+                    match steps {
+                        None => {
+                            static RESULT: NamedTuple<2> = NamedTuple::new(
+                                "Result", ["primaries", "vertices"]);
+                            RESULT.instance(py, (primaries, vertices))?.unbind()
+                        },
+                        Some(steps) => {
+                            static RESULT: NamedTuple<3> = NamedTuple::new(
+                                "Result", ["primaries", "vertices", "steps"]);
+                            RESULT.instance(py, (primaries, vertices, steps))?.unbind()
+                        },
+                    }
                 }
             },
             Mode::Forward => {
@@ -141,13 +167,31 @@ impl Recorder {
                     Some(secondaries) => Export::export::<SecondariesExport>(py, secondaries)?,
                 };
                 if self.decay {
-                    static RESULT: NamedTuple<3> = NamedTuple::new(
-                        "Result", ["secondaries", "products", "vertices"]);
-                    RESULT.instance(py, (secondaries, products, vertices))?.unbind()
+                    match steps {
+                        None => {
+                            static RESULT: NamedTuple<3> = NamedTuple::new(
+                                "Result", ["secondaries", "products", "vertices"]);
+                            RESULT.instance(py, (secondaries, products, vertices))?.unbind()
+                        },
+                        Some(steps) => {
+                            static RESULT: NamedTuple<4> = NamedTuple::new(
+                                "Result", ["secondaries", "products", "vertices", "steps"]);
+                            RESULT.instance(py, (secondaries, products, vertices, steps))?.unbind()
+                        },
+                    }
                 } else {
-                    static RESULT: NamedTuple<2> = NamedTuple::new(
-                        "Result", ["secondaries", "vertices"]);
-                    RESULT.instance(py, (secondaries, vertices))?.unbind()
+                    match steps {
+                        None => {
+                            static RESULT: NamedTuple<2> = NamedTuple::new(
+                                "Result", ["secondaries", "vertices"]);
+                            RESULT.instance(py, (secondaries, vertices))?.unbind()
+                        },
+                        Some(steps) => {
+                            static RESULT: NamedTuple<3> = NamedTuple::new(
+                                "Result", ["secondaries", "vertices", "steps"]);
+                            RESULT.instance(py, (secondaries, vertices, steps))?.unbind()
+                        },
+                    }
                 }
             },
             Mode::Grammage => unreachable!(),

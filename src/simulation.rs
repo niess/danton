@@ -2,8 +2,6 @@ use crate::bindings::danton;
 use crate::utils::convert::Mode;
 use crate::utils::error::{Error, to_result};
 use crate::utils::error::ErrorKind::NotImplementedError;
-use crate::utils::numpy::PyArray;
-use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
 use ::std::pin::Pin;
 use ::std::ptr::null_mut;
@@ -17,7 +15,6 @@ pub mod stepper;
 
 
 // XXX Add Physics interface.
-// XXX Arbitrary ndarrays as input.
 
 #[pyclass(module="danton")]
 pub struct Simulation {
@@ -113,11 +110,9 @@ impl Simulation {
         }
     }
 
-    fn run(
-        &mut self,
-        py: Python,
-        particles: &PyArray<particles::Particle>,
-    ) -> PyResult<PyObject> {
+    fn run<'py>(&mut self, elements: &Bound<'py, PyAny>) -> PyResult<PyObject> {
+        // Configure samplers etc.
+        let py = elements.py();
         let mode = self.get_mode(py);
         let decay = self.get_decay(py);
         let (geodesic, sea) = {
@@ -133,15 +128,21 @@ impl Simulation {
             stepper.geodesic = geodesic;
             stepper.sea = sea;
         }
-        let n = particles.size();
-        for i in 0..n {
+
+        // Loop over events.
+        let particles = match mode {
+            Mode::Backward | Mode::Forward => particles::ParticlesIterator::new(elements)?,
+            Mode::Grammage => particles::ParticlesIterator::coordinates(elements)?,
+        };
+        for (i, particle) in particles.enumerate() {
+            let particle = particle?;
+
             self.recorder.event = i;
             if let Some(stepper) = self.stepper.as_mut() {
                 stepper.event = i;
             }
 
             // Configure the particles sampler.
-            let particle = particles.get(i)?;
             self.sampler_mut(py).set(mode, decay, &particle)?;
 
             // Configure primaries.
@@ -171,50 +172,10 @@ impl Simulation {
         }
 
         // Export the collected results.
-        let records = self.recorder.export(py)?;
-        let result = match self.stepper.as_mut() {
-            None => records,
-            Some(stepper) => {
-                let steps = stepper.export(py)?;
-                match mode {
-                    Mode::Backward => {
-                        let records = records.bind(py);
-                        let primaries = records.getattr("primaries").unwrap();
-                        let vertices = records.getattr("vertices").unwrap();
-                        if decay {
-                            let products = records.getattr("products").unwrap();
-                            static RESULT: NamedTuple<4> = NamedTuple::new(
-                                "Result", ["primaries", "products", "vertices", "steps"]);
-                            RESULT.instance(py, (primaries, products, vertices, steps))?.unbind()
-                        } else {
-                            static RESULT: NamedTuple<3> = NamedTuple::new(
-                                "Result", ["primaries", "vertices", "steps"]);
-                            RESULT.instance(py, (primaries, vertices, steps))?.unbind()
-                        }
-                    },
-                    Mode::Forward => {
-                        let records = records.bind(py);
-                        let secondaries = records.getattr("secondaries").unwrap();
-                        let vertices = records.getattr("vertices").unwrap();
-                        if decay {
-                            let products = records.getattr("products").unwrap();
-                            static RESULT: NamedTuple<4> = NamedTuple::new(
-                                "Result", ["secondaries", "products", "vertices", "steps"]);
-                            RESULT.instance(py, (secondaries, products, vertices, steps))?.unbind()
-                        } else {
-                            static RESULT: NamedTuple<3> = NamedTuple::new(
-                                "Result", ["secondaries", "vertices", "steps"]);
-                            RESULT.instance(py, (secondaries, vertices, steps))?.unbind()
-                        }
-                    },
-                    Mode::Grammage => {
-                        static RESULT: NamedTuple<2> = NamedTuple::new(
-                            "Result", ["grammages", "steps"]);
-                        RESULT.instance(py, (records, steps))?.unbind()
-                    },
-                }
-            },
-        };
+        let steps = self.stepper.as_mut()
+            .map(|stepper| stepper.export(py))
+            .transpose()?;
+        let result = self.recorder.export(py, steps)?;
         Ok(result)
     }
 }

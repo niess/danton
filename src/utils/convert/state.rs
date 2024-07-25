@@ -3,6 +3,12 @@ use crate::utils::convert::Geodesic;
 use crate::simulation::particles::Particle;
 
 
+// ===============================================================================================
+//
+// Convert Danton Monte Carlo states (i.e. ECEF to geodetic coordinates).
+//
+// ===============================================================================================
+
 impl From<(&danton::State, Geodesic)> for Particle {
     fn from(value: (&danton::State, Geodesic)) -> Self {
         let (state, geodesic) = value;
