@@ -4,6 +4,7 @@
 
 # Ignore build artefacts.
 Cargo.lock
+/docs/build
 /target
 
 # Ignore python bytecode objects.

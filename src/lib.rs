@@ -9,7 +9,7 @@ mod bindings;
 mod simulation;
 mod utils;
 
-// XXX Document interface etc.
+// XXX Document the geometry.
 // XXX Upgrade PRNG.
 
 

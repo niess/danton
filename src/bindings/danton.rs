@@ -148,7 +148,7 @@ extern "C" {
         topography: *const c_char,
         material: *const c_char,
         density: f64,
-        sea: *mut c_int,
+        ocean: *mut c_int,
     ) -> c_int;
 
     #[link_name="danton_get_topography"]

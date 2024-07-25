@@ -13,15 +13,20 @@ static CURRENT: AtomicUsize = AtomicUsize::new(0);
 #[pyclass(module="danton")]
 pub struct Geometry {
     #[pyo3(get)]
+    /// Reference geodesic for the sea level.
     pub geodesic: Geodesic,
     #[pyo3(get)]
+    /// Topography elevation data.
     topography: Option<Topography>,
     #[pyo3(get)]
+    /// The topography composition.
     material: String,
     #[pyo3(get)]
+    /// The topography density.
     density: f64,
     #[pyo3(get)]
-    pub sea: bool,
+    /// Flag to enable/disable the ocean.
+    pub ocean: bool,
 
     instance: usize,
     modified: bool,
@@ -53,7 +58,7 @@ impl Geometry {
             topography: None,
             material: "Rock".to_string(),
             density: 2.65E+03,
-            sea: true,
+            ocean: true,
             instance: INSTANCES.fetch_add(1, Ordering::SeqCst),
             modified: true,
         }
@@ -84,10 +89,10 @@ impl Geometry {
     }
 
     #[setter]
-    fn set_sea(&mut self, value: bool) {
-        if value != self.sea {
+    fn set_ocean(&mut self, value: bool) {
+        if value != self.ocean {
             self.modified = true;
-            self.sea = value;
+            self.ocean = value;
         }
     }
 
@@ -116,7 +121,7 @@ impl Geometry {
                 Some(cstr) => cstr.as_ptr(),
             };
             let material = CString::new(self.material.as_str())?;
-            let mut sea = if self.sea { 1 } else { 0 };
+            let mut ocean = if self.ocean { 1 } else { 0 };
             to_result(
                 unsafe {
                     danton::earth_model(
@@ -124,7 +129,7 @@ impl Geometry {
                         topography,
                         material.as_ptr(),
                         self.density,
-                        &mut sea,
+                        &mut ocean,
                     )
                 },
                 None

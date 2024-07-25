@@ -49,18 +49,18 @@ impl Simulation {
         Ok(simulation)
     }
 
-    /// Flag controlling the decay of tau final states.
+    /// Flag to control the sampling of tau decays.
     #[getter]
-    fn get_decay(&self, py: Python) -> bool {
+    fn get_tau_decays(&self, py: Python) -> bool {
         self.context(py).decay != 0
     }
 
     #[setter]
-    fn set_decay(&mut self, py: Python, value: bool) {
+    fn set_tau_decays(&mut self, py: Python, value: bool) {
         self.context_mut(py).decay = if value { 1 } else { 0 };
     }
 
-    /// Flag for controlling the tranverse transport.
+    /// Flag to control the longitudinal approximation.
     #[getter]
     fn get_longitudinal(&self, py: Python) -> bool {
         self.context(py).longitudinal != 0
@@ -71,7 +71,7 @@ impl Simulation {
         self.context_mut(py).longitudinal = if value { 1 } else { 0 };
     }
 
-    /// The run mode.
+    /// The Monte Carlo simulation mode.
     #[getter]
     fn get_mode(&self, py: Python) -> Mode {
         self.context(py).mode.into()
@@ -87,14 +87,14 @@ impl Simulation {
         self.context_mut(py).mode = value.into();
     }
 
-    /// Flag to enable Monte Carlo steps recording.
+    /// Flag to control the recording of Monte Carlo steps.
     #[getter]
-    fn get_stepping(&self) -> bool {
+    fn get_record_steps(&self) -> bool {
         self.stepper.is_some()
     }
 
     #[setter]
-    fn set_stepping(&mut self, py: Python, value: bool) {
+    fn set_record_steps(&mut self, py: Python, value: bool) {
         if value != self.stepper.is_some() {
             match value {
                 true => {
@@ -110,15 +110,16 @@ impl Simulation {
         }
     }
 
-    fn run<'py>(&mut self, elements: &Bound<'py, PyAny>) -> PyResult<PyObject> {
+    /// Run a Danton Monte Carlo simulation.
+    fn run<'py>(&mut self, particles: &Bound<'py, PyAny>) -> PyResult<PyObject> {
         // Configure samplers etc.
-        let py = elements.py();
+        let py = particles.py();
         let mode = self.get_mode(py);
-        let decay = self.get_decay(py);
-        let (geodesic, sea) = {
+        let decay = self.get_tau_decays(py);
+        let (geodesic, ocean) = {
             let mut geometry = self.geometry.bind(py).borrow_mut();
             geometry.apply()?;
-            (geometry.geodesic, geometry.sea)
+            (geometry.geodesic, geometry.ocean)
         };
         self.recorder.geodesic = geodesic;
         self.recorder.mode = mode;
@@ -126,13 +127,13 @@ impl Simulation {
         if let Some(stepper) = self.stepper.as_mut() {
             stepper.mode = mode;
             stepper.geodesic = geodesic;
-            stepper.sea = sea;
+            stepper.ocean = ocean;
         }
 
         // Loop over events.
         let particles = match mode {
-            Mode::Backward | Mode::Forward => particles::ParticlesIterator::new(elements)?,
-            Mode::Grammage => particles::ParticlesIterator::coordinates(elements)?,
+            Mode::Backward | Mode::Forward => particles::ParticlesIterator::new(particles)?,
+            Mode::Grammage => particles::ParticlesIterator::coordinates(particles)?,
         };
         for (i, particle) in particles.enumerate() {
             let particle = particle?;

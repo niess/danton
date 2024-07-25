@@ -14,7 +14,7 @@ pub struct Stepper {
     pub event: usize,
     pub mode: Mode,
     pub geodesic: Geodesic,
-    pub sea: bool,
+    pub ocean: bool,
     steps: Option<Vec<Step>>,
 }
 
@@ -40,7 +40,7 @@ impl Stepper {
             event: 0,
             mode: Mode::Backward,
             geodesic: Geodesic::Prem,
-            sea: true,
+            ocean: true,
             steps: None,
         };
         Box::pin(stepper)
@@ -96,7 +96,7 @@ impl Stepper {
                     6 => "UpperMantle",
                     7 => "LowerCrust",
                     8 => ground,
-                    9 => if stepper.sea { "Ocean" } else { ground },
+                    9 => if stepper.ocean { "Ocean" } else { ground },
                     10 => "Troposphere0",
                     11 => "Troposhpere1",
                     12 => "Stratosphere",

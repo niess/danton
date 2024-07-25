@@ -3,6 +3,7 @@ use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::{KeyError, NotImplementedError, ValueError};
 use crate::utils::numpy::{Dtype, PyArray, ShapeArg};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use ::std::ffi::c_int;
 
 
@@ -35,12 +36,35 @@ impl Particle {
 
 /// Create an array of Monte Carlo particles.
 #[pyfunction]
+#[pyo3(signature=(shape, **kwargs))]
 pub fn particles(
     py: Python,
     shape: ShapeArg,
+    kwargs: Option<&Bound<PyDict>>
 ) -> PyResult<PyObject> {
     let shape: Vec<usize> = shape.into();
     let array: &PyAny = PyArray::<Particle>::zeros(py, &shape)?;
+    let mut has_pid = false;
+    let mut has_energy = false;
+    if let Some(kwargs) = kwargs {
+        for (key, value) in kwargs.iter() {
+            {
+                let key: String = key.extract()?;
+                match key.as_str() {
+                    "pid" => { has_pid = true; },
+                    "energy" => { has_energy = true; },
+                    _ => {},
+                }
+            }
+            array.set_item(key, value)?;
+        }
+    }
+    if !has_energy {
+        array.set_item("energy", 1E+09)?;
+    }
+    if !has_pid {
+        array.set_item("pid", 15)?;
+    }
     Ok(array.into())
 }
 
