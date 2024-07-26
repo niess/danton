@@ -16,3 +16,7 @@ cc = "1.1"
 [lib]
 name = "danton"
 crate-type = ["lib", "cdylib"]
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
