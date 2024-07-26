@@ -59,6 +59,7 @@ fn danton(module: &Bound<PyModule>) -> PyResult<()> {
     // Register class object(s).
     module.add_class::<simulation::Simulation>()?;
     module.add_class::<simulation::geometry::Geometry>()?;
+    module.add_class::<simulation::physics::Physics>()?;
 
     // Register function(s).
     module.add_function(wrap_pyfunction!(simulation::particles::particles, module)?)?;

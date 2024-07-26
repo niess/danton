@@ -8,18 +8,19 @@ use ::std::ptr::null_mut;
 
 pub mod geometry;
 pub mod particles;
+pub mod physics;
 mod primary;
 pub mod recorder;
 mod sampler;
 pub mod stepper;
 
 
-// XXX Add Physics interface.
-
 #[pyclass(module="danton")]
 pub struct Simulation {
     #[pyo3(get, set)]
     geometry: Py<geometry::Geometry>,
+    #[pyo3(get, set)]
+    physics: Py<physics::Physics>,
     context: *mut danton::Context,
     recorder: Pin<Box<recorder::Recorder>>,
     primaries: [Pin<Box<danton::Primary>>; 6],
@@ -33,6 +34,7 @@ impl Simulation {
     #[new]
     fn new(py: Python) -> PyResult<Self> {
         let geometry = Py::new(py, geometry::Geometry::new())?;
+        let physics = Py::new(py, physics::Physics::new())?;
         let mut recorder = recorder::Recorder::new();
         let mut primaries = core::array::from_fn(|_| danton::Primary::new());
         let context = unsafe {
@@ -45,7 +47,7 @@ impl Simulation {
             }
             context
         };
-        let simulation = Self { geometry, context, recorder, primaries, stepper: None };
+        let simulation = Self { geometry, physics, context, recorder, primaries, stepper: None };
         Ok(simulation)
     }
 
@@ -116,6 +118,7 @@ impl Simulation {
         let py = particles.py();
         let mode = self.get_mode(py);
         let decay = self.get_tau_decays(py);
+        self.physics.bind(py).borrow_mut().apply()?;
         let (geodesic, ocean) = {
             let mut geometry = self.geometry.bind(py).borrow_mut();
             geometry.apply()?;

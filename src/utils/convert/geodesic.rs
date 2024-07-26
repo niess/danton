@@ -1,5 +1,4 @@
-use crate::utils::error::{Error, variant_explain};
-use crate::utils::error::ErrorKind::ValueError;
+use crate::utils::convert::Convert;
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
 
@@ -12,21 +11,22 @@ pub enum Geodesic {
     Wgs84,
 }
 
+impl Convert for Geodesic {
+    #[inline]
+    fn what() -> &'static str {
+        "geodesic"
+    }
+}
+
 impl<'py> FromPyObject<'py> for Geodesic {
-    fn extract_bound(geodesic: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let geodesic: String = geodesic.extract()?;
-        let geodesic = Geodesic::from_str(&geodesic)
-            .map_err(|options| {
-                let why = variant_explain(&geodesic, options);
-                Error::new(ValueError).what("geodesic").why(&why).to_err()
-            })?;
-        Ok(geodesic)
+    fn extract_bound(any: &Bound<'py, PyAny>) -> PyResult<Self> {
+        Self::from_any(any)
     }
 }
 
 impl IntoPy<PyObject> for Geodesic {
     fn into_py(self, py: Python) -> PyObject {
-        self.to_str().into_py(py)
+        self.into_any(py)
     }
 }
 

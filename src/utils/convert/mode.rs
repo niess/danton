@@ -1,6 +1,5 @@
 use crate::bindings::danton;
-use crate::utils::error::{Error, variant_explain};
-use crate::utils::error::ErrorKind::ValueError;
+use crate::utils::convert::Convert;
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
 use ::std::ffi::c_uint;
@@ -14,21 +13,28 @@ pub enum Mode {
     Grammage,
 }
 
+impl Convert for Mode {
+    #[inline]
+    fn what() -> &'static str {
+        "mode"
+    }
+}
+
 impl<'py> FromPyObject<'py> for Mode {
-    fn extract_bound(mode: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let mode: String = mode.extract()?;
-        let mode = Mode::from_str(&mode)
-            .map_err(|options| {
-                let why = variant_explain(&mode, options);
-                Error::new(ValueError).what("mode").why(&why).to_err()
-            })?;
-        Ok(mode)
+    fn extract_bound(any: &Bound<'py, PyAny>) -> PyResult<Self> {
+        Self::from_any(any)
     }
 }
 
 impl IntoPy<PyObject> for Mode {
     fn into_py(self, py: Python) -> PyObject {
-        self.to_str().into_py(py)
+        self.into_any(py)
+    }
+}
+
+impl From<Mode> for &'static str {
+    fn from(value: Mode) -> Self {
+        value.to_str()
     }
 }
 
