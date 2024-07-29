@@ -3,7 +3,7 @@ use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
 
 
-#[derive(Clone, Copy, Default, EnumVariantsStrings)]
+#[derive(Clone, Copy, Default, EnumVariantsStrings, PartialEq)]
 #[enum_variants_strings_transform(transform="none")]
 pub enum Photonuclear {
     BBKS,

@@ -5,7 +5,7 @@ mod pdf;
 mod photonuclear;
 
 pub use bremsstrahlung::Bremsstrahlung;
-pub use dis::Dis;
+pub use dis::{Dis, DisModel};
 pub use pair_production::PairProduction;
 pub use pdf::Pdf;
 pub use photonuclear::Photonuclear;

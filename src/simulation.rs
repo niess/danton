@@ -19,7 +19,7 @@ pub mod stepper;
 pub struct Simulation {
     #[pyo3(get, set)]
     geometry: Py<geometry::Geometry>,
-    #[pyo3(get, set)]
+    #[pyo3(get)]
     physics: Py<physics::Physics>,
     context: *mut danton::Context,
     recorder: Pin<Box<recorder::Recorder>>,
@@ -89,6 +89,12 @@ impl Simulation {
         self.context_mut(py).mode = value.into();
     }
 
+    #[setter]
+    fn set_physics<'py>(&mut self, value: Bound<'py, physics::Physics>) {
+        unsafe { danton::context_reset(self.context) };
+        self.physics = value.clone().unbind();
+    }
+
     /// Flag to control the recording of Monte Carlo steps.
     #[getter]
     fn get_record_steps(&self) -> bool {
@@ -114,14 +120,18 @@ impl Simulation {
 
     /// Run a Danton Monte Carlo simulation.
     fn run<'py>(&mut self, particles: &Bound<'py, PyAny>) -> PyResult<PyObject> {
-        // Configure samplers etc.
+        // Configure physics, geometry, samplers etc.
         let py = particles.py();
         let mode = self.get_mode(py);
         let decay = self.get_tau_decays(py);
-        self.physics.bind(py).borrow_mut().apply()?;
         let (geodesic, ocean) = {
             let mut geometry = self.geometry.bind(py).borrow_mut();
             geometry.apply()?;
+            let mut physics = self.physics.bind(py).borrow_mut();
+            if physics.modified {
+                unsafe { danton::context_reset(self.context) };
+            }
+            physics.apply(py, geometry.material.as_str())?;
             (geometry.geodesic, geometry.ocean)
         };
         self.recorder.geodesic = geodesic;

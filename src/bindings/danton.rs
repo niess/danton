@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use crate::bindings::{ent, pumas};
 use ::std::ffi::{c_char, c_int, c_long, c_uint, c_ulong, c_void};
 
 pub const SUCCESS: c_int = 0;
@@ -71,6 +72,22 @@ pub struct Event {
     pub secondary: *mut State,
     pub n_products: c_int,
     pub product: *mut Product,
+}
+
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+pub struct MaterialIndex {
+    pub rock: c_int,
+    pub water: c_int,
+    pub air: c_int,
+    pub topography: c_int,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Physics {
+    pub ent: *mut ent::Physics,
+    pub pumas: *mut pumas::Physics,
 }
 
 #[repr(C)]
@@ -204,9 +221,23 @@ extern "C" {
         ...
     ) -> c_int;
 
-    #[link_name="danton_physics_set"]
-    pub fn physics_set(
-        process: *const c_char,
-        model: *const c_char,
-    ) -> c_int;
+    // Rust interface.
+
+    #[link_name="danton_context_reset"]
+    pub fn context_reset(context: *mut Context);
+
+    #[link_name="danton_materials_set"]
+    pub fn materials_set();
+
+    #[link_name="danton_material_index"]
+    pub static mut material_index: *mut MaterialIndex;
+
+    #[link_name="danton_physics"]
+    pub static mut physics: *mut Physics;
+
+    #[link_name="danton_tau_ctau0"]
+    pub static mut tau_ctau0: *mut f64;
+
+    #[link_name="danton_tau_mass"]
+    pub static mut tau_mass: *mut f64;
 }

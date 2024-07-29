@@ -20,7 +20,7 @@ pub struct Geometry {
     topography: Option<Topography>,
     #[pyo3(get)]
     /// The topography composition.
-    material: String,
+    pub material: String,
     #[pyo3(get)]
     /// The topography density.
     density: f64,

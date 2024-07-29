@@ -548,34 +548,41 @@ DANTON_API int danton_error_push(
     const char * format,
     ...);
 
-/**
- * Set a named physics parameter.
+
+/* ============================================================================
  *
- * @param parameter  The physics parameter.
- * @param value      The parameter value or `NULL`.
- * @return `EXIT_SUCCESS` on success, `EXIT_FAILURE` otherwise.
+ * Rust interface.
  *
- * The supported *parameter* values are: `"bremsstrahlung"`, `"pair-production"`
- * and `"photonuclear"`, for tau energy losses, and `"DIS"` for neutrino Deep
- * Inelastic Scattering (DIS). In addition, one can specificy a specific PDF
- * set for DIS processe using the `"PDF"` keyword.
- *
- * The corresponding parameter *value* can be set to `NULL`, resulting in
- * Danton's default value to be used. Otherwise, for tau energy losses, the
- * parameter value must correspond to a model available in PUMAS, see e.g.
- * [pumas_physics_settings](https://pumas.readthedocs.io/en/latest/api/#HEAD/type/pumas_physics_settings).
- *
- * For DIS cross-sections, the supported parameter values are `"LO"` (Leading
- * Order computation using the PDF), `"CSMS"` (Cooper-Sarkar, Mertsch and
- * Sarkar) and `"BGR18"` (Bertone, Gold and Rojo).  Alternatively, one can
- * provide a path to a file containing cross-section values in
- * [ENT](https://github.com/niess/ent/tree/master/share/cs)'s format.
- *
- * For PDF sets, the built-in models are `"HERAPDF15NLO"`, `"CT14nlo"` and
- * `"NNPDF31sx"`.  Alternatively, one can provide a path to a file containing
- * cross-section values in Les Houches Accord (LHA) format.
+ * ============================================================================
  */
-DANTON_API int danton_physics_set(const char * process, const char * model);
+
+/* Reset the context on a physics change. */
+DANTON_API struct danton_context * danton_context_reset(
+    struct danton_context * context);
+
+/* Map the media materials. */
+DANTON_API void danton_materials_set();
+
+/* Expose the physics engines. */
+struct danton_physics {
+        void * ent;
+        void * pumas;
+};
+
+extern struct danton_physics * danton_physics;
+
+extern double * danton_tau_ctau0;
+extern double * danton_tau_mass;
+
+/* Expose the materials indices. */
+struct danton_material_index {
+        int rock;
+        int water;
+        int air;
+        int topography;
+};
+
+extern struct danton_material_index * danton_material_index;
 
 #ifdef __cplusplus
 }

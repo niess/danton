@@ -1,4 +1,4 @@
-use process_path::get_dylib_path;
+se process_path::get_dylib_path;
 use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
 use pyo3::exceptions::PySystemError;
@@ -9,7 +9,7 @@ mod bindings;
 mod simulation;
 mod utils;
 
-// XXX Document the geometry.
+// XXX Document the geometry and the physics.
 // XXX Upgrade PRNG.
 
 
@@ -55,6 +55,9 @@ fn danton(module: &Bound<PyModule>) -> PyResult<()> {
     let finalise = wrap_pyfunction!(finalise_danton, module)?;
     py.import_bound("atexit")?
       .call_method1("register", (finalise,))?;
+
+    // Initialise the physics.
+    simulation::physics::Physics::initialise()?;
 
     // Register class object(s).
     module.add_class::<simulation::Simulation>()?;

@@ -62,28 +62,18 @@ static struct {
         struct pumas_physics * pumas;
 } physics = { NULL, NULL };
 
+struct danton_physics * danton_physics = (void *)&physics;
+
 /* Path for data sets. */
-static char * pdf_path = NULL;
-static char * cs_path = NULL;
-static char * mdf_path = NULL;
-static char * dedx_path = NULL;
-static char * dump_path = NULL;
 static char * geoid_path = NULL;
 
-/* Physics settings. */
-static struct {
-        char * bremsstrahlung;
-        char * pair_production;
-        char * photonuclear;
-        char * dis;
-        char * pdf;
-} physics_model = {0};
-
 /* The tau lepton mass, in GeV / c^2. */
-static double tau_mass;
+static double tau_mass = 0.0;
+double * danton_tau_mass = &tau_mass;
 
 /* The tau lifetime, in m / c. */
-static double tau_ctau0;
+static double tau_ctau0 = 0.0;
+double * danton_tau_ctau0 = &tau_ctau0;
 
 /* Callbacks for locking and unlocking critical sections. */
 static danton_lock_cb * lock = NULL;
@@ -303,10 +293,9 @@ static struct {
         struct turtle_map * undulations;
         double z0;
         int flat_topography;
-        int material;
         double density;
         int sea;
-} earth = { EARTH_PREM, NULL, NULL, 0., 0, 0, 2.65E+03, 1 };
+} earth = { EARTH_PREM, NULL, NULL, 0., 0, 2.65E+03, 1 };
 
 /* API function for accessing the turtle topography stack. */
 void * danton_get_topography(void) { return earth.stack; }
@@ -642,10 +631,9 @@ static double medium_ent(struct ent_context * context, struct ent_state * state,
         return step;
 }
 
-/* Media indices for PUMAS (mapped by initialise_materials). */
-static struct {
-        int rock, water, air;
-} material_index = {0};
+/* Media indices for PUMAS (mapped from Rust). */
+static struct danton_material_index material_index = { 0 };
+struct danton_material_index * danton_material_index = &material_index;
 
 /* Media table for PUMAS. */
 static struct pumas_medium media_pumas[] = { { 0, &locals_pem0 },
@@ -686,30 +674,8 @@ static void convert_material(int material, double * Z_ptr, double * A_ptr)
 }
 
 /* Initialise the material data */
-static int initialise_materials(struct danton_context * context)
+DANTON_API void danton_materials_set()
 {
-        /* Get material indices from the MDF */
-        if (pumas_physics_material_index(
-            physics.pumas, "Rock", &material_index.rock) !=
-            PUMAS_RETURN_SUCCESS) {
-                ERROR_PUMAS(context);
-                return EXIT_FAILURE;
-        }
-
-        if (pumas_physics_material_index(
-            physics.pumas, "Water", &material_index.water) !=
-            PUMAS_RETURN_SUCCESS) {
-                ERROR_PUMAS(context);
-                return EXIT_FAILURE;
-        }
-
-        if (pumas_physics_material_index(
-            physics.pumas, "Air", &material_index.air) !=
-            PUMAS_RETURN_SUCCESS) {
-                ERROR_PUMAS(context);
-                return EXIT_FAILURE;
-        }
-
         /* Set PUMAS material indices */
 #define N_LAYERS 15
         media_pumas[ 0].material = material_index.rock;
@@ -727,27 +693,8 @@ static int initialise_materials(struct danton_context * context)
         media_pumas[13].material = material_index.air;
         media_pumas[14].material = material_index.air;
 
-        topography_pumas.material = material_index.rock;
+        topography_pumas.material = material_index.topography;
 
-        /* Set material properties for ENT */
-        int i;
-        struct ent_medium * m;
-        for (i = 0, m = media_ent; i < N_LAYERS; i++, m++) {
-                /* Get atomic elements from PUMAS */
-                int material = media_pumas[i].material;
-                convert_material(material, &m->Z, &m->A);
-        }
-
-        convert_material(
-            material_index.rock, &topography_ent.Z, &topography_ent.A);
-#undef N_LAYERS
-
-        return EXIT_SUCCESS;
-}
-
-/* Configure the media according to the current Earth model. */
-static void earth_model_configure(void)
-{
         /* Set the outer PREM layer to rock or water */
         if ((earth.stack != NULL) || earth.flat_topography ||
             (earth.sea == 0)) {
@@ -757,13 +704,18 @@ static void earth_model_configure(void)
                 media_pumas[9].material = material_index.water;
                 media_pumas[9].locals = &locals_pem9;
         }
-        convert_material(
-            media_pumas[9].material, &media_ent[9].Z, &media_ent[9].A);
 
-        /* Set the topography material */
-        topography_pumas.material = earth.material;
+        /* Set material properties for ENT */
+        int i;
+        struct ent_medium * m;
+        for (i = 0, m = media_ent; i < N_LAYERS; i++, m++) {
+                /* Get atomic elements from PUMAS */
+                int material = media_pumas[i].material;
+                convert_material(material, &m->Z, &m->A);
+        }
         convert_material(
-            earth.material, &topography_ent.Z, &topography_ent.A);
+            material_index.topography, &topography_ent.Z, &topography_ent.A);
+#undef N_LAYERS
 }
 
 /* Medium callback encapsulation for PUMAS. */
@@ -1771,85 +1723,6 @@ static int transport_backward(
         return EXIT_SUCCESS;
 }
 
-/* Loader for PUMAS. */
-static int load_pumas(struct danton_context * context)
-{
-        const enum pumas_particle particle = PUMAS_PARTICLE_TAU;
-        struct pumas_physics_settings pumas_settings = {
-                .bremsstrahlung = physics_model.bremsstrahlung,
-                .pair_production = physics_model.pair_production,
-                .photonuclear = physics_model.photonuclear
-        };
-
-        /* First, attempt to load any binary dump. */
-        FILE * stream = fopen(dump_path, "rb");
-        if (stream != NULL) {
-                if (pumas_physics_load(&physics.pumas, stream)
-                    != PUMAS_RETURN_SUCCESS) {
-                        fclose(stream);
-                        ERROR_PUMAS(context);
-                        return EXIT_FAILURE;
-                }
-                fclose(stream);
-
-                /* Check the physics settings of the binary dump. */
-                const char * model, * reference;
-                pumas_physics_dcs(physics.pumas, PUMAS_PROCESS_BREMSSTRAHLUNG,
-                    &model, NULL);
-                reference =
-                    (physics_model.bremsstrahlung == NULL) ?
-                    pumas_dcs_default(PUMAS_PROCESS_BREMSSTRAHLUNG) :
-                    physics_model.bremsstrahlung;
-                if (strcmp(model, reference) != 0) goto create_physics;
-
-                pumas_physics_dcs(physics.pumas, PUMAS_PROCESS_PAIR_PRODUCTION,
-                    &model, NULL);
-                reference =
-                    (physics_model.pair_production == NULL) ?
-                    pumas_dcs_default(PUMAS_PROCESS_PAIR_PRODUCTION) :
-                    physics_model.pair_production;
-                if (strcmp(model, reference) != 0) goto create_physics;
-
-                pumas_physics_dcs(physics.pumas, PUMAS_PROCESS_PHOTONUCLEAR,
-                    &model, NULL);
-                reference =
-                    (physics_model.photonuclear == NULL) ?
-                    pumas_dcs_default(PUMAS_PROCESS_PHOTONUCLEAR) :
-                    physics_model.photonuclear;
-                if (strcmp(model, reference) != 0) goto create_physics;
-
-                pumas_physics_particle(
-                    physics.pumas, NULL, &tau_ctau0, &tau_mass);
-                goto exit;
-        }
-
-        /* If no valid binary dump, initialise from the MDF and dump. */
-create_physics:
-        if (pumas_physics_create(
-            &physics.pumas, particle, mdf_path, dedx_path, &pumas_settings) !=
-            PUMAS_RETURN_SUCCESS) {
-                ERROR_PUMAS(context);
-                return EXIT_FAILURE;
-        }
-        pumas_physics_particle(physics.pumas, NULL, &tau_ctau0, &tau_mass);
-
-        /* Dump the library configuration. */
-        stream = fopen(dump_path, "wb+");
-        if (stream == NULL) return EXIT_FAILURE;
-        pumas_physics_dump(physics.pumas, stream);
-        fclose(stream);
-
-exit:
-        free(mdf_path);
-        mdf_path = NULL;
-        free(dedx_path);
-        dedx_path = NULL;
-        free(dump_path);
-        dump_path = NULL;
-
-        return EXIT_SUCCESS;
-}
-
 /* Concatenate a dirname and a filename. */
 char * path_concat(const char * dirname, const char * filename)
 {
@@ -1863,97 +1736,6 @@ char * path_concat(const char * dirname, const char * filename)
         s[n0] = '/';
 
         return s;
-}
-
-/* Low level routine for initialising the Physics engines. */
-static int initialise_physics(struct danton_context * context)
-{
-        if (lock != NULL) lock();
-        if (physics.ent != NULL) return EXIT_SUCCESS;
-
-        /* Create a new neutrino Physics environment. */
-        char * tmp_pdf = NULL;
-        const char * dis_pdf = NULL;
-        if (physics_model.pdf != NULL) {
-                if (strcmp(physics_model.pdf, "NNPDF31sx") == 0) {
-                        dis_pdf = tmp_pdf = path_concat(pdf_path,
-                            "NNPDF31sx_nlo_as_0118_LHCb_nf_6_0000.dat");
-                } else if (strcmp(physics_model.pdf, "HERAPDF15NLO") == 0) {
-                        dis_pdf = tmp_pdf = path_concat(
-                            pdf_path, "HERAPDF15NLO_EIG_0000.dat");
-                } else if (strcmp(physics_model.pdf, "CT14nlo") == 0) {
-                        dis_pdf = tmp_pdf = path_concat(
-                            pdf_path, "CT14nlo_0000.dat");
-                } else {
-                        dis_pdf = physics_model.pdf;
-                }
-        }
-
-        char * tmp_cs = NULL;
-        const char * dis_cs = NULL;
-        if ((physics_model.dis == NULL) ||
-            (strcmp(physics_model.dis, "BGR18") == 0)) {
-                dis_cs = tmp_cs = path_concat(cs_path, "BGR18.txt");
-                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(pdf_path,
-                    "NNPDF31sx_nlo_as_0118_LHCb_nf_6_0000.dat");
-        } else if (strcmp(physics_model.dis, "CSMS") == 0) {
-                dis_cs = tmp_cs = path_concat(cs_path, "CSMS.txt");
-                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(
-                    pdf_path, "HERAPDF15NLO_EIG_0000.dat");
-        } else if (strcmp(physics_model.dis, "LO") == 0) {
-                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(
-                    pdf_path, "CT14nlo_0000.dat");
-        } else {
-                dis_cs = physics_model.dis;
-                if (dis_pdf == NULL) dis_pdf = tmp_pdf = path_concat(
-                    pdf_path, "CT14nlo_0000.dat");
-        }
-
-        if (dis_pdf == NULL) {
-                danton_error_push(context,
-                    "%s (%d): could not allocate memory.", __FILE__, __LINE__);
-                if (unlock != NULL) unlock();
-                return EXIT_FAILURE;
-        }
-
-        const enum ent_return e_rc =
-            ent_physics_create(&physics.ent, dis_pdf, dis_cs);
-        free(tmp_pdf);
-        free(tmp_cs);
-        if (e_rc != ENT_RETURN_SUCCESS) {
-                ERROR_ENT(context, e_rc, ent_physics_create);
-                if (unlock != NULL) unlock();
-                return EXIT_FAILURE;
-        }
-
-        /* Initialise the PUMAS transport engine. */
-        if (load_pumas(context) != EXIT_SUCCESS) {
-                if (unlock != NULL) unlock();
-                return EXIT_FAILURE;
-        }
-
-        /* Initialise ALOUETTE/TAUOLA. */
-        enum alouette_return a_rc;
-        if ((a_rc = alouette_initialise(NULL)) != ALOUETTE_RETURN_SUCCESS) {
-                danton_error_push(context, "%s (%d): alouette_initialise, %s.",
-                    __FILE__, __LINE__, alouette_message());
-                if (unlock != NULL) unlock();
-                return EXIT_FAILURE;
-        }
-        alouette_random = &random_alouette;
-
-        /* Initialise the material tables */
-        if (initialise_materials(context) != EXIT_SUCCESS) {
-                if (unlock != NULL) unlock();
-                return EXIT_FAILURE;
-        }
-
-        free(pdf_path);
-        pdf_path = NULL;
-        free(cs_path);
-        cs_path = NULL;
-        if (unlock != NULL) unlock();
-        return EXIT_SUCCESS;
 }
 
 static int copy_config_string(
@@ -1987,17 +1769,6 @@ int danton_initialise(
         if (prefix == NULL)
                 prefix = DANTON_PREFIX;
 
-        if (copy_config_string(prefix, DANTON_PDF_DIR, &pdf_path) !=
-            EXIT_SUCCESS)
-                return EXIT_FAILURE;
-        if (copy_config_string(prefix, DANTON_CS_DIR, &cs_path) != EXIT_SUCCESS)
-                return EXIT_FAILURE;
-        if (copy_config_string(prefix, DANTON_MDF, &mdf_path) != EXIT_SUCCESS)
-                return EXIT_FAILURE;
-        if (copy_config_string(prefix, DANTON_DEDX, &dedx_path) != EXIT_SUCCESS)
-                return EXIT_FAILURE;
-        if (copy_config_string(prefix, DANTON_DUMP, &dump_path) != EXIT_SUCCESS)
-                return EXIT_FAILURE;
         if (copy_config_string(prefix, DANTON_GEOID, &geoid_path) !=
             EXIT_SUCCESS)
                 return EXIT_FAILURE;
@@ -2023,30 +1794,8 @@ int danton_initialise(
 /* Finalise the DANTON library. */
 void danton_finalise(void)
 {
-        free(pdf_path);
-        pdf_path = NULL;
-        free(cs_path);
-        cs_path = NULL;
-        free(mdf_path);
-        mdf_path = NULL;
-        free(dedx_path);
-        dedx_path = NULL;
-        free(dump_path);
-        dump_path = NULL;
         free(geoid_path);
         geoid_path = NULL;
-        free(physics_model.bremsstrahlung);
-        physics_model.bremsstrahlung = NULL;
-        free(physics_model.pair_production);
-        physics_model.pair_production = NULL;
-        free(physics_model.photonuclear);
-        physics_model.photonuclear = NULL;
-        free(physics_model.dis);
-        physics_model.dis = NULL;
-        free(physics_model.pdf);
-        physics_model.pdf = NULL;
-        ent_physics_destroy(&physics.ent);
-        pumas_physics_destroy(&physics.pumas);
         turtle_stack_destroy(&earth.stack);
         turtle_map_destroy(&earth.undulations);
 }
@@ -2128,31 +1877,11 @@ int danton_earth_model(const char * reference, const char * topography,
                 earth.flat_topography = 0;
         }
 
-        /* Initialise the physics, if not already done. */
-        if (initialise_physics(NULL) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-        }
-
-        /* Parse the topography material. */
-        if (material != NULL) {
-                int index;
-                if (pumas_physics_material_index(
-                    physics.pumas, material, &index) != PUMAS_RETURN_SUCCESS) {
-                        ERROR_PUMAS(NULL);
-                        return EXIT_FAILURE;
-                } else {
-                        earth.material = index;
-                }
-        }
-
         /* Parse the topography density. */
         if (density > 0.) earth.density = density;
 
         /* Set the sea flag. */
         if (sea != NULL) earth.sea = *sea;
-
-        /* Configure materials according to the current settings. */
-        earth_model_configure();
 
         return EXIT_SUCCESS;
 }
@@ -2449,6 +2178,15 @@ static int create_pumas_recorder(
         return EXIT_SUCCESS;
 }
 
+/* Reset the context on a physics change. */
+DANTON_API struct danton_context * danton_context_reset(
+    struct danton_context * context)
+{
+        struct simulation_context * context_ =
+            (struct simulation_context *)context;
+        pumas_context_destroy(&context_->pumas);
+}
+
 /* Run a DANTON simulation. */
 int danton_context_run(
     struct danton_context * context, long events, long requested)
@@ -2612,17 +2350,8 @@ int danton_context_run(
                         return EXIT_FAILURE;
                 }
 
-                /* Initialise the Physic engines, if not already
-                 * done.
-                 */
-                if (physics.ent == NULL) {
-                        if (initialise_physics(context) != EXIT_SUCCESS)
-                                return EXIT_FAILURE;
-                }
                 if (context_->pumas == NULL) {
-                        /* Create PUMAS context, if not already
-                         * done..
-                         */
+                        /* Create PUMAS context, if not already done. */
                         if (pumas_context_create(
                             &context_->pumas, physics.pumas, 0) !=
                             PUMAS_RETURN_SUCCESS) {
@@ -3129,65 +2858,4 @@ const char * danton_error_pop(struct danton_context * context)
         error->size = n;
         error->count--;
         return s;
-}
-
-/* API function for setting a physics model. */
-DANTON_API int danton_physics_set(const char * process, const char * model)
-{
-        if (physics.ent != NULL) {
-                danton_error_push(NULL,
-                    "%s (%d): physics already initialised.",
-                    __FILE__, __LINE__);
-                return EXIT_FAILURE;
-        }
-
-        char ** value_ptr = NULL;
-
-        if ((strcmp(process, "bremsstrahlung") == 0) ||
-            (strcmp(process, "pair-production") == 0) ||
-            (strcmp(process, "photonuclear") == 0)) {
-                pumas_dcs_t * dcs;
-                enum pumas_process proc;
-                if (process[0] == 'b') {
-                        proc = PUMAS_PROCESS_BREMSSTRAHLUNG;
-                        value_ptr = &physics_model.bremsstrahlung;
-                } else if (process[1] == 'a') {
-                        proc = PUMAS_PROCESS_PAIR_PRODUCTION;
-                        value_ptr = &physics_model.pair_production;
-                } else {
-                        proc = PUMAS_PROCESS_PHOTONUCLEAR;
-                        value_ptr = &physics_model.photonuclear;
-                }
-                if (pumas_dcs_get(proc, model, &dcs) != PUMAS_RETURN_SUCCESS) {
-                        danton_error_push(NULL,
-                            "%s (%d): bad model %s for process %s.",
-                            __FILE__, __LINE__, model, process);
-                        return EXIT_FAILURE;
-                }
-        } else if (strcmp(process, "DIS") == 0) {
-                value_ptr = &physics_model.dis;
-        } else if (strcmp(process, "PDF") == 0) {
-                value_ptr = &physics_model.pdf;
-        } else {
-                danton_error_push(NULL,
-                    "%s (%d): bad process %s.", __FILE__, __LINE__, process);
-                return EXIT_FAILURE;
-        }
-
-        if (model == NULL) {
-                *value_ptr = NULL;
-        } else {
-                const int n = strlen(model) + 1;
-                char * tmp = realloc(*value_ptr, n);
-                if (tmp == NULL) {
-                        danton_error_push(NULL,
-                            "%s (%d): could not allocate memory",
-                            __FILE__, __LINE__);
-                        return EXIT_FAILURE;
-                }
-                memcpy(tmp, model, n);
-                *value_ptr = tmp;
-        }
-
-        return EXIT_SUCCESS;
 }

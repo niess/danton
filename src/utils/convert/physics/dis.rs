@@ -3,23 +3,46 @@ use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::{NotImplementedError, TypeError};
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
-use ::std::ffi::OsStr;
+use ::std::ffi::{CString, OsStr};
 use ::std::path::Path;
 
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Dis {
     Model(DisModel),
     Path(String),
 }
 
-#[derive(Clone, Copy, Default, EnumVariantsStrings)]
+#[derive(Clone, Copy, Default, EnumVariantsStrings, PartialEq)]
 #[enum_variants_strings_transform(transform="none")]
 pub enum DisModel {
     BGR18,
     #[default]
     CSMS,
     LO,
+}
+
+impl Dis {
+    pub fn to_c_string(&self, py: Python) -> PyResult<Option<CString>> {
+        let dis = match self {
+            Dis::Model(model) => match model {
+                DisModel::BGR18 => {
+                    let prefix = Path::new(crate::PREFIX.get(py).unwrap());
+                    Some(prefix.join(format!("data/cs/BGR18.txt")))
+                },
+                DisModel::CSMS => {
+                    let prefix = Path::new(crate::PREFIX.get(py).unwrap());
+                    Some(prefix.join(format!("data/cs/CSMS.txt")))
+                },
+                DisModel::LO => None,
+            },
+            Dis::Path(path) => Some(Path::new(path).to_path_buf()),
+        };
+        let dis = dis
+            .map(|dis| CString::new(dis.to_string_lossy().as_ref()))
+            .transpose()?;
+        Ok(dis)
+    }
 }
 
 impl Default for Dis {

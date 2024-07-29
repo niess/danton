@@ -10,7 +10,7 @@ mod state;
 
 pub use geodesic::Geodesic;
 pub use mode::Mode;
-pub use physics::{Bremsstrahlung, Dis, PairProduction, Pdf, Photonuclear};
+pub use physics::{Bremsstrahlung, Dis, DisModel, PairProduction, Pdf, Photonuclear};
 
 
 trait Convert {

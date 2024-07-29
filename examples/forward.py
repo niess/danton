@@ -13,6 +13,9 @@ simulation.longitudinal = True
 # Set a spherical Earth (using PREM model).
 simulation.geometry.geodesic = "PREM"
 
+# Use Bertone, Gold and Rojo (BGR18) model for DIS collisions.
+simulation.physics.dis = "BGR18"
+
 # Generate a bunch of neutrinos (that would emerge with an elevation angle of 1
 # deg at the equator).
 particles = danton.particles(100, pid=16, energy=1E+10, elevation=1.0)
