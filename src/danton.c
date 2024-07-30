@@ -2301,8 +2301,7 @@ int danton_context_run(
 
         /* Run the simulation. */
         if (context->mode == DANTON_MODE_FORWARD) {
-                /* Check the primary flux and pre-compute some
-                 * sampling
+                /* Check the primary flux and pre-compute some sampling
                  * parameters.
                  */
                 double primary_p[DANTON_PARTICLE_N_NU];

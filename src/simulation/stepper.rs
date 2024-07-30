@@ -101,7 +101,8 @@ impl Stepper {
                     11 => "Troposhpere1",
                     12 => "Stratosphere",
                     13 => "Mesosphere",
-                    14 | -1 => "Exosphere",
+                    14 => "Exosphere",
+                    -1 => "Exit",
                     100 => "Topography",
                     _ => "Unknown",
                 };

@@ -1,12 +1,14 @@
 use crate::bindings::danton;
 use crate::simulation::particles::Particle;
 use crate::utils::convert::Mode;
-use crate::utils::error::to_result;
+use crate::utils::error::{Error, to_result};
+use crate::utils::error::ErrorKind::ValueError;
 use pyo3::prelude::*;
 use ::std::ffi::{c_int, c_void};
 
 
 impl danton::Sampler {
+    const ALTITUDE_MIN: f64 = -1.1E+04;
     const ALTITUDE_MAX: f64 = 1E+05;
 
     pub fn destroy(sampler: &mut *mut danton::Sampler) {
@@ -17,6 +19,18 @@ impl danton::Sampler {
     }
 
     pub fn set(&mut self, mode: Mode, decay: bool, particle: &Particle) -> PyResult<()> {
+        if (particle.altitude <= Self::ALTITUDE_MIN) || (particle.altitude >= Self::ALTITUDE_MAX) {
+            let why = format!(
+                "expected a value in ({}, {}), found {}",
+                Self::ALTITUDE_MIN,
+                Self::ALTITUDE_MAX,
+                particle.altitude,
+            );
+            let err = Error::new(ValueError)
+                .what("altitude")
+                .why(&why);
+            return Err(err.to_err());
+        }
         match mode {
             Mode::Backward => self.set_backward(particle),
             Mode::Forward => self.set_forward(decay, particle),
