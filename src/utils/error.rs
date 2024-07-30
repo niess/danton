@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use pyo3::create_exception;
 use pyo3::exceptions::{
     PyException, PyFileNotFoundError, PyIndexError, PyKeyboardInterrupt, PyKeyError, PyMemoryError,
-    PyNotImplementedError, PyTypeError, PyValueError
+    PyNotImplementedError, PySystemError, PyTypeError, PyValueError
 };
 use ::std::ffi::{c_int, CStr};
 use ::std::ptr::null_mut;
@@ -32,6 +32,7 @@ pub enum ErrorKind {
     KeyError,
     MemoryError,
     NotImplementedError,
+    SystemError,
     TypeError,
     ValueError,
 }
@@ -110,6 +111,7 @@ impl<'a> From<&Error<'a>> for PyErr {
             ErrorKind::KeyError => PyErr::new::<PyKeyError, _>(msg),
             ErrorKind::MemoryError => PyErr::new::<PyMemoryError, _>(msg),
             ErrorKind::NotImplementedError => PyErr::new::<PyNotImplementedError, _>(msg),
+            ErrorKind::SystemError => PyErr::new::<PySystemError, _>(msg),
             ErrorKind::TypeError => PyErr::new::<PyTypeError, _>(msg),
             ErrorKind::ValueError => PyErr::new::<PyValueError, _>(msg),
         }

@@ -1,4 +1,4 @@
-se process_path::get_dylib_path;
+use process_path::get_dylib_path;
 use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
 use pyo3::exceptions::PySystemError;
@@ -63,6 +63,7 @@ fn danton(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<simulation::Simulation>()?;
     module.add_class::<simulation::geometry::Geometry>()?;
     module.add_class::<simulation::physics::Physics>()?;
+    module.add_class::<simulation::random::Random>()?;
 
     // Register function(s).
     module.add_function(wrap_pyfunction!(simulation::particles::particles, module)?)?;

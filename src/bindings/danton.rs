@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use crate::bindings::{ent, pumas};
+use crate::simulation::random::RandomContext;
 use ::std::ffi::{c_char, c_int, c_long, c_uint, c_ulong, c_void};
 
 pub const SUCCESS: c_int = 0;
@@ -196,18 +197,6 @@ extern "C" {
         requested: c_long,
     ) -> c_int;
 
-    #[link_name="danton_context_random"]
-    pub fn context_random(context: *mut Context) -> f64;
-
-    #[link_name="danton_context_random_seed"]
-    pub fn context_random_seed(context: *mut Context) -> c_ulong;
-
-    #[link_name="danton_context_random_set"]
-    pub fn context_random_set(
-        context: *mut Context,
-        seed: *const c_ulong,
-    );
-
     #[link_name="danton_error_count"]
     pub fn error_count(context: *mut Context) -> c_int;
 
@@ -222,6 +211,10 @@ extern "C" {
     ) -> c_int;
 
     // Rust interface.
+
+    #[allow(improper_ctypes)]
+    #[link_name="danton_context_random_set"]
+    pub fn context_random_set(context: *mut Context, random: *mut RandomContext);
 
     #[link_name="danton_context_reset"]
     pub fn context_reset(context: *mut Context);

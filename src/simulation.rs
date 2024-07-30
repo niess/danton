@@ -10,6 +10,7 @@ pub mod geometry;
 pub mod particles;
 pub mod physics;
 mod primary;
+pub mod random;
 pub mod recorder;
 mod sampler;
 pub mod stepper;
@@ -21,6 +22,8 @@ pub struct Simulation {
     geometry: Py<geometry::Geometry>,
     #[pyo3(get)]
     physics: Py<physics::Physics>,
+    #[pyo3(get, set)]
+    random: Py<random::Random>,
     context: *mut danton::Context,
     recorder: Pin<Box<recorder::Recorder>>,
     primaries: [Pin<Box<danton::Primary>>; 6],
@@ -35,6 +38,7 @@ impl Simulation {
     fn new(py: Python) -> PyResult<Self> {
         let geometry = Py::new(py, geometry::Geometry::new())?;
         let physics = Py::new(py, physics::Physics::new())?;
+        let random = Py::new(py, random::Random::new(None)?)?;
         let mut recorder = recorder::Recorder::new();
         let mut primaries = core::array::from_fn(|_| danton::Primary::new());
         let context = unsafe {
@@ -47,7 +51,9 @@ impl Simulation {
             }
             context
         };
-        let simulation = Self { geometry, physics, context, recorder, primaries, stepper: None };
+        let simulation = Self {
+            geometry, physics, random, context, recorder, primaries, stepper: None
+        };
         Ok(simulation)
     }
 
@@ -142,6 +148,11 @@ impl Simulation {
             stepper.geodesic = geodesic;
             stepper.ocean = ocean;
         }
+
+        // Set random context.
+        let mut random = self.random.bind(py).borrow_mut();
+        let mut random_context = random.new_context(self);
+        unsafe { danton::context_random_set(self.context, &mut random_context) };
 
         // Loop over events.
         let particles = match mode {

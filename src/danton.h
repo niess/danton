@@ -488,32 +488,6 @@ DANTON_API int danton_context_run(
     long requested);
 
 /**
- * Get a pseudo random number from a DANTON simulation context.
- * @param  context A simulation context.
- * @return A pseudo random number in (0,1), uniformly distributed.
- */
-double danton_context_random(struct danton_context * context);
-
-/**
- * Get the random seed of a DANTON simulation context.
- * @param  context A simulation context.
- * @return The PRNG random seed.
- */
-unsigned long danton_context_random_seed(struct danton_context * context);
-
-/**
- * Reset the PRNG of a DANTON simulation context.
- * @param  context A simulation context.
- * @param  seed    A random seed or `NULL`.
- *
- * If a `NULL` seed is provided, then the PRNG is initialised from the OS
- * entropy, using /dev/urandom.
- */
-void danton_context_random_set(
-    struct danton_context * context,
-    const unsigned long * seed);
-
-/**
  * Get the current number of unprocessed errors.
  *
  * @param  context  The context of interest or `NULL`.
@@ -557,8 +531,15 @@ DANTON_API int danton_error_push(
  */
 
 /* Reset the context on a physics change. */
-DANTON_API struct danton_context * danton_context_reset(
-    struct danton_context * context);
+DANTON_API void danton_context_reset(struct danton_context * context);
+
+/* Set the temporary random context. */
+struct danton_context_random;
+DANTON_API void danton_context_random_set(
+    struct danton_context * context, struct danton_context_random * random);
+
+extern double danton_context_random_open01(
+    struct danton_context_random * random);
 
 /* Map the media materials. */
 DANTON_API void danton_materials_set();

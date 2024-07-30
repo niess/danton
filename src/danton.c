@@ -242,16 +242,23 @@ struct simulation_context {
         /* Flag to check if the event was published. */
         int published;
 
-        /* Data for the Mersenne Twister PRNG. */
-        struct {
-#define MT_PERIOD 624
-                unsigned long seed;
-                int index;
-                unsigned long data[MT_PERIOD];
-        } random_mt;
+        /* Temporary random context. */
+        struct danton_context_random * random;
 
         struct error_stack error;
 };
+
+DANTON_API void danton_context_random_set(
+    struct danton_context * context, struct danton_context_random * random)
+{
+        struct simulation_context * context_ = (void *)context;
+        context_->random = random;
+}
+
+static double random_uniform01(struct simulation_context * context)
+{
+        return danton_context_random_open01(context->random);
+}
 
 /* Get the full simulation context from the PUMAS' one. */
 static struct simulation_context * pumas2context(struct pumas_context * context)
@@ -750,102 +757,6 @@ static enum pumas_step medium_pumas(struct pumas_context * context,
         }
 
         return PUMAS_STEP_CHECK;
-}
-
-/* PRNG from the OS. */
-static const char * urandom = "/dev/urandom";
-
-/* Get a random seed from /dev/urandom. */
-static int random_get_seed(unsigned long * seed)
-{
-        /* Get a seed from /dev/urandom*/
-        FILE * fp = fopen(urandom, "rb");
-        if (fp == NULL) return EXIT_FAILURE;
-        if (fread(seed, sizeof(long), 1, fp) <= 0) {
-                fclose(fp);
-                return EXIT_FAILURE;
-        }
-        fclose(fp);
-        return EXIT_SUCCESS;
-}
-
-/* Initialise the PRNG random seed. */
-static void random_initialise(
-    struct simulation_context * context, const unsigned long * seed_ptr)
-{
-        unsigned long seed;
-        if (seed_ptr == NULL) {
-                /* Get a seed from /dev/urandom*/
-                if (random_get_seed(&seed) != EXIT_SUCCESS) goto error;
-        } else {
-                seed = *seed_ptr;
-        }
-
-        /* Set the Mersenne Twister initial state. */
-        context->random_mt.data[0] = seed & 0xffffffffUL;
-        int j;
-        for (j = 1; j < MT_PERIOD; j++) {
-                context->random_mt.data[j] = (1812433253UL *
-                        (context->random_mt.data[j - 1] ^
-                            (context->random_mt.data[j - 1] >> 30)) +
-                    j);
-                context->random_mt.data[j] &= 0xffffffffUL;
-        }
-        context->random_mt.index = MT_PERIOD;
-
-        return;
-error:
-        danton_error_push(&context->api,
-            "%s (%d): could not Initialise PRNG from %s.", __FILE__, __LINE__,
-            urandom);
-        exit(EXIT_FAILURE);
-}
-
-/* Uniform pseudo random distribution over [0,1] from a Mersenne Twister. */
-static double random_uniform01(struct simulation_context * context)
-{
-        /* Check the buffer. */
-        if (context->random_mt.index < MT_PERIOD - 1) {
-                context->random_mt.index++;
-        } else {
-                /* Update the MT state. */
-                const int M = 397;
-                const unsigned long UPPER_MASK = 0x80000000UL;
-                const unsigned long LOWER_MASK = 0x7fffffffUL;
-                static unsigned long mag01[2] = { 0x0UL, 0x9908b0dfUL };
-                unsigned long y;
-                int kk;
-                for (kk = 0; kk < MT_PERIOD - M; kk++) {
-                        y = (context->random_mt.data[kk] & UPPER_MASK) |
-                            (context->random_mt.data[kk + 1] & LOWER_MASK);
-                        context->random_mt.data[kk] =
-                            context->random_mt.data[kk + M] ^ (y >> 1) ^
-                            mag01[y & 0x1UL];
-                }
-                for (; kk < MT_PERIOD - 1; kk++) {
-                        y = (context->random_mt.data[kk] & UPPER_MASK) |
-                            (context->random_mt.data[kk + 1] & LOWER_MASK);
-                        context->random_mt.data[kk] =
-                            context->random_mt.data[kk + (M - MT_PERIOD)] ^
-                            (y >> 1) ^ mag01[y & 0x1UL];
-                }
-                y = (context->random_mt.data[MT_PERIOD - 1] & UPPER_MASK) |
-                    (context->random_mt.data[0] & LOWER_MASK);
-                context->random_mt.data[MT_PERIOD - 1] =
-                    context->random_mt.data[M - 1] ^ (y >> 1) ^
-                    mag01[y & 0x1UL];
-                context->random_mt.index = 0;
-        }
-
-        /* Tempering. */
-        unsigned long y = context->random_mt.data[context->random_mt.index];
-        y ^= (y >> 11);
-        y ^= (y << 7) & 0x9d2c5680UL;
-        y ^= (y << 15) & 0xefc60000UL;
-        y ^= (y >> 18);
-
-        /* Convert to a 32 bits floating point in (0,1) and return. */
-        return (((double)y) + 0.5) * (1.0 / 4294967296.0);
 }
 
 /* Encapsulation of the random engine for PUMAS. */
@@ -2007,8 +1918,8 @@ struct danton_context * danton_context_create(void)
                 return NULL;
         }
 
-        /* Initialise the random engine. */
-        random_initialise(context, NULL);
+        /* Initialise the random context. */
+        context->random = NULL;
 
         /* Initialise the Monte-Carlo contexts and the recorder.
          */
@@ -2063,27 +1974,6 @@ void danton_context_destroy(struct danton_context ** context)
         free(context_->record);
         free(context_);
         *context = NULL;
-}
-
-/* Get a pseudo random number in (0, 1). */
-double danton_context_random(struct danton_context * context)
-{
-        return random_uniform01((struct simulation_context *)context);
-}
-
-/* Get the seed of the context PRNG. */
-unsigned long danton_context_random_seed(struct danton_context * context)
-{
-        struct simulation_context * c = (void *)context;
-        return c->random_mt.seed;
-}
-
-/* Reset the context PRNG with a new seed. */
-void danton_context_random_set(
-    struct danton_context * context, const unsigned long * seed)
-{
-        struct simulation_context * c = (void *)context;
-        random_initialise(c, seed);
 }
 
 /* Get the PDG number corresponding to the given table index. */
@@ -2179,8 +2069,7 @@ static int create_pumas_recorder(
 }
 
 /* Reset the context on a physics change. */
-DANTON_API struct danton_context * danton_context_reset(
-    struct danton_context * context)
+DANTON_API void danton_context_reset(struct danton_context * context)
 {
         struct simulation_context * context_ =
             (struct simulation_context *)context;
