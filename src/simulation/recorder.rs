@@ -14,6 +14,7 @@ use ::std::pin::Pin;
 pub struct Recorder {
     base: danton::Recorder,
     pub event: usize,
+    pub random_index: u128,
     pub mode: Mode,
     pub decay: bool,
     pub geodesic: Geodesic,
@@ -34,6 +35,7 @@ pub struct Primary {
     event: usize,
     particle: Particle,
     weight: f64,
+    random_index: [u64; 2],
 }
 
 #[derive(AsMut, AsRef, From)]
@@ -45,6 +47,7 @@ struct PrimariesExport (Export<Primary>);
 pub struct Secondary {
     event: usize,
     particle: Particle,
+    random_index: [u64; 2],
 }
 
 #[derive(AsMut, AsRef, From)]
@@ -86,6 +89,7 @@ impl Recorder {
         let recorder = Self {
             base,
             event: 0,
+            random_index: 0,
             mode: Mode::Backward,
             decay: true,
             geodesic: Geodesic::Prem,
@@ -216,6 +220,10 @@ impl Recorder {
                     event: recorder.event,
                     particle,
                     weight: event.weight,
+                    random_index: [
+                        (recorder.random_index >> 64) as u64,
+                        recorder.random_index as u64
+                    ],
                 }
             };
             match recorder.primaries.as_mut() {
@@ -231,6 +239,10 @@ impl Recorder {
                 Secondary {
                     event: recorder.event,
                     particle,
+                    random_index: [
+                        (recorder.random_index >> 64) as u64,
+                        recorder.random_index as u64
+                    ],
                 }
             };
             match recorder.secondaries.as_mut() {

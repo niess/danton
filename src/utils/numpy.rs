@@ -132,7 +132,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
     };
 
     let dtype_primary: PyObject = {
-        let arg: [_; 9] = [
+        let arg: [_; 10] = [
             ("event", "u8"),
             ("pid", "i4"),
             ("energy", "f8"),
@@ -142,6 +142,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
             ("azimuth", "f8"),
             ("elevation", "f8"),
             ("weight", "f8"),
+            ("random_index", "2u8"),
         ];
         dtype
             .call1((arg, true))?
@@ -162,7 +163,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
     };
 
     let dtype_secondary: PyObject = {
-        let arg: [_; 8] = [
+        let arg: [_; 9] = [
             ("event", "u8"),
             ("pid", "i4"),
             ("energy", "f8"),
@@ -171,6 +172,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
             ("altitude", "f8"),
             ("azimuth", "f8"),
             ("elevation", "f8"),
+            ("random_index", "2u8"),
         ];
         dtype
             .call1((arg, true))?

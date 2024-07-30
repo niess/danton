@@ -24,7 +24,7 @@ pub struct Random {
     rng: Pcg64Mcg,
     /// Prng stream index.
     #[pyo3(get)]
-    index: u128,
+    pub index: u128,
     /// Prng initial seed.
     #[pyo3(get)]
     seed: u128,
@@ -41,10 +41,11 @@ impl Random {
     }
 
     #[setter]
-    fn set_index(&mut self, index: Option<u128>) -> PyResult<()> {
+    fn set_index(&mut self, index: Option<Index>) -> PyResult<()> {
         match index {
             None => self.initialise(Some(self.seed))?,
             Some(index) => {
+                let index: u128 = index.into();
                 let delta: u128 = index.wrapping_sub(self.index);
                 self.rng.advance(delta);
                 self.index = index;
@@ -76,6 +77,23 @@ impl Random {
                 let array: &PyAny = PyArray::<f64>::from_iter(py, &shape, iter)?;
                 Ok(array.into())
             },
+        }
+    }
+}
+
+#[derive(FromPyObject)]
+enum Index {
+    #[pyo3(transparent, annotation = "[u64;2]")]
+    Array([u64; 2]),
+    #[pyo3(transparent, annotation = "u128")]
+    Scalar(u128),
+}
+
+impl From<Index> for u128 {
+    fn from(value: Index) -> Self {
+        match value {
+            Index::Array(value) => ((value[0] as u128) << 64) + (value[1] as u128),
+            Index::Scalar(value) => value,
         }
     }
 }
@@ -125,6 +143,12 @@ impl Random {
 pub struct RandomContext<'a> {
     context: *mut danton::Context,
     random: &'a mut Random,
+}
+
+impl<'a> RandomContext<'a> {
+    pub fn index(&self) -> u128 {
+        self.random.index
+    }
 }
 
 #[no_mangle]

@@ -9,8 +9,7 @@ mod bindings;
 mod simulation;
 mod utils;
 
-// XXX Document the geometry and the physics.
-// XXX Upgrade PRNG.
+// XXX Document the geometry, physics and random interfaces.
 
 
 static PREFIX: GILOnceCell<String> = GILOnceCell::new();

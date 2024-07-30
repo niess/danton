@@ -163,6 +163,7 @@ impl Simulation {
             let particle = particle?;
 
             self.recorder.event = i;
+            self.recorder.random_index = random_context.index();
             if let Some(stepper) = self.stepper.as_mut() {
                 stepper.event = i;
             }
