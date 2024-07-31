@@ -26,8 +26,30 @@ struct StepsExport (Export<Step>);
 #[derive(Clone, Copy)]
 pub struct Step {
     event: usize,
-    particle: Particle,
+    pid: c_int,
+    energy: f64,
+    latitude: f64,
+    longitude: f64,
+    altitude: f64,
+    azimuth: f64,
+    elevation: f64,
     medium: [u8; 16],
+}
+
+impl From<Particle> for Step {
+    fn from(value: Particle) -> Self {
+        Self {
+            event: 0,
+            pid: value.pid,
+            energy: value.energy,
+            latitude: value.latitude,
+            longitude: value.longitude,
+            altitude: value.altitude,
+            azimuth: value.azimuth,
+            elevation: value.elevation,
+            medium: [0; 16],
+        }
+    }
 }
 
 impl Stepper {
@@ -48,6 +70,10 @@ impl Stepper {
 
     pub fn base(stepper: &mut Pin<Box<Self>>) -> &mut danton::RunAction {
         &mut stepper.base
+    }
+
+    pub fn clear(&mut self) {
+        self.steps = None;
     }
 
     pub fn export(&mut self, py: Python) -> PyResult<PyObject> {
@@ -72,16 +98,18 @@ impl Stepper {
         if !state.is_null() {
             let state = unsafe { &*state };
             let step = {
-                let mut particle: Particle = (state, stepper.geodesic).into();
+                let particle: Particle = (state, stepper.geodesic).into();
+                let mut step: Step = particle.into();
+                step.event = stepper.event;
                 if let Mode::Grammage = stepper.mode {
-                    particle.pid = 0;
-                    particle.energy = 0.0;
-                    particle.elevation = -particle.elevation;
-                    if particle.elevation.abs() != 90.0 {
-                        if particle.azimuth > 0.0 {
-                            particle.azimuth -= 180.0;
+                    step.pid = 0;
+                    step.energy = 0.0;
+                    step.elevation = -step.elevation;
+                    if step.elevation.abs() != 90.0 {
+                        if step.azimuth > 0.0 {
+                            step.azimuth -= 180.0;
                         } else {
-                            particle.azimuth += 180.0;
+                            step.azimuth += 180.0;
                         }
                     }
                 }
@@ -105,11 +133,6 @@ impl Stepper {
                     -1 => "Exit",
                     100 => "Topography",
                     _ => "Unknown",
-                };
-                let mut step = Step {
-                    event: stepper.event,
-                    particle,
-                    medium: [0; 16],
                 };
                 let medium = CString::new(medium).unwrap();
                 let bytes = medium.as_bytes();

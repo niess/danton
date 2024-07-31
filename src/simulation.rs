@@ -1,7 +1,8 @@
 use crate::bindings::danton;
 use crate::utils::convert::Mode;
-use crate::utils::error::{Error, to_result};
-use crate::utils::error::ErrorKind::NotImplementedError;
+use crate::utils::error::{ctrlc_catched, Error, to_result};
+use crate::utils::error::ErrorKind::{KeyboardInterrupt, NotImplementedError};
+use crate::utils::numpy::ShapeArg;
 use pyo3::prelude::*;
 use ::std::pin::Pin;
 use ::std::ptr::null_mut;
@@ -124,6 +125,18 @@ impl Simulation {
         }
     }
 
+    /// Generate Monte Carlo particles.
+    fn particles(
+        &self,
+        py: Python,
+        shape: ShapeArg,
+        weight: Option<bool>,
+    ) -> PyResult<particles::ParticlesGenerator> {
+        let geometry = Some(self.geometry.bind(py).clone());
+        let random = Some(self.random.bind(py).clone());
+        particles::ParticlesGenerator::new(py, shape, geometry, random, weight)
+    }
+
     /// Run a Danton Monte Carlo simulation.
     fn run<'py>(&mut self, particles: &Bound<'py, PyAny>) -> PyResult<PyObject> {
         // Configure physics, geometry, samplers etc.
@@ -163,6 +176,7 @@ impl Simulation {
             let particle = particle?;
 
             self.recorder.event = i;
+            self.recorder.weight = particle.weight;
             self.recorder.random_index = random_context.index();
             if let Some(stepper) = self.stepper.as_mut() {
                 stepper.event = i;
@@ -188,6 +202,13 @@ impl Simulation {
                         null_mut()
                     };
                 }
+            }
+
+            if ctrlc_catched() {
+                self.recorder.clear();
+                self.stepper.as_mut()
+                    .map(|stepper| stepper.clear());
+                return Err(Error::new(KeyboardInterrupt).to_err())
             }
 
             // Run the Monte Carlo.

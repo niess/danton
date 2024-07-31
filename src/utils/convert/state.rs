@@ -79,6 +79,7 @@ impl From<(&danton::State, Geodesic)> for Particle {
             altitude: tozero(altitude),
             azimuth: tozero(azimuth),
             elevation: tozero(elevation),
+            weight: 1.0,
         }
     }
 }

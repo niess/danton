@@ -5,6 +5,7 @@ use pyo3::exceptions::{
     PyException, PyFileNotFoundError, PyIndexError, PyKeyboardInterrupt, PyKeyError, PyMemoryError,
     PyNotImplementedError, PySystemError, PyTypeError, PyValueError
 };
+use pyo3::ffi::PyErr_CheckSignals;
 use ::std::ffi::{c_int, CStr};
 use ::std::ptr::null_mut;
 
@@ -187,4 +188,15 @@ pub fn to_result(rc: c_int, context: Option<*mut danton::Context>) -> Result<(),
         let err = Error::new(ErrorKind::CLibraryException).why(&why);
         Err(err.to_err())
     }
+}
+
+
+// ===============================================================================================
+//
+// Keyboard interupts (catched by Python runtime).
+//
+// ===============================================================================================
+
+pub fn ctrlc_catched() -> bool {
+    if unsafe { PyErr_CheckSignals() } == -1 { true } else {false}
 }

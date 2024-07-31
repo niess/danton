@@ -15,6 +15,7 @@ pub struct Recorder {
     base: danton::Recorder,
     pub event: usize,
     pub random_index: u128,
+    pub weight: f64,
     pub mode: Mode,
     pub decay: bool,
     pub geodesic: Geodesic,
@@ -34,7 +35,6 @@ struct GrammagesExport (Export<f64>);
 pub struct Primary {
     event: usize,
     particle: Particle,
-    weight: f64,
     random_index: [u64; 2],
 }
 
@@ -90,6 +90,7 @@ impl Recorder {
             base,
             event: 0,
             random_index: 0,
+            weight: 1.0,
             mode: Mode::Backward,
             decay: true,
             geodesic: Geodesic::Prem,
@@ -104,6 +105,14 @@ impl Recorder {
 
     pub fn base(recorder: &mut Pin<Box<Self>>) -> &mut danton::Recorder {
         &mut recorder.base
+    }
+
+    pub fn clear(&mut self) {
+        self.grammages = None;
+        self.primaries = None;
+        self.secondaries = None;
+        self.products = None;
+        self.vertices = None;
     }
 
     pub fn export(&mut self, py: Python, steps: Option<PyObject>) -> PyResult<PyObject> {
@@ -215,11 +224,11 @@ impl Recorder {
         if let Mode::Backward = recorder.mode {
             let primary = {
                 let state = unsafe { &*event.primary };
-                let particle: Particle = (state, recorder.geodesic).into();
+                let mut particle: Particle = (state, recorder.geodesic).into();
+                particle.weight = event.weight * recorder.weight;
                 Primary {
                     event: recorder.event,
                     particle,
-                    weight: event.weight,
                     random_index: [
                         (recorder.random_index >> 64) as u64,
                         recorder.random_index as u64
@@ -235,7 +244,8 @@ impl Recorder {
         if let Mode::Forward = recorder.mode {
             let secondary = {
                 let state = unsafe { &*event.secondary };
-                let particle: Particle = (state, recorder.geodesic).into();
+                let mut particle: Particle = (state, recorder.geodesic).into();
+                particle.weight = event.weight * recorder.weight;
                 Secondary {
                     event: recorder.event,
                     particle,
