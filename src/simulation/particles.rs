@@ -272,8 +272,8 @@ impl ParticlesGenerator {
 
     fn direction<'py>(
         slf: Bound<'py, Self>,
-        azimuth: &Bound<'py, PyAny>,
-        elevation: &Bound<'py, PyAny>,
+        azimuth: Option<&Bound<'py, PyAny>>,
+        elevation: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, Self>> {
         let py = slf.py();
         let mut generator = slf.borrow_mut();
@@ -283,12 +283,16 @@ impl ParticlesGenerator {
                 .why("already defined");
             return Err(err.to_err())
         }
-        generator.particles
-            .bind(py)
-            .set_item("azimuth", azimuth)?;
-        generator.particles
-            .bind(py)
-            .set_item("elevation", elevation)?;
+        if let Some(azimuth) = azimuth {
+            generator.particles
+                .bind(py)
+                .set_item("azimuth", azimuth)?;
+        }
+        if let Some(elevation) = elevation {
+            generator.particles
+                .bind(py)
+                .set_item("elevation", elevation)?;
+        }
         generator.is_direction = true;
         Ok(slf)
     }
@@ -324,8 +328,7 @@ impl ParticlesGenerator {
         }
 
         if !self.is_energy {
-            self.particles.bind(py).set_item("energy", 1E+09)?; // XXX Power law as default.
-            self.is_energy = true;
+            self.generate_powerlaw(py, 1E+06, 1E+12, None, None)?;
         }
 
         if !self.is_position {
@@ -334,7 +337,8 @@ impl ParticlesGenerator {
         }
 
         if !self.is_direction {
-            self.generate_solid_angle(py, None, Some([-10.0, 10.0]), None)?;
+            // Directions already initialised to 0.
+            self.is_direction = true;
         }
 
         let particles = self.particles.bind(py).clone().into_any();
@@ -348,6 +352,8 @@ impl ParticlesGenerator {
         };
         Ok(result)
     }
+
+    // XXX Inside box generation for backward mode.
 
     fn pid<'py>(
         slf: Bound<'py, Self>,
@@ -370,8 +376,8 @@ impl ParticlesGenerator {
 
     fn position<'py>(
         slf: Bound<'py, Self>,
-        latitude: &Bound<'py, PyAny>,
-        longitude: &Bound<'py, PyAny>,
+        latitude: Option<&Bound<'py, PyAny>>,
+        longitude: Option<&Bound<'py, PyAny>>,
         altitude: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, Self>> {
         let py = slf.py();
@@ -382,12 +388,16 @@ impl ParticlesGenerator {
                 .why("already defined");
             return Err(err.to_err())
         }
-        generator.particles
-            .bind(py)
-            .set_item("latitude", latitude)?;
-        generator.particles
-            .bind(py)
-            .set_item("longitude", longitude)?;
+        if let Some(latitude) = latitude {
+            generator.particles
+                .bind(py)
+                .set_item("latitude", latitude)?;
+        }
+        if let Some(longitude) = longitude {
+            generator.particles
+                .bind(py)
+                .set_item("longitude", longitude)?;
+        }
         if let Some(altitude) = altitude {
             generator.particles
                 .bind(py)
@@ -404,64 +414,9 @@ impl ParticlesGenerator {
         exponent: Option<f64>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
-        let exponent = exponent.unwrap_or(-1.0);
-        if energy_min >= energy_max || energy_min <= 0.0 {
-            let why = "expected energy_max > energy_min > 0.0";
-            let err = Error::new(ValueError).what("powerlaw").why(why);
-            return Err(err.to_err());
-        }
-
         let py = slf.py();
-        let generator = slf.borrow();
-        let weight = weight.unwrap_or(generator.weight);
-
-        let particles = generator.particles
-            .bind(py);
-        let particles_energy: &PyArray<f64> = particles
-            .get_item("energy")?
-            .extract()?;
-        let weights: Option<&PyArray<f64>> = if weight {
-            let weights: &PyArray<f64> = particles
-                .get_item("weight")?
-                .extract()?;
-            Some(weights)
-        } else {
-            None
-        };
-
-        let mut random = generator.random.bind(py).borrow_mut();
-        for i in 0..particles_energy.size() {
-            let (energy, energy_weight) = match exponent {
-                -1.0 => {
-                    let lne = (energy_max / energy_min).ln();
-                    let energy = energy_min * (random.open01() * lne).exp();
-                    (energy, energy * lne)
-                },
-                0.0 => {
-                    let de = energy_max - energy_min;
-                    let energy = de * random.open01() + energy_min;
-                    (energy, de)
-                },
-                exponent => {
-                    let a = exponent + 1.0;
-                    let b = energy_min.powf(a);
-                    let de = energy_max.powf(a) - b;
-                    let energy = (de * random.open01() + b).powf(1.0 / a);
-                    let weight = de / (a * energy.powf(exponent));
-                    (energy, weight) // XXX Test all 3 cases.
-                },
-            };
-            particles_energy.set(i, energy)?; // XXX clip.
-            if let Some(weights) = weights {
-                let weight = weights.get(i)? * energy_weight;
-                weights.set(i, weight)?;
-            }
-        }
-
-        drop(generator);
         let mut generator = slf.borrow_mut();
-        generator.is_energy = true;
-
+        generator.generate_powerlaw(py, energy_min, energy_max, exponent, weight)?;
         Ok(slf)
     }
 
@@ -656,6 +611,71 @@ impl ParticlesGenerator {
     const DEG: f64 = 180.0 / std::f64::consts::PI;
     const RAD: f64 = std::f64::consts::PI / 180.0;
 
+    fn generate_powerlaw<'py>(
+        &mut self,
+        py: Python,
+        energy_min: f64,
+        energy_max: f64,
+        exponent: Option<f64>,
+        weight: Option<bool>,
+    ) -> PyResult<()> {
+        let exponent = exponent.unwrap_or(-1.0);
+        if energy_min >= energy_max || energy_min <= 0.0 {
+            let why = "expected energy_max > energy_min > 0.0";
+            let err = Error::new(ValueError).what("powerlaw").why(why);
+            return Err(err.to_err());
+        }
+
+        let weight = weight.unwrap_or(self.weight);
+
+        let particles = self.particles
+            .bind(py);
+        let particles_energy: &PyArray<f64> = particles
+            .get_item("energy")?
+            .extract()?;
+        let weights: Option<&PyArray<f64>> = if weight {
+            let weights: &PyArray<f64> = particles
+                .get_item("weight")?
+                .extract()?;
+            Some(weights)
+        } else {
+            None
+        };
+
+        let mut random = self.random.bind(py).borrow_mut();
+        for i in 0..particles_energy.size() {
+            let (energy, energy_weight) = match exponent {
+                -1.0 => {
+                    let lne = (energy_max / energy_min).ln();
+                    let energy = energy_min * (random.open01() * lne).exp();
+                    (energy, energy * lne)
+                },
+                0.0 => {
+                    let de = energy_max - energy_min;
+                    let energy = de * random.open01() + energy_min;
+                    (energy, de)
+                },
+                exponent => {
+                    let a = exponent + 1.0;
+                    let b = energy_min.powf(a);
+                    let de = energy_max.powf(a) - b;
+                    let energy = (de * random.open01() + b).powf(1.0 / a);
+                    let weight = de / (a * energy.powf(exponent));
+                    (energy, weight)
+                },
+            };
+            let energy = energy.clamp(energy_min, energy_max);
+            particles_energy.set(i, energy)?;
+            if let Some(weights) = weights {
+                let weight = weights.get(i)? * energy_weight;
+                weights.set(i, weight)?;
+            }
+        }
+
+        self.is_energy = true;
+        Ok(())
+    }
+
     fn generate_solid_angle(
         &mut self,
         py: Python,
@@ -663,11 +683,30 @@ impl ParticlesGenerator {
         elevation: Option<[f64; 2]>,
         weight: Option<bool>,
     ) -> PyResult<()> {
+        let check_angle = |value: f64, min: f64, max: f64, what: &str| -> PyResult<()> {
+            if (value < min) || (value > max) {
+                let why = format!(
+                    "expected a value in [{}, {}], found {}",
+                    min,
+                    max,
+                    value,
+                );
+                let err = Error::new(ValueError)
+                    .what(what)
+                    .why(&why);
+                Err(err.to_err())
+            } else {
+                Ok(())
+            }
+        };
+
         let weight = weight.unwrap_or(self.weight);
         let (sin_el0, sin_el1) = match elevation {
             None => (-1.0, 1.0),
             Some([el0, el1]) => {
-                let el0 = el0 * Self::RAD; // XXX Bound to [-90.0, 90.0].
+                check_angle(el0, -90.0, 90.0, "elevation")?;
+                check_angle(el1, -90.0, 90.0, "elevation")?;
+                let el0 = el0 * Self::RAD;
                 let el1 = el1 * Self::RAD;
                 (el0.sin(), el1.sin())
             },
@@ -676,8 +715,8 @@ impl ParticlesGenerator {
         let (az0, az1) = match azimuth {
             None => (-180.0, 180.0),
             Some([az0, az1]) => {
-                let az0 = az0 % 360.0; // XXX Bound to [-180, 180].
-                let az1 = az1 % 360.0;
+                check_angle(az0, -180.0, 180.0, "azimuth")?;
+                check_angle(az1, -180.0, 180.0, "azimuth")?;
                 (az0, az1)
             },
         };
