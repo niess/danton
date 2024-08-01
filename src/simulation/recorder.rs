@@ -118,7 +118,7 @@ impl Recorder {
     pub fn export(&mut self, py: Python, steps: Option<PyObject>) -> PyResult<PyObject> {
         if let Mode::Grammage = self.mode {
             let grammages = match self.grammages.take() {
-                None => py.None(), // XXX return an empty array instead?
+                None => Export::<f64>::empty(py)?,
                 Some(grammages) => Export::export::<GrammagesExport>(py, grammages)?,
             };
             let result = match steps {
@@ -133,17 +133,17 @@ impl Recorder {
         }
 
         let products = match self.products.take() {
-            None => py.None(),
+            None => Export::<Product>::empty(py)?,
             Some(products) => Export::export::<ProductsExport>(py, products)?,
         };
         let vertices = match self.vertices.take() {
-            None => py.None(),
+            None => Export::<Vertex>::empty(py)?,
             Some(vertices) => Export::export::<VerticesExport>(py, vertices)?,
         };
         let result = match self.mode {
             Mode::Backward => {
                 let primaries = match self.primaries.take() {
-                    None => py.None(),
+                    None => Export::<Primary>::empty(py)?,
                     Some(primaries) => Export::export::<PrimariesExport>(py, primaries)?,
                 };
                 if self.decay {
@@ -176,7 +176,7 @@ impl Recorder {
             },
             Mode::Forward => {
                 let secondaries = match self.secondaries.take() {
-                    None => py.None(),
+                    None => Export::<Secondary>::empty(py)?,
                     Some(secondaries) => Export::export::<SecondariesExport>(py, secondaries)?,
                 };
                 if self.decay {

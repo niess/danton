@@ -21,6 +21,11 @@ impl<T> Export<T>
 where
     T: Copy + Dtype + Sized,
 {
+    pub fn empty<'py>(py: Python<'py>) -> PyResult<PyObject> {
+        let array: &PyAny = PyArray::<T>::empty(py, &[0])?;
+        Ok(array.into_py(py))
+    }
+
     pub fn export<'py, W>(py: Python<'py>, values: Vec<T>) -> PyResult<PyObject>
     where
         W: AsMut<Self> + AsRef<Self> + From<Self> + Into<PyClassInitializer<W>> +

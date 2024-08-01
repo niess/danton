@@ -78,7 +78,7 @@ impl Stepper {
 
     pub fn export(&mut self, py: Python) -> PyResult<PyObject> {
         let steps = match self.steps.take() {
-            None => py.None(),
+            None => Export::<Step>::empty(py)?,
             Some(steps) => Export::export::<StepsExport>(py, steps)?,
         };
         return Ok(steps)
