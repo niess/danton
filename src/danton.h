@@ -400,7 +400,6 @@ DANTON_API void danton_destroy(void ** any);
 DANTON_API int danton_earth_model(
     const char * geodesic,
     const char * topography,
-    const char * material,
     double density,
     int * sea);
 

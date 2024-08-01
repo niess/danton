@@ -353,7 +353,16 @@ impl ParticlesGenerator {
         Ok(result)
     }
 
-    // XXX Inside box generation for backward mode.
+    fn inside<'py>(
+        slf: Bound<'py, Self>,
+        r#box: &Bound<'py, GeoBox>,
+        elevation: Option<[f64; 2]>,
+        weight: Option<bool>,
+    ) -> PyResult<Bound<'py, Self>> {
+        let mut generator = slf.borrow_mut();
+        generator.generate_inside(r#box, elevation, weight)?;
+        Ok(slf)
+    }
 
     fn pid<'py>(
         slf: Bound<'py, Self>,
@@ -611,7 +620,129 @@ impl ParticlesGenerator {
     const DEG: f64 = 180.0 / std::f64::consts::PI;
     const RAD: f64 = std::f64::consts::PI / 180.0;
 
-    fn generate_powerlaw<'py>(
+    fn generate_inside<'py>(
+        &mut self,
+        r#box: &Bound<'py, GeoBox>,
+        elevation: Option<[f64; 2]>,
+        weight: Option<bool>,
+    ) -> PyResult<()> {
+        if self.is_position {
+            let err = Error::new(ValueError)
+                .what("inside")
+                .why("position already defined");
+            return Err(err.to_err())
+        }
+        if self.is_direction {
+            let err = Error::new(ValueError)
+                .what("inside")
+                .why("direction already defined");
+            return Err(err.to_err())
+        }
+
+        let py = r#box.py();
+        let (size, frame) = {
+            let geobox = r#box.borrow();
+            (geobox.size, geobox.local_frame())
+        };
+
+        // Bind particles properties.
+        let particles = self.particles.bind(py);
+        let latitudes: &PyArray<f64> = particles
+            .get_item("latitude")?
+            .extract()?;
+        let longitudes: &PyArray<f64> = particles
+            .get_item("longitude")?
+            .extract()?;
+        let altitudes: &PyArray<f64> = particles
+            .get_item("altitude")?
+            .extract()?;
+        let (azimuths, elevations) = if elevation.is_some() {
+            let azimuths: &PyArray<f64> = particles
+                .get_item("azimuth")?
+                .extract()?;
+            let elevations: &PyArray<f64> = particles
+                .get_item("elevation")?
+                .extract()?;
+            (Some(azimuths), Some(elevations))
+        } else {
+            (None, None)
+        };
+        let weights = if weight.unwrap_or(self.weight) {
+            let weight: &PyArray<f64> = particles
+                .get_item("weight")?
+                .extract()?;
+            Some(weight)
+        } else {
+            None
+        };
+
+        // Bind the PRNG.
+        let mut random = self.random.bind(py).borrow_mut();
+
+        // Pre-compute solid angle and weight.
+        let sin_elevation = elevation
+            .map(|[el0, el1]| -> PyResult<[f64; 2]> {
+                check_angle(el0, -90.0, 90.0, "elevation")?;
+                check_angle(el1, -90.0, 90.0, "elevation")?;
+                let el0 = el0 * Self::RAD;
+                let el1 = el1 * Self::RAD;
+                Ok([el0.sin(), el1.sin()])
+            })
+            .transpose()?;
+        let default_weight = {
+            let mut weight = size[0] * size[1] * size[2];
+            if let Some([sin_el0, sin_el1]) = sin_elevation {
+                weight *= (sin_el1 - sin_el0).abs() * 2.0 * ::std::f64::consts::PI;
+            }
+            weight
+        };
+
+        // Loop over particles.
+        let mut trials: usize = 0;
+        let n = latitudes.size();
+        for i in 0..n {
+            loop {
+                trials += 1;
+                let r = [
+                    size[0] * (random.open01() - 0.5),
+                    size[1] * (random.open01() - 0.5),
+                    size[2] * (random.open01() - 0.5),
+                ];
+                let geodetic = frame.to_geodetic(&r);
+
+                // XXX Check that the location is in the air.
+
+                if let Some([sin_el0, sin_el1]) = sin_elevation {
+                    let sin_el = (sin_el1 - sin_el0) * random.open01() + sin_el0;
+                    let el = sin_el.asin() * Self::DEG;
+                    let az = 360.0 * random.open01() - 180.0;
+                    // XXX Check the path-length.
+                    azimuths.as_ref().map(|v| v.set(i, az)).transpose()?;
+                    elevations.as_ref().map(|v| v.set(i, el)).transpose()?;
+                }
+
+                latitudes.set(i, geodetic.latitude)?;
+                longitudes.set(i, geodetic.longitude)?;
+                altitudes.set(i, geodetic.altitude)?;
+                if let Some(weights) = weights {
+                    let w = weights.get(i)? * default_weight;
+                    weights.set(i, w)?;
+                }
+                break;
+            }
+        }
+
+        if let Some(s) = self.size {
+            trials += s - n;
+        }
+        self.size = Some(trials);
+
+        self.is_position = true;
+        self.is_direction = true;
+        Ok(())
+    }
+
+    fn generate_powerlaw(
         &mut self,
         py: Python,
         energy_min: f64,
@@ -619,6 +750,13 @@ impl ParticlesGenerator {
         exponent: Option<f64>,
         weight: Option<bool>,
     ) -> PyResult<()> {
+        if self.is_energy {
+            let err = Error::new(ValueError)
+                .what("powerlaw")
+                .why("energy already defined");
+            return Err(err.to_err())
+        }
+
         let exponent = exponent.unwrap_or(-1.0);
         if energy_min >= energy_max || energy_min <= 0.0 {
             let why = "expected energy_max > energy_min > 0.0";
@@ -683,22 +821,12 @@ impl ParticlesGenerator {
         elevation: Option<[f64; 2]>,
         weight: Option<bool>,
     ) -> PyResult<()> {
-        let check_angle = |value: f64, min: f64, max: f64, what: &str| -> PyResult<()> {
-            if (value < min) || (value > max) {
-                let why = format!(
-                    "expected a value in [{}, {}], found {}",
-                    min,
-                    max,
-                    value,
-                );
-                let err = Error::new(ValueError)
-                    .what(what)
-                    .why(&why);
-                Err(err.to_err())
-            } else {
-                Ok(())
-            }
-        };
+        if self.is_direction {
+            let err = Error::new(ValueError)
+                .what("solid_angle")
+                .why("direction already defined");
+            return Err(err.to_err())
+        }
 
         let weight = weight.unwrap_or(self.weight);
         let (sin_el0, sin_el1) = match elevation {
@@ -754,6 +882,23 @@ impl ParticlesGenerator {
         }
 
         self.is_direction = true;
+        Ok(())
+    }
+}
+
+fn check_angle(value: f64, min: f64, max: f64, what: &str) -> PyResult<()> {
+    if (value < min) || (value > max) {
+        let why = format!(
+            "expected a value in [{}, {}], found {}",
+            min,
+            max,
+            value,
+        );
+        let err = Error::new(ValueError)
+            .what(what)
+            .why(&why);
+        Err(err.to_err())
+    } else {
         Ok(())
     }
 }

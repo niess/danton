@@ -120,14 +120,12 @@ impl Geometry {
                 None => null(),
                 Some(cstr) => cstr.as_ptr(),
             };
-            let material = CString::new(self.material.as_str())?;
             let mut ocean = if self.ocean { 1 } else { 0 };
             to_result(
                 unsafe {
                     danton::earth_model(
                         geodesic.as_ptr(),
                         topography,
-                        material.as_ptr(),
                         self.density,
                         &mut ocean,
                     )

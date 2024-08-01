@@ -1720,7 +1720,7 @@ void danton_destroy(void ** any)
 
 /* Set the global Earth model. */
 int danton_earth_model(const char * reference, const char * topography,
-    const char * material, double density, int * sea)
+    double density, int * sea)
 {
         /* Parse the reference. */
         if (reference != NULL) {
@@ -1730,10 +1730,13 @@ int danton_earth_model(const char * reference, const char * topography,
                         earth.reference = EARTH_WGS84;
                 } else if (strcmp(reference, "EGM96") == 0) {
                         earth.reference = EARTH_EGM96;
-                        if (turtle_map_load(&earth.undulations, geoid_path) !=
-                             TURTLE_RETURN_SUCCESS) {
-                                ERROR_TURTLE(NULL);
-                                return EXIT_FAILURE;
+                        if (earth.undulations == NULL) {
+                                if (turtle_map_load(
+                                    &earth.undulations, geoid_path) !=
+                                    TURTLE_RETURN_SUCCESS) {
+                                        ERROR_TURTLE(NULL);
+                                        return EXIT_FAILURE;
+                                }
                         }
                 } else {
                         danton_error_push(NULL,

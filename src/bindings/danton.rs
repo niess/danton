@@ -164,7 +164,6 @@ extern "C" {
     pub fn earth_model(
         geodesic: *const c_char,
         topography: *const c_char,
-        material: *const c_char,
         density: f64,
         ocean: *mut c_int,
     ) -> c_int;
