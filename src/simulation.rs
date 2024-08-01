@@ -148,8 +148,9 @@ impl Simulation {
         shape: ShapeArg,
         weight: Option<bool>,
     ) -> PyResult<particles::ParticlesGenerator> {
+        let geometry = Some(self.geometry.bind(py).clone());
         let random = Some(self.random.bind(py).clone());
-        particles::ParticlesGenerator::new(py, shape, random, weight)
+        particles::ParticlesGenerator::new(py, shape, geometry, random, weight)
     }
 
     /// Run a Danton Monte Carlo simulation.

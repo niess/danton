@@ -1,6 +1,6 @@
 use crate::bindings::danton;
 use crate::simulation::particles::Particle;
-use crate::utils::convert::{Geodesic, Mode};
+use crate::utils::convert::{Geodesic, Medium, Mode};
 use crate::utils::export::Export;
 use derive_more::{AsMut, AsRef, From};
 use pyo3::prelude::*;
@@ -113,27 +113,8 @@ impl Stepper {
                         }
                     }
                 }
-                let ground = "UpperCrust";
-                let medium = match medium {
-                    0 => "InnerCore",
-                    1 => "OuterCore",
-                    2 => "LowerMantle",
-                    3 => "Mantle2",
-                    4 => "Mantle1",
-                    5 => "Mantle0",
-                    6 => "UpperMantle",
-                    7 => "LowerCrust",
-                    8 => ground,
-                    9 => if stepper.ocean { "Ocean" } else { ground },
-                    10 => "Troposphere0",
-                    11 => "Troposhpere1",
-                    12 => "Stratosphere",
-                    13 => "Mesosphere",
-                    14 => "Exosphere",
-                    -1 => "Exit",
-                    100 => "Topography",
-                    _ => "Unknown",
-                };
+                let medium: Medium = (medium, stepper.ocean).into();
+                let medium: &str = medium.into();
                 let medium = CString::new(medium).unwrap();
                 let bytes = medium.as_bytes();
                 for (i, bi) in bytes.iter().enumerate() {

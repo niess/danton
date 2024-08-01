@@ -2750,3 +2750,135 @@ const char * danton_error_pop(struct danton_context * context)
         error->count--;
         return s;
 }
+
+/* Tracer interface. */
+
+struct danton_tracer {
+        struct generic_state state;
+        struct danton_context context;
+};
+
+DANTON_API struct danton_tracer * danton_tracer_create(void) {
+        struct danton_tracer * tracer;
+        tracer = malloc(sizeof(*tracer));
+        if (tracer == NULL) {
+                danton_error_push(NULL, "%s (%d): could not allocate memory.",
+                    __FILE__, __LINE__);
+                return NULL;
+        }
+        tracer->state.is_tau = 0;
+        tracer->state.context = (void *)&tracer->context;
+        tracer->context.decay = 1;
+        return tracer;
+}
+
+DANTON_API int danton_tracer_medium(
+    struct danton_tracer * tracer, const double * position)
+{
+        double direction[3] = { 0.0, 0.0, 1.0 };
+        medium(position, direction, &tracer->state);
+        return tracer->state.medium;
+}
+
+static int tracer_medium(
+    struct danton_tracer * tracer,
+    const double * r,
+    const double * u,
+    double * step)
+{
+        double s = medium(r, u, &tracer->state);
+        if (step != NULL) *step = s;
+        return tracer->state.medium;
+}
+
+static int tracer_step(
+    struct danton_tracer * tracer,
+    const double * ri,
+    const double * u,
+    double * step,
+    int * medium)
+{
+        double si;
+        int mi = tracer_medium(tracer, ri, u, &si);
+        if (mi < 0) {
+                *step = 0.0;
+                *medium = mi;
+                return mi;
+        }
+
+        double rf[3] = {
+            ri[0] + si * u[0],
+            ri[1] + si * u[1],
+            ri[2] + si * u[2]
+        };
+        double sf;
+        int mf = tracer_medium(tracer, rf, u, &sf);
+        if (mf == mi) {
+                *step = si;
+                *medium = mf;
+                return mi;
+        }
+
+#define STEP_MIN 1E-03
+        const double step_min = (si < STEP_MIN) ? si : STEP_MIN;
+        double s1 = 0., s2 = -step_min;
+        double r[3];
+        r[0] = rf[0] + s2 * u[0];
+        r[1] = rf[1] + s2 * u[1];
+        r[2] = rf[2] + s2 * u[2];
+        int m = tracer_medium(tracer, r, u, NULL);
+        if (m != mi) {
+                /* Locate the medium change by dichotomy. */
+                if (m != mf) mf = m;
+                s1 = s2;
+                s2 = -si;
+                while (fabs(s1 - s2) > STEP_MIN) {
+                        double s3 = 0.5 * (s1 + s2);
+                        r[0] = rf[0] + s3 * u[0];
+                        r[1] = rf[1] + s3 * u[1];
+                        r[2] = rf[2] + s3 * u[2];
+                        m = tracer_medium(tracer, r, u, NULL);
+                        if (m == mi) {
+                                s2 = s3;
+                        } else {
+                                s1 = s3;
+                                /* Update the end medium if required. */
+                                if (m != mf) mf = m;
+                        }
+                }
+                si += s1;
+        }
+        *step = si;
+        *medium = mf;
+        return mi;
+#undef STEP_MIN
+}
+
+DANTON_API int danton_tracer_trace(
+    struct danton_tracer * tracer,
+    const double * position,
+    const double * direction,
+    double * distance,
+    int * next_medium)
+{
+        double r[3];
+        memcpy(r, position, sizeof r);
+        double d = 0.0;
+        int mi;
+        for (;;) {
+                int mf;
+                double s;
+                mi = tracer_step(tracer, r, direction, &s, &mf);
+                if ((mi < 0) || (s <= 0.0)) break;
+                d += s;
+                if (mf != mi) {
+                        *next_medium = mf;
+                        break;
+                }
+                r[0] += s * direction[0];
+                r[1] += s * direction[1];
+                r[2] += s * direction[2];
+        }
+        *distance = d;
+        return mi;
+}

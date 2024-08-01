@@ -149,6 +149,11 @@ pub type Lock = Option<
     unsafe extern "C" fn() -> c_int,
 >;
 
+#[repr(C)]
+pub struct Tracer {
+    _unused: [u8; 0],
+}
+
 #[link(name = "danton-c")]
 extern "C" {
     #[link_name="danton_initialise"]
@@ -232,4 +237,19 @@ extern "C" {
 
     #[link_name="danton_tau_mass"]
     pub static mut tau_mass: *mut f64;
+
+    #[link_name="danton_tracer_create"]
+    pub fn tracer_create() -> *mut Tracer;
+
+    #[link_name="danton_tracer_medium"]
+    pub fn tracer_medium(tracer: *mut Tracer, position: *const f64) -> c_int;
+
+    #[link_name="danton_tracer_trace"]
+    pub fn tracer_trace(
+        tracer: *mut Tracer,
+        position: *const f64,
+        direction: *const f64,
+        distance: *mut f64,
+        next_medium: *mut c_int,
+    ) -> c_int;
 }

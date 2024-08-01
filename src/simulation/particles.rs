@@ -1,7 +1,9 @@
 use crate::bindings::danton;
 use crate::simulation::geobox::GeoBox;
+use crate::simulation::geometry::{Geometry, Tracer};
 use crate::simulation::random::Random;
 use crate::utils::convert::Mode;
+use crate::utils::coordinates::HorizontalCoordinates;
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, ValueError};
 use crate::utils::float::f64x3;
@@ -220,6 +222,7 @@ impl<'a> Iterator for ParticlesIterator<'a> {
 
 pub struct ParticlesGenerator {
     particles: PyObject,
+    geometry: Py<Geometry>,
     random: Py<Random>,
     weight: bool,
     mode_hint: Option<Mode>,
@@ -240,6 +243,7 @@ impl ParticlesGenerator {
     pub fn new<'py>(
         py: Python<'py>,
         shape: ShapeArg,
+        geometry: Option<Bound<'py, Geometry>>,
         random: Option<Bound<'py, Random>>,
         weight: Option<bool>,
     ) -> PyResult<Self> {
@@ -253,13 +257,17 @@ impl ParticlesGenerator {
             let particles: PyObject = particles.into();
             particles
         };
+        let geometry = match geometry {
+            None => Py::new(py, Geometry::new())?,
+            Some(geometry) => geometry.unbind(),
+        };
         let random = match random {
             None => Py::new(py, Random::new(None)?)?,
             Some(random) => random.unbind(),
         };
         let weight = weight.unwrap_or(true);
         let generator = Self {
-            particles, random, weight,
+            particles, geometry, random, weight,
             mode_hint: None,
             is_pid: false,
             is_energy: false,
@@ -463,10 +471,24 @@ impl ParticlesGenerator {
             return Err(err.to_err())
         }
 
-        let (size, frame) = {
+        let (size, frame, box_geodesic) = {
             let geobox = r#box.borrow();
-            (geobox.size, geobox.local_frame())
+            (geobox.size, geobox.local_frame(), geobox.geodesic)
         };
+        let geodesic = generator.geometry.bind(py).borrow().geodesic;
+        if geodesic != box_geodesic {
+            let geodesic: &str = geodesic.into();
+            let box_geodesic: &str = box_geodesic.into();
+            let why = format!(
+                "expected '{}' geodesic, found '{}'",
+                geodesic,
+                box_geodesic,
+            );
+            let err = Error::new(ValueError)
+                .what("box")
+                .why(&why);
+            return Err(err.to_err())
+        }
 
         // Sides surfaces.
         let sides = [
@@ -638,12 +660,33 @@ impl ParticlesGenerator {
                 .why("direction already defined");
             return Err(err.to_err())
         }
+        if elevation.is_some() && !self.is_energy {
+            let err = Error::new(ValueError)
+                .what("inside")
+                .why("undefined energy");
+            return Err(err.to_err())
+        }
 
         let py = r#box.py();
-        let (size, frame) = {
+        let (size, frame, box_geodesic) = {
             let geobox = r#box.borrow();
-            (geobox.size, geobox.local_frame())
+            (geobox.size, geobox.local_frame(), geobox.geodesic)
         };
+        let mut geometry = self.geometry.bind(py).borrow_mut();
+        if geometry.geodesic != box_geodesic {
+            let geodesic: &str = geometry.geodesic.into();
+            let box_geodesic: &str = box_geodesic.into();
+            let why = format!(
+                "expected '{}' geodesic, found '{}'",
+                geodesic,
+                box_geodesic,
+            );
+            let err = Error::new(ValueError)
+                .what("box")
+                .why(&why);
+            return Err(err.to_err())
+        }
+        let tracer = Tracer::new(&mut geometry)?;
 
         // Bind particles properties.
         let particles = self.particles.bind(py);
@@ -656,16 +699,19 @@ impl ParticlesGenerator {
         let altitudes: &PyArray<f64> = particles
             .get_item("altitude")?
             .extract()?;
-        let (azimuths, elevations) = if elevation.is_some() {
+        let (azimuths, elevations, energies) = if elevation.is_some() {
             let azimuths: &PyArray<f64> = particles
                 .get_item("azimuth")?
                 .extract()?;
             let elevations: &PyArray<f64> = particles
                 .get_item("elevation")?
                 .extract()?;
-            (Some(azimuths), Some(elevations))
+            let energies: &PyArray<f64> = particles
+                .get_item("energy")?
+                .extract()?;
+            (Some(azimuths), Some(elevations), Some(energies))
         } else {
-            (None, None)
+            (None, None, None)
         };
         let weights = if weight.unwrap_or(self.weight) {
             let weight: &PyArray<f64> = particles
@@ -701,6 +747,7 @@ impl ParticlesGenerator {
         let mut trials: usize = 0;
         let n = latitudes.size();
         for i in 0..n {
+            let energy = energies.as_ref().map(|v| v.get(i)).transpose()?;
             loop {
                 trials += 1;
                 let r = [
@@ -710,13 +757,33 @@ impl ParticlesGenerator {
                 ];
                 let geodetic = frame.to_geodetic(&r);
 
-                // XXX Check that the location is in the air.
+                // Check that the location is in the air.
+                let medium = tracer.medium(&geodetic);
+                if !medium.is_atmosphere() { continue }
 
+                let mut p = 1.0;
                 if let Some([sin_el0, sin_el1]) = sin_elevation {
                     let sin_el = (sin_el1 - sin_el0) * random.open01() + sin_el0;
                     let el = sin_el.asin() * Self::DEG;
                     let az = 360.0 * random.open01() - 180.0;
-                    // XXX Check the path-length.
+
+                    // Check the path length along the origin direction.
+                    let horizontal = HorizontalCoordinates { azimuth: az + 180.0, elevation: -el };
+                    let (_, distance, next_medium) = tracer.trace(&geodetic, &horizontal);
+                    const TAU_CTAU: f64 = 8.718E-05;
+                    const TAU_MASS: f64 = 1.77682;
+                    const P_MIN: f64 = 1E-02;
+                    p = if next_medium.is_atmosphere() {
+                        P_MIN
+                    } else {
+                        let decay_length = energy.unwrap() * TAU_CTAU / TAU_MASS;
+                        let p = (-distance / decay_length).exp();
+                        p.max(P_MIN)
+                    };
+                    if random.open01() > p {
+                        continue;
+                    }
+
                     azimuths.as_ref().map(|v| v.set(i, az)).transpose()?;
                     elevations.as_ref().map(|v| v.set(i, el)).transpose()?;
                 }
@@ -725,7 +792,7 @@ impl ParticlesGenerator {
                 longitudes.set(i, geodetic.longitude)?;
                 altitudes.set(i, geodetic.altitude)?;
                 if let Some(weights) = weights {
-                    let w = weights.get(i)? * default_weight;
+                    let w = weights.get(i)? * default_weight / p;
                     weights.set(i, w)?;
                 }
                 break;

@@ -564,6 +564,19 @@ struct danton_material_index {
 
 extern struct danton_material_index * danton_material_index;
 
+/* Tracer interface. */
+struct danton_tracer;
+DANTON_API struct danton_tracer * danton_tracer_create(void);
+DANTON_API int danton_tracer_medium(
+    struct danton_tracer * tracer, const double * position);
+DANTON_API int danton_tracer_trace(
+    struct danton_tracer * tracer,
+    const double * position,
+    const double * direction,
+    double * distance,
+    int * next_medium
+);
+
 #ifdef __cplusplus
 }
 #endif

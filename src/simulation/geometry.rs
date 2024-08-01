@@ -1,8 +1,9 @@
 use crate::bindings::danton;
-use crate::utils::convert::Geodesic;
+use crate::utils::convert::{Geodesic, Medium};
+use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::to_result;
 use pyo3::prelude::*;
-use ::std::ffi::CString;
+use ::std::ffi::{c_int, CString, c_void};
 use ::std::ptr::null;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -135,5 +136,63 @@ impl Geometry {
             self.modified = false;
         }
         Ok(())
+    }
+}
+
+
+// ===============================================================================================
+//
+// Tracer interface.
+//
+// ===============================================================================================
+
+pub struct Tracer<'a> {
+    geometry: &'a Geometry,
+    tracer: *mut danton::Tracer,
+}
+
+impl<'a> Drop for Tracer<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            danton::destroy(&mut (self.tracer as *mut c_void));
+        }
+    }
+}
+
+impl<'a> Tracer<'a> {
+    pub fn new(geometry: &'a mut Geometry) -> PyResult<Self> {
+        geometry.apply()?;
+        let tracer = unsafe { danton::tracer_create() };
+        let tracer = Self { geometry, tracer };
+        Ok(tracer)
+    }
+
+    pub fn medium(&self, position: &GeodeticCoordinates) -> Medium {
+        let r = position.to_ecef(self.geometry.geodesic);
+        let medium = unsafe { danton::tracer_medium(self.tracer, &r as *const f64) };
+        (medium, self.geometry.ocean).into()
+    }
+
+    pub fn trace(
+        &self,
+        position: &GeodeticCoordinates,
+        direction: &HorizontalCoordinates
+    ) -> (Medium, f64, Medium) {
+        let r = position.to_ecef(self.geometry.geodesic);
+        let u = direction.to_ecef(self.geometry.geodesic, &position);
+        let mut distance: f64 = 0.0;
+        let mut next_medium: c_int = -1;
+        let medium = unsafe {
+            danton::tracer_trace(
+                self.tracer,
+                &r as *const f64,
+                &u as *const f64,
+                &mut distance,
+                &mut next_medium,
+            )
+        };
+        let medium = (medium, self.geometry.ocean).into();
+        let next_medium = (next_medium, self.geometry.ocean).into();
+        (medium, distance, next_medium)
     }
 }
