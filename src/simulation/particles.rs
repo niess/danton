@@ -1,8 +1,7 @@
 use crate::bindings::danton;
-use crate::simulation::geometry::Geometry;
+use crate::simulation::geobox::GeoBox;
 use crate::simulation::random::Random;
 use crate::utils::convert::Mode;
-use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, ValueError};
 use crate::utils::float::f64x3;
@@ -181,7 +180,7 @@ impl<'a> ParticlesIterator<'a> {
     }
 }
 
-fn extract<'a, 'py, T>(elements: &'a Bound<'py, PyAny>, key: &str) -> PyResult<&'a PyArray<T>>
+pub fn extract<'a, 'py, T>(elements: &'a Bound<'py, PyAny>, key: &str) -> PyResult<&'a PyArray<T>>
 where
     'py: 'a,
     T: Dtype,
@@ -222,7 +221,6 @@ impl<'a> Iterator for ParticlesIterator<'a> {
 pub struct ParticlesGenerator {
     particles: PyObject,
     random: Py<Random>,
-    geometry: Py<Geometry>,
     weight: bool,
     mode_hint: Option<Mode>,
     // Status flags.
@@ -242,7 +240,6 @@ impl ParticlesGenerator {
     pub fn new<'py>(
         py: Python<'py>,
         shape: ShapeArg,
-        geometry: Option<Bound<'py, Geometry>>,
         random: Option<Bound<'py, Random>>,
         weight: Option<bool>,
     ) -> PyResult<Self> {
@@ -260,13 +257,9 @@ impl ParticlesGenerator {
             None => Py::new(py, Random::new(None)?)?,
             Some(random) => random.unbind(),
         };
-        let geometry = match geometry {
-            None => Py::new(py, Geometry::new())?,
-            Some(geometry) => geometry.unbind(),
-        };
         let weight = weight.unwrap_or(true);
         let generator = Self {
-            particles, random, geometry, weight,
+            particles, random, weight,
             mode_hint: None,
             is_pid: false,
             is_energy: false,
@@ -487,10 +480,7 @@ impl ParticlesGenerator {
     /// Target a box volume.
     fn target<'py>(
         slf: Bound<'py, Self>,
-        latitude: f64,
-        longitude: f64,
-        altitude: f64,
-        size: [f64; 3],
+        r#box: Bound<'py, GeoBox>,
         elevation: Option<[f64; 2]>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
@@ -509,16 +499,10 @@ impl ParticlesGenerator {
             return Err(err.to_err())
         }
 
-        // Set local frame.
-        let geodesic = generator.geometry.bind(py).borrow().geodesic;
-        let geodetic = GeodeticCoordinates { latitude, longitude, altitude };
-        let origin: f64x3 = (&geodetic.to_ecef(geodesic)).into();
-        let ux = HorizontalCoordinates { azimuth: 90.0, elevation: 0.0 };
-        let ux: f64x3 = (&ux.to_ecef(geodesic, &geodetic)).into();
-        let uy = HorizontalCoordinates { azimuth: 0.0, elevation: 0.0 };
-        let uy: f64x3 = (&uy.to_ecef(geodesic, &geodetic)).into();
-        let uz = HorizontalCoordinates { azimuth: 0.0, elevation: 90.0 };
-        let uz: f64x3 = (&uz.to_ecef(geodesic, &geodetic)).into();
+        let (size, frame) = {
+            let geobox = r#box.borrow();
+            (geobox.size, geobox.local_frame())
+        };
 
         // Sides surfaces.
         let sides = [
@@ -597,16 +581,11 @@ impl ParticlesGenerator {
                 let cos_theta = random.open01().sqrt();
                 let phi = 2.0 * Self::PI * random.open01();
                 u.rotate(cos_theta, phi);
-
-                // Transform to ECEF.
-                let r_ecef = r[0] * ux + r[1] * uy + r[2] * uz + origin;
-                let r_ecef: [f64; 3] = r_ecef.into();
-                let u_ecef = u.x() * ux + u.y() * uy + u.z() * uz;
-                let u_ecef: [f64; 3] = u_ecef.into();
+                let u: [f64; 3] = u.into();
 
                 // Transform to geodetic.
-                let geodetic = GeodeticCoordinates::from_ecef(&r_ecef, geodesic);
-                let horizontal = HorizontalCoordinates::from_ecef(&u_ecef, geodesic, &geodetic);
+                let geodetic = frame.to_geodetic(&r);
+                let horizontal = frame.to_horizontal(&u, &geodetic);
 
                 trials += 1;
                 if ((trials % 1000) == 0) && ctrlc_catched() {
@@ -615,7 +594,7 @@ impl ParticlesGenerator {
                 if let Some([el_min, el_max]) = elevation {
                     // Find the second (outgoing) intersection (using the local frame).
                     // Ref: https://iquilezles.org/articles/intersectors/ (axis-aligned box).
-                    let m = [ 1.0 / u.x(), 1.0 / u.y(), 1.0 / u.z() ];
+                    let m = [ 1.0 / u[0], 1.0 / u[1], 1.0 / u[2] ];
                     let n = [ m[0] * r[0], m[1] * r[1], m[2] * r[2] ];
                     let k = [
                         0.5 * m[0].abs() * size[0],
@@ -625,18 +604,13 @@ impl ParticlesGenerator {
                     let t2 = [ -n[0] + k[0], -n[1] + k[1], -n[2] + k[2] ];
                     let tf = t2[0].min(t2[1]).min(t2[2]);
                     let r2 = [
-                        r[0] + tf * u.x(),
-                        r[1] + tf * u.y(),
-                        r[2] + tf * u.z(),
+                        r[0] + tf * u[0],
+                        r[1] + tf * u[1],
+                        r[2] + tf * u[2],
                     ];
 
-                    // Transform to ECEF, and then to geodetic coordinates.
-                    let r2_ecef = r2[0] * ux + r2[1] * uy + r2[2] * uz + origin;
-                    let r2_ecef: [f64; 3] = r2_ecef.into();
-                    let geodetic2 = GeodeticCoordinates::from_ecef(&r2_ecef, geodesic);
-                    let horizontal2 = HorizontalCoordinates::from_ecef(
-                        &u_ecef, geodesic, &geodetic2
-                    );
+                    let geodetic2 = frame.to_geodetic(&r2);
+                    let horizontal2 = frame.to_horizontal(&u, &geodetic2);
 
                     // Check the elevation values (inclusively).
                     let el0 = horizontal.elevation.min(horizontal2.elevation);

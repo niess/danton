@@ -118,7 +118,7 @@ impl Recorder {
     pub fn export(&mut self, py: Python, steps: Option<PyObject>) -> PyResult<PyObject> {
         if let Mode::Grammage = self.mode {
             let grammages = match self.grammages.take() {
-                None => py.None(),
+                None => py.None(), // XXX return an empty array instead?
                 Some(grammages) => Export::export::<GrammagesExport>(py, grammages)?,
             };
             let result = match steps {

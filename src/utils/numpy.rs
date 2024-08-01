@@ -1,6 +1,7 @@
 use crate::simulation::particles::Particle;
 use crate::simulation::recorder::{Primary, Product, Secondary, Vertex};
 use crate::simulation::stepper::Step;
+use crate::utils::coordinates::{Coordinates, GeodeticCoordinates, HorizontalCoordinates};
 // PyO3 interface.
 use pyo3::prelude::*;
 use pyo3::{ffi, pyobject_native_type_extract, pyobject_native_type_named, PyTypeInfo};
@@ -24,8 +25,12 @@ struct ArrayInterface {
     #[allow(dead_code)]
     capsule: PyObject,
     // Type objects.
+    dtype_bool: PyObject,
     dtype_f64: PyObject,
     dtype_i32: PyObject,
+    dtype_coordinates: PyObject,
+    dtype_geodetic: PyObject,
+    dtype_horizontal: PyObject,
     dtype_particle: PyObject,
     dtype_primary: PyObject,
     dtype_product: PyObject,
@@ -108,6 +113,10 @@ pub fn initialise(py: Python) -> PyResult<()> {
     // Cache used dtypes, generated from numpy Python interface.
     let dtype = numpy.getattr("dtype")?;
 
+    let dtype_bool: PyObject = dtype
+        .call1(("bool",))?
+        .into_py(py);
+
     let dtype_f64: PyObject = dtype
         .call1(("f8",))?
         .into_py(py);
@@ -115,6 +124,40 @@ pub fn initialise(py: Python) -> PyResult<()> {
     let dtype_i32: PyObject = dtype
         .call1(("i4",))?
         .into_py(py);
+
+    let dtype_coordinates: PyObject = {
+        let arg: [_; 5] = [
+            ("latitude", "f8"),
+            ("longitude", "f8"),
+            ("altitude", "f8"),
+            ("azimuth", "f8"),
+            ("elevation", "f8"),
+        ];
+        dtype
+            .call1((arg, true))?
+            .into_py(py)
+    };
+
+    let dtype_geodetic: PyObject = {
+        let arg: [_; 3] = [
+            ("latitude", "f8"),
+            ("longitude", "f8"),
+            ("altitude", "f8"),
+        ];
+        dtype
+            .call1((arg, true))?
+            .into_py(py)
+    };
+
+    let dtype_horizontal: PyObject = {
+        let arg: [_; 2] = [
+            ("azimuth", "f8"),
+            ("elevation", "f8"),
+        ];
+        dtype
+            .call1((arg, true))?
+            .into_py(py)
+    };
 
     let dtype_particle: PyObject = {
         let arg: [_; 8] = [
@@ -235,8 +278,12 @@ pub fn initialise(py: Python) -> PyResult<()> {
     let api = ArrayInterface {
         capsule: capsule.into(),
         // Type objects.
+        dtype_bool,
         dtype_f64,
         dtype_i32,
+        dtype_coordinates,
+        dtype_geodetic,
+        dtype_horizontal,
         dtype_particle,
         dtype_primary,
         dtype_product,
@@ -674,6 +721,13 @@ pub trait Dtype {
     fn dtype(py: Python) -> PyResult<PyObject>;
 }
 
+impl Dtype for bool {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_bool.clone_ref(py))
+    }
+}
+
 impl Dtype for f64 {
     #[inline]
     fn dtype(py: Python) -> PyResult<PyObject> {
@@ -685,6 +739,27 @@ impl Dtype for i32 {
     #[inline]
     fn dtype(py: Python) -> PyResult<PyObject> {
         Ok(api(py).dtype_i32.clone_ref(py))
+    }
+}
+
+impl Dtype for Coordinates {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_coordinates.clone_ref(py))
+    }
+}
+
+impl Dtype for GeodeticCoordinates {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_geodetic.clone_ref(py))
+    }
+}
+
+impl Dtype for HorizontalCoordinates {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_horizontal.clone_ref(py))
     }
 }
 

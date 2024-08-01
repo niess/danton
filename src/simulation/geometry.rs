@@ -54,7 +54,7 @@ impl Geometry {
     #[new]
     pub fn new() -> Self {
         Self {
-            geodesic: Geodesic::Prem,
+            geodesic: Geodesic::default(),
             topography: None,
             material: "Rock".to_string(),
             density: 2.65E+03,

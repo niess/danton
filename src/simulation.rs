@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 use ::std::pin::Pin;
 use ::std::ptr::null_mut;
 
+pub mod geobox;
 pub mod geometry;
 pub mod particles;
 pub mod physics;
@@ -125,6 +126,21 @@ impl Simulation {
         }
     }
 
+    /// Create a local box.
+    #[pyo3(name="r#box")]
+    fn geobox(
+        &self,
+        py: Python,
+        size: geobox::Size,
+        latitude: Option<f64>,
+        longitude: Option<f64>,
+        altitude: Option<f64>,
+        declination: Option<f64>,
+    ) -> geobox::GeoBox {
+        let geodesic = Some(self.geometry.bind(py).borrow().geodesic);
+        geobox::GeoBox::new(size, latitude, longitude, altitude, declination, geodesic)
+    }
+
     /// Generate Monte Carlo particles.
     fn particles(
         &self,
@@ -132,9 +148,8 @@ impl Simulation {
         shape: ShapeArg,
         weight: Option<bool>,
     ) -> PyResult<particles::ParticlesGenerator> {
-        let geometry = Some(self.geometry.bind(py).clone());
         let random = Some(self.random.bind(py).clone());
-        particles::ParticlesGenerator::new(py, shape, geometry, random, weight)
+        particles::ParticlesGenerator::new(py, shape, random, weight)
     }
 
     /// Run a Danton Monte Carlo simulation.

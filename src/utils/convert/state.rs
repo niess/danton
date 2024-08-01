@@ -18,7 +18,7 @@ impl From<(&danton::State, Geodesic)> for Particle {
         let mut azimuth: f64 = 0.0;
         let mut elevation: f64 = 0.0;
         match geodesic {
-            Geodesic::Prem => {
+            Geodesic::Prem => { // XXX Use GeodeticCoordinates?
                 const DEG: f64 = 180.0 / ::std::f64::consts::PI;
                 let r = &state.position;
                 let rho2 = r[0] * r[0] + r[1] * r[1];

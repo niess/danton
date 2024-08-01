@@ -8,6 +8,8 @@ use crate::utils::convert::Geodesic;
 //
 // ===============================================================================================
 
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct GeodeticCoordinates {
     pub latitude: f64,
     pub longitude: f64,
@@ -84,6 +86,8 @@ impl GeodeticCoordinates {
 //
 // ===============================================================================================
 
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct HorizontalCoordinates {
     pub azimuth: f64,
     pub elevation: f64,
@@ -176,4 +180,17 @@ impl HorizontalCoordinates {
         let cp = phi.cos();
         [[-sp, cp, 0. ], [-ct * cp, -ct * sp, st], [st * cp, st * sp, ct]]
     }
+}
+
+// ===============================================================================================
+//
+// Position & direction coordinates.
+//
+// ===============================================================================================
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Coordinates {
+    pub position: GeodeticCoordinates,
+    pub direction: HorizontalCoordinates,
 }

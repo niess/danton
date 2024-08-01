@@ -3,10 +3,11 @@ use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
 
 
-#[derive(Clone, Copy, EnumVariantsStrings, PartialEq)]
+#[derive(Clone, Copy, Default, EnumVariantsStrings, PartialEq)]
 #[enum_variants_strings_transform(transform="upper_case")]
 pub enum Geodesic {
     Egm96,
+    #[default]
     Prem,
     Wgs84,
 }
