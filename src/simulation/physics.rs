@@ -13,14 +13,19 @@ use ::std::ptr::{null, null_mut};
 
 #[pyclass(module="danton")]
 pub struct Physics {
+    /// The Bremsstrahlung model for tau energy losses.
     #[pyo3(get)]
     bremsstrahlung: Bremsstrahlung,
+    /// The e+e- pair-production model for tau energy losses.
     #[pyo3(get)]
     pair_production: PairProduction,
+    /// The photonuclear model for tau energy losses.
     #[pyo3(get)]
     photonuclear: Photonuclear,
+    /// The Deep Inelastic Scattering (DIS) model for neutrino interactions.
     #[pyo3(get)]
     dis: Dis,
+    /// The Parton Distribution Functions (PDF) for neutrino interactions.
     #[pyo3(get)]
     pdf: Option<Pdf>,
 

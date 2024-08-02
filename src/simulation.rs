@@ -19,10 +19,13 @@ pub mod stepper;
 
 #[pyclass(module="danton")]
 pub struct Simulation {
+    /// The Monte Carlo geometry.
     #[pyo3(get, set)]
     geometry: Py<geometry::Geometry>,
+    /// The Monte Carlo physics models.
     #[pyo3(get)]
     physics: Py<physics::Physics>,
+    /// The Monte Carlo random engine.
     #[pyo3(get, set)]
     random: Py<random::Random>,
     context: *mut danton::Context,

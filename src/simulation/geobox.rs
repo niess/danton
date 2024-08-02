@@ -14,15 +14,20 @@ use pyo3::types::PyTuple;
 
 #[pyclass(name="Box", module="danton")]
 pub struct GeoBox {
+    /// Reference geodesic for coordinates.
     #[pyo3(get, set)]
     pub geodesic: Geodesic,
+    /// Latitude coordinate of box centre, in deg.
     #[pyo3(get, set)]
     latitude: f64,
+    /// Longitude coordinate of box centre, in deg.
     #[pyo3(get, set)]
     longitude: f64,
+    /// Altitude coordinate of box centre, in m (w.r.t. the ellipsoid).
     #[pyo3(get, set)]
     altitude: f64,
     pub size: [f64; 3],
+    /// Box inclination, in deg, w.r.t the North.
     #[pyo3(get, set)]
     declination: f64,
 }
@@ -79,11 +84,7 @@ impl GeoBox {
         Self { geodesic, latitude, longitude, altitude, size, declination }
     }
 
-    #[getter]
-    pub fn get_area(&self) -> f64 {
-        2.0 * (self.size[0] * (self.size[1] + self.size[2]) + self.size[1] * self.size[2])
-    }
-
+    /// Box size along the x, y and z-axis, in m.
     #[getter]
     fn get_size<'py>(&self, py: Python<'py>) -> Bound<'py, PyTuple> {
         PyTuple::new_bound(py, self.size)
@@ -94,6 +95,19 @@ impl GeoBox {
         self.size = size.into();
     }
 
+    /// Box surface area, in square-metres.
+    #[getter]
+    pub fn get_surface(&self) -> f64 {
+        2.0 * (self.size[0] * (self.size[1] + self.size[2]) + self.size[1] * self.size[2])
+    }
+
+    /// Box cubic volume, in cubic-metres.
+    #[getter]
+    pub fn get_volume(&self) -> f64 {
+        self.size[0] * self.size[1] * self.size[2]
+    }
+
+    /// Convert local Cartesian coordinates to geodetic ones.
     fn from_local(
         &self,
         py: Python,
@@ -233,6 +247,7 @@ impl GeoBox {
         Ok(result)
     }
 
+    /// Check if elements are inside the box.
     fn inside<'py>(&self, elements: &Bound<'py, PyAny>) -> PyResult<PyObject> {
         let py = elements.py();
         if elements.is_none() {
@@ -270,6 +285,7 @@ impl GeoBox {
         Ok(inside.into_py(py))
     }
 
+    /// Convert elements coordinates to local box-ones.
     fn to_local<'py>(&self, elements: &Bound<'py, PyAny>) -> PyResult<PyObject> {
         let py = elements.py();
         let position = Position::new(elements)?;

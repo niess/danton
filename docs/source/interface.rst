@@ -1,6 +1,21 @@
 Python interface
 ================
 
+.. autoclass:: danton.Box
+
+   .. automethod:: from_local
+   .. automethod:: inside
+   .. automethod:: to_local
+
+   .. autoattribute:: altitude
+   .. autoattribute:: declination
+   .. autoattribute:: geodesic
+   .. autoattribute:: latitude
+   .. autoattribute:: longitude
+   .. autoattribute:: size
+   .. autoattribute:: surface
+
+----
 
 .. autoclass:: danton.Geometry
 
@@ -79,6 +94,38 @@ Python interface
 
 ----
 
+.. autoclass:: danton.ParticlesGenerator
+
+   .. automethod:: direction
+   .. automethod:: energy
+   .. automethod:: generate
+   .. automethod:: inside
+   .. automethod:: pid
+   .. automethod:: position
+   .. automethod:: powerlaw
+   .. automethod:: solid_angle
+   .. automethod:: target
+
+----
+
+.. autoclass:: danton.Physics
+
+   .. autoattribute:: bremsstrahlung
+   .. autoattribute:: dis
+   .. autoattribute:: pair_production
+   .. autoattribute:: pdf
+   .. autoattribute:: photonuclear
+
+----
+
+.. autoclass:: danton.Random
+
+   .. automethod:: uniform01
+   .. autoattribute:: index
+   .. autoattribute:: seed
+
+----
+
 .. autoclass:: danton.Simulation
 
    This class provides an interface to a Danton Monte Carlo simulation, which
@@ -90,6 +137,9 @@ Python interface
       sampling of tau decays. For instance,
 
       >>> simulation = danton.Simulation()
+
+   .. automethod:: box
+   .. automethod:: particles
 
    .. automethod:: run
 
@@ -121,6 +171,9 @@ Python interface
 
       Must be one of :python:`"backward"` (default), :python:`"forward"` or
       :python:`"grammage"`.
+
+   .. autoattribute:: physics
+   .. autoattribute:: random
 
    .. autoattribute:: record_steps
 

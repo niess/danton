@@ -309,6 +309,7 @@ impl ParticlesGenerator {
         Ok(generator)
     }
 
+    /// Set Monte Carlo particles direction.
     fn direction<'py>(
         slf: Bound<'py, Self>,
         azimuth: Option<f64>,
@@ -321,6 +322,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
+    /// Set Monte Carlo particles energy.
     fn energy<'py>(
         slf: Bound<'py, Self>,
         value: f64,
@@ -330,6 +332,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
+    /// Generate Monte Carlo particles according to current selection(s).
     fn generate<'py>(&self, py: Python<'py>, shape: ShapeArg) -> PyResult<PyObject> {
         // Check configuration.
         let is_rejection = match self.position {
@@ -449,6 +452,7 @@ impl ParticlesGenerator {
         Ok(result)
     }
 
+    /// Select Monte Carlo particles inside a box.
     fn inside<'py>(
         slf: Bound<'py, Self>,
         r#box: &Bound<'py, GeoBox>,
@@ -464,6 +468,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
+    /// Set Monte Carlo particles type.
     fn pid<'py>(
         slf: Bound<'py, Self>,
         value: c_int,
@@ -473,6 +478,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
+    /// Set Monte Carlo particles position.
     fn position<'py>(
         slf: Bound<'py, Self>,
         latitude: Option<f64>,
@@ -487,6 +493,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
+    /// Select particles energy according to a power-law.
     fn powerlaw<'py>(
         slf: Bound<'py, Self>,
         energy_min: f64,
@@ -508,6 +515,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
+    /// Select particles direction uniformly over a solid-angle.
     fn solid_angle<'py>(
         slf: Bound<'py, Self>,
         azimuth: Option<[f64; 2]>,
@@ -544,7 +552,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Target a box volume.
+    /// Select Monte Carlo particles targeting a box volume.
     fn target<'py>(
         slf: Bound<'py, Self>,
         r#box: Bound<'py, GeoBox>,
