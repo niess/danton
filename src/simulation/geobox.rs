@@ -1,3 +1,4 @@
+use crate::simulation::random::Random;
 use crate::utils::convert::Geodesic;
 use crate::utils::coordinates::{Coordinates, GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::Error;
@@ -559,5 +560,113 @@ impl LocalFrame {
         let u_ecef = u[0] * self.ux + u[1] * self.uy + u[2] * self.uz;
         let u_ecef: [f64; 3] = u_ecef.into();
         HorizontalCoordinates::from_ecef(&u_ecef, self.geodesic, origin)
+    }
+}
+
+
+// ===============================================================================================
+//
+// Generator interface.
+//
+// ===============================================================================================
+
+pub struct BoxGenerator {
+    frame: LocalFrame,
+    size: [f64; 3],
+    cumulated_surface: [f64; 6],
+    volume: f64,
+}
+
+impl BoxGenerator {
+    pub fn new(geobox: &GeoBox) -> Self {
+        let frame = geobox.local_frame();
+        let size = geobox.size;
+        let cumulated_surface = {
+            let mut sides = [
+                size[1] * size[2],
+                size[1] * size[2],
+                size[0] * size[2],
+                size[0] * size[2],
+                size[0] * size[1],
+                size[0] * size[1],
+            ];
+            for i in 1..5 {
+                sides[i] += sides[i - 1];
+            }
+            sides
+        };
+        let volume = size[0] * size[1] * size[2];
+        Self { frame, size, cumulated_surface, volume }
+    }
+
+    #[inline]
+    pub fn frame(&self) -> &LocalFrame {
+        &self.frame
+    }
+
+    pub fn generate_inside(&self, random: &mut Random) -> GeodeticCoordinates {
+        let r = [
+            self.size[0] * (random.open01() - 0.5),
+            self.size[1] * (random.open01() - 0.5),
+            self.size[2] * (random.open01() - 0.5),
+        ];
+        self.frame.to_geodetic(&r)
+    }
+
+    pub fn generate_onto(
+        &self,
+        random: &mut Random
+    ) -> ([f64; 3], [f64;3], GeodeticCoordinates, HorizontalCoordinates) {
+        let (mut r, mut u) = {
+            // select box side.
+            let s = random.open01() * self.cumulated_surface[5];
+            let mut side = 0;
+            for (j, surface) in self.cumulated_surface.iter().enumerate() {
+                if s <= *surface {
+                    side = j;
+                    break
+                }
+            }
+
+            // Randomise local coordinates.
+            let u = random.open01() - 0.5;
+            let v = random.open01() - 0.5;
+            match side {
+                0 => ([  0.5, u, v ], f64x3::new(-1.0, 0.0, 0.0)),
+                1 => ([ -0.5, u, v ], f64x3::new( 1.0, 0.0, 0.0)),
+                2 => ([ u,  0.5, v ], f64x3::new(0.0, -1.0, 0.0)),
+                3 => ([ u, -0.5, v ], f64x3::new(0.0,  1.0, 0.0)),
+                4 => ([ u, v,  0.5 ], f64x3::new(0.0, 0.0, -1.0)),
+                5 => ([ u, v, -0.5 ], f64x3::new(0.0, 0.0,  1.0)),
+                _ => unreachable!(),
+            }
+        };
+        for j in 0..3 {
+            r[j] *= self.size[j];
+        }
+        let cos_theta = random.open01().sqrt();
+        let phi = 2.0 * ::std::f64::consts::PI * random.open01();
+        u.rotate(cos_theta, phi);
+        let u: [f64; 3] = u.into();
+
+        // Transform to geodetic.
+        let geodetic = self.frame.to_geodetic(&r);
+        let horizontal = self.frame.to_horizontal(&u, &geodetic);
+        (r, u, geodetic, horizontal)
+    }
+
+    #[inline]
+    pub fn size(&self) -> &[f64; 3] {
+        &self.size
+    }
+
+    #[inline]
+    pub fn surface(&self) -> f64 {
+        self.cumulated_surface[5]
+    }
+
+    #[inline]
+    pub fn volume(&self) -> f64 {
+        self.volume
     }
 }

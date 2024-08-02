@@ -2,7 +2,6 @@ use crate::bindings::danton;
 use crate::utils::convert::Mode;
 use crate::utils::error::{ctrlc_catched, Error, to_result};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, NotImplementedError};
-use crate::utils::numpy::ShapeArg;
 use pyo3::prelude::*;
 use ::std::pin::Pin;
 use ::std::ptr::null_mut;
@@ -145,12 +144,11 @@ impl Simulation {
     fn particles(
         &self,
         py: Python,
-        shape: ShapeArg,
         weight: Option<bool>,
     ) -> PyResult<particles::ParticlesGenerator> {
         let geometry = Some(self.geometry.bind(py).clone());
         let random = Some(self.random.bind(py).clone());
-        particles::ParticlesGenerator::new(py, shape, geometry, random, weight)
+        particles::ParticlesGenerator::new(py, geometry, random, weight)
     }
 
     /// Run a Danton Monte Carlo simulation.

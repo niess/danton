@@ -1,12 +1,10 @@
 use crate::bindings::danton;
-use crate::simulation::geobox::GeoBox;
+use crate::simulation::geobox::{GeoBox, BoxGenerator};
 use crate::simulation::geometry::{Geometry, Tracer};
 use crate::simulation::random::Random;
-use crate::utils::convert::Mode;
 use crate::utils::coordinates::HorizontalCoordinates;
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, ValueError};
-use crate::utils::float::f64x3;
 use crate::utils::numpy::{Dtype, PyArray, ShapeArg};
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
@@ -221,18 +219,61 @@ impl<'a> Iterator for ParticlesIterator<'a> {
 #[pyclass(module="danton")]
 
 pub struct ParticlesGenerator {
-    particles: PyObject,
     geometry: Py<Geometry>,
     random: Py<Random>,
-    weight: bool,
-    mode_hint: Option<Mode>,
-    // Status flags.
-    is_pid: bool,
-    is_energy: bool,
-    is_position: bool,
-    is_direction: bool,
-    // Sample size.
-    size: Option<usize>,
+    // Configuration.
+    direction: Direction,
+    energy: Energy,
+    pid: Option<c_int>,
+    position: Position,
+    // Weight flags.
+    weight_direction: bool,
+    weight_energy: bool,
+    weight_position: bool,
+}
+
+#[derive(Default)]
+enum Direction {
+    #[default]
+    None,
+    Point { azimuth: f64, elevation: f64 },
+    SolidAngle { azimuth: [f64; 2], elevation: [f64; 2], sin_elevation: [f64; 2] },
+}
+
+#[derive(Default)]
+enum Energy {
+    #[default]
+    None,
+    Point(f64),
+    PowerLaw { energy_min: f64, energy_max: f64, exponent: f64 },
+}
+
+#[derive(Default)]
+enum Position {
+    Inside { geobox: Py<GeoBox>, limit: Option<f64> },
+    #[default]
+    None,
+    Point { latitude: f64, longitude: f64, altitude: f64 },
+    Target { geobox: Py<GeoBox> },
+}
+
+#[derive(FromPyObject)]
+enum Limit {
+    Bool(bool),
+    Float(f64),
+}
+
+impl Limit {
+    const DEFAULT_LIMIT: f64 = 3.0;
+}
+
+impl From<Limit> for Option<f64> {
+    fn from(value: Limit) -> Self {
+        match value {
+            Limit::Bool(b) => if b { Some(Limit::DEFAULT_LIMIT) } else { None },
+            Limit::Float(v) => Some(v),
+        }
+    }
 }
 
 #[pymethods]
@@ -242,21 +283,10 @@ impl ParticlesGenerator {
     #[new]
     pub fn new<'py>(
         py: Python<'py>,
-        shape: ShapeArg,
         geometry: Option<Bound<'py, Geometry>>,
         random: Option<Bound<'py, Random>>,
         weight: Option<bool>,
     ) -> PyResult<Self> {
-        let shape: Vec<usize> = shape.into();
-        let particles = {
-            let particles = PyArray::<Particle>::zeros(py, &shape)?;
-            for pi in unsafe { particles.slice_mut()? } {
-                pi.weight = 1.0;
-            }
-            let particles: &PyAny = particles;
-            let particles: PyObject = particles.into();
-            particles
-        };
         let geometry = match geometry {
             None => Py::new(py, Geometry::new())?,
             Some(geometry) => geometry.unbind(),
@@ -267,96 +297,154 @@ impl ParticlesGenerator {
         };
         let weight = weight.unwrap_or(true);
         let generator = Self {
-            particles, geometry, random, weight,
-            mode_hint: None,
-            is_pid: false,
-            is_energy: false,
-            is_position: false,
-            is_direction: false,
-            size: None,
+            geometry, random,
+            direction: Direction::default(),
+            energy: Energy::default(),
+            pid: None,
+            position: Position::default(),
+            weight_direction: weight,
+            weight_energy: weight,
+            weight_position: weight,
         };
         Ok(generator)
     }
 
     fn direction<'py>(
         slf: Bound<'py, Self>,
-        azimuth: Option<&Bound<'py, PyAny>>,
-        elevation: Option<&Bound<'py, PyAny>>,
+        azimuth: Option<f64>,
+        elevation: Option<f64>,
     ) -> PyResult<Bound<'py, Self>> {
-        let py = slf.py();
+        let azimuth = azimuth.unwrap_or(0.0);
+        let elevation = elevation.unwrap_or(0.0);
         let mut generator = slf.borrow_mut();
-        if generator.is_direction {
-            let err = Error::new(ValueError)
-                .what("direction")
-                .why("already defined");
-            return Err(err.to_err())
-        }
-        if let Some(azimuth) = azimuth {
-            generator.particles
-                .bind(py)
-                .set_item("azimuth", azimuth)?;
-        }
-        if let Some(elevation) = elevation {
-            generator.particles
-                .bind(py)
-                .set_item("elevation", elevation)?;
-        }
-        generator.is_direction = true;
+        generator.direction = Direction::Point { azimuth, elevation };
         Ok(slf)
     }
 
     fn energy<'py>(
         slf: Bound<'py, Self>,
-        value: &Bound<'py, PyAny>,
+        value: f64,
     ) -> PyResult<Bound<'py, Self>> {
-        let py = slf.py();
         let mut generator = slf.borrow_mut();
-        if generator.is_energy {
-            let err = Error::new(ValueError)
-                .what("energy")
-                .why("already defined");
-            return Err(err.to_err())
-        }
-        generator.particles
-            .bind(py)
-            .set_item("energy", value)?;
-        generator.is_energy = true;
+        generator.energy = Energy::Point(value);
         Ok(slf)
     }
 
-    fn generate<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        if !self.is_pid {
-            let mode = self.mode_hint.unwrap_or(Mode::Backward);
-            let pid: i32 = match mode {
-                Mode::Backward => 15,
-                _ => 16,
-            };
-            self.particles.bind(py).set_item("pid", pid)?;
-            self.is_pid = true;
-        }
-
-        if !self.is_energy {
-            self.generate_powerlaw(py, 1E+06, 1E+12, None, None)?;
-        }
-
-        if !self.is_position {
-            // Positions are already initialised to 0.
-            self.is_position = true;
-        }
-
-        if !self.is_direction {
-            // Directions already initialised to 0.
-            self.is_direction = true;
-        }
-
-        let particles = self.particles.bind(py).clone().into_any();
-        let result = match self.size {
-            None => particles,
-            Some(size) => {
-                static RESULT: NamedTuple<2> = NamedTuple::new(
-                    "Result", ["particles", "size"]);
-                RESULT.instance(py, (particles, size))?
+    fn generate<'py>(&self, py: Python<'py>, shape: ShapeArg) -> PyResult<PyObject> {
+        // Check configuration.
+        let is_rejection = match self.position {
+            Position::Inside { limit, .. } => {
+                if limit.is_some() {
+                    if self.weight_direction != self.weight_position {
+                        let err = Error::new(ValueError)
+                            .what("configuration")
+                            .why("'direction' weight conflicts with 'inside' mode");
+                        return Err(err.to_err())
+                    }
+                    if self.weight_energy != self.weight_position {
+                        let err = Error::new(ValueError)
+                            .what("configuration")
+                            .why("'energy' weight conflicts with 'inside' mode");
+                        return Err(err.to_err())
+                    }
+                }
+                true
             },
+            Position::Target { .. } => {
+                if self.weight_direction != self.weight_position {
+                    let err = Error::new(ValueError)
+                        .what("configuration")
+                        .why("'direction' weight conflicts with 'target' mode");
+                    return Err(err.to_err())
+                }
+                match self.direction {
+                    Direction::None => false,
+                    Direction::Point { .. } => {
+                        let err = Error::new(ValueError)
+                            .what("configuration")
+                            .why("'direction' conflicts with 'target' mode");
+                        return Err(err.to_err())
+                    },
+                    Direction::SolidAngle { .. } => true,
+                }
+            },
+            _ => false,
+        };
+
+        // Create particles container.
+        let shape: Vec<usize> = shape.into();
+        let array = PyArray::<Particle>::zeros(py, &shape)?;
+        let particles = unsafe { array.slice_mut()? };
+
+        // Bind geometry etc.
+        let mut geometry = self.geometry.bind(py).borrow_mut();
+        let tracer = Tracer::new(&mut geometry)?;
+        let mut random = self.random.bind(py).borrow_mut();
+
+        // Prepare any box generator.
+        let bg = match &self.position {
+            Position::Inside { geobox, .. } => Some(BoxGenerator::new(&geobox.bind(py).borrow())),
+            Position::Target { geobox } => Some(BoxGenerator::new(&geobox.bind(py).borrow())),
+            _ => None,
+        };
+
+        // Loop over events.
+        let mut trials: usize = 0;
+        for particle in particles.iter_mut() {
+            particle.pid = match self.pid {
+                None => match self.position {
+                    Position::Target { .. } => 16,
+                    _ => 15,
+                },
+                Some(pid) => pid,
+            };
+            loop {
+                trials += 1;
+                if (trials % 1000) == 0 && ctrlc_catched() {
+                    return Err(Error::new(KeyboardInterrupt).to_err())
+                }
+
+                particle.weight = 1.0;
+
+                let (direction, energy, position) = match self.position {
+                    Position::Inside { .. } => self.generate_inside(
+                        bg.as_ref().unwrap(), &tracer, &mut random, particle
+                    ),
+                    Position::None => (false, false, true),
+                    Position::Point { latitude, longitude, altitude } => {
+                        particle.latitude = latitude;
+                        particle.longitude = longitude;
+                        particle.altitude = altitude;
+                        (false, false, true)
+                    },
+                    Position::Target { .. } => self.generate_target(
+                        bg.as_ref().unwrap(), &mut random, particle
+                    ),
+                };
+                if !position {
+                    continue;
+                }
+
+                if !direction {
+                    self.generate_direction(&mut random, particle);
+                }
+
+                if !energy {
+                    self.generate_energy(&mut random, particle);
+                }
+                break;
+            }
+        }
+
+        // Return result.
+        let array: &PyAny = array;
+        let array: PyObject = array.into();
+        let result = if is_rejection {
+            static RESULT: NamedTuple<2> = NamedTuple::new(
+                "Result", ["particles", "size"]);
+            RESULT.instance(py, (array, trials))?.unbind()
+        } else {
+            array
         };
         Ok(result)
     }
@@ -364,76 +452,59 @@ impl ParticlesGenerator {
     fn inside<'py>(
         slf: Bound<'py, Self>,
         r#box: &Bound<'py, GeoBox>,
-        elevation: Option<[f64; 2]>,
+        limit: Option<Limit>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
+        let limit: Option<f64> = limit.and_then(|v| v.into());
         let mut generator = slf.borrow_mut();
-        generator.generate_inside(r#box, elevation, weight)?;
+        if let Some(weight) = weight {
+            generator.weight_position = weight;
+        }
+        generator.position = Position::Inside { geobox: r#box.clone().unbind(), limit };
         Ok(slf)
     }
 
     fn pid<'py>(
         slf: Bound<'py, Self>,
-        value: &Bound<'py, PyAny>,
+        value: c_int,
     ) -> PyResult<Bound<'py, Self>> {
-        let py = slf.py();
         let mut generator = slf.borrow_mut();
-        if generator.is_pid {
-            let err = Error::new(ValueError)
-                .what("pid")
-                .why("already defined");
-            return Err(err.to_err())
-        }
-        generator.particles
-            .bind(py)
-            .set_item("pid", value)?;
-        generator.is_pid = true;
+        generator.pid = Some(value);
         Ok(slf)
     }
 
     fn position<'py>(
         slf: Bound<'py, Self>,
-        latitude: Option<&Bound<'py, PyAny>>,
-        longitude: Option<&Bound<'py, PyAny>>,
-        altitude: Option<&Bound<'py, PyAny>>,
+        latitude: Option<f64>,
+        longitude: Option<f64>,
+        altitude: Option<f64>,
     ) -> PyResult<Bound<'py, Self>> {
-        let py = slf.py();
+        let latitude = latitude.unwrap_or(0.0);
+        let longitude = longitude.unwrap_or(0.0);
+        let altitude = altitude.unwrap_or(0.0);
         let mut generator = slf.borrow_mut();
-        if generator.is_position {
-            let err = Error::new(ValueError)
-                .what("position")
-                .why("already defined");
-            return Err(err.to_err())
-        }
-        if let Some(latitude) = latitude {
-            generator.particles
-                .bind(py)
-                .set_item("latitude", latitude)?;
-        }
-        if let Some(longitude) = longitude {
-            generator.particles
-                .bind(py)
-                .set_item("longitude", longitude)?;
-        }
-        if let Some(altitude) = altitude {
-            generator.particles
-                .bind(py)
-                .set_item("altitude", altitude)?;
-        }
-        generator.is_position = true;
+        generator.position = Position::Point { latitude, longitude, altitude };
         Ok(slf)
     }
 
-    fn powerlaw<'py>( // XXX Document all these methods (+docstring)
+    fn powerlaw<'py>(
         slf: Bound<'py, Self>,
         energy_min: f64,
         energy_max: f64,
         exponent: Option<f64>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
-        let py = slf.py();
+        if energy_min >= energy_max || energy_min <= 0.0 {
+            let why = "expected energy_max > energy_min > 0.0";
+            let err = Error::new(ValueError).what("powerlaw").why(why);
+            return Err(err.to_err());
+        }
+        let exponent = exponent.unwrap_or(-1.0);
         let mut generator = slf.borrow_mut();
-        generator.generate_powerlaw(py, energy_min, energy_max, exponent, weight)?;
+        if let Some(weight) = weight {
+            generator.weight_energy = weight;
+        }
+        generator.energy = Energy::PowerLaw { energy_min, energy_max, exponent };
         Ok(slf)
     }
 
@@ -443,9 +514,33 @@ impl ParticlesGenerator {
         elevation: Option<[f64; 2]>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
-        let py = slf.py();
+        let azimuth = azimuth.map(|[a, b]| if a <= b { [ a, b ] } else { [ b, a ] });
+        let elevation = elevation.map(|[a, b]| if a <= b { [ a, b ] } else { [ b, a ] });
+        let sin_elevation = match elevation {
+            None => [-1.0, 1.0],
+            Some([el0, el1]) => {
+                check_angle(el0, -90.0, 90.0, "elevation")?;
+                check_angle(el1, -90.0, 90.0, "elevation")?;
+                let el0 = el0 * Self::RAD;
+                let el1 = el1 * Self::RAD;
+                [el0.sin(), el1.sin()]
+            },
+        };
+        let elevation = elevation.unwrap_or([-90.0, 90.0]);
+        let azimuth = match azimuth {
+            None => [-180.0, 180.0],
+            Some([az0, az1]) => {
+                check_angle(az0, -180.0, 180.0, "azimuth")?;
+                check_angle(az1, -180.0, 180.0, "azimuth")?;
+                [az0, az1]
+            },
+        };
+
         let mut generator = slf.borrow_mut();
-        generator.generate_solid_angle(py, azimuth, elevation, weight)?;
+        if let Some(weight) = weight {
+            generator.weight_direction = weight;
+        }
+        generator.direction = Direction::SolidAngle { azimuth, elevation, sin_elevation };
         Ok(slf)
     }
 
@@ -453,503 +548,156 @@ impl ParticlesGenerator {
     fn target<'py>(
         slf: Bound<'py, Self>,
         r#box: Bound<'py, GeoBox>,
-        elevation: Option<[f64; 2]>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
-        let py = slf.py();
-        let generator = slf.borrow();
-        if generator.is_position {
-            let err = Error::new(ValueError)
-                .what("target")
-                .why("position already defined");
-            return Err(err.to_err())
-        }
-        if generator.is_direction {
-            let err = Error::new(ValueError)
-                .what("target")
-                .why("direction already defined");
-            return Err(err.to_err())
-        }
-
-        let (size, frame, box_geodesic) = {
-            let geobox = r#box.borrow();
-            (geobox.size, geobox.local_frame(), geobox.geodesic)
-        };
-        let geodesic = generator.geometry.bind(py).borrow().geodesic;
-        if geodesic != box_geodesic {
-            let geodesic: &str = geodesic.into();
-            let box_geodesic: &str = box_geodesic.into();
-            let why = format!(
-                "expected '{}' geodesic, found '{}'",
-                geodesic,
-                box_geodesic,
-            );
-            let err = Error::new(ValueError)
-                .what("box")
-                .why(&why);
-            return Err(err.to_err())
-        }
-
-        // Sides surfaces.
-        let sides = [
-            size[1] * size[2],
-            size[1] * size[2],
-            size[0] * size[2],
-            size[0] * size[2],
-            size[0] * size[1],
-            size[0] * size[1],
-        ];
-        let surface: f64 = sides.iter().sum();
-
-        // Bind particles properties.
-        let particles = generator.particles.bind(py);
-        let latitudes: &PyArray<f64> = particles
-            .get_item("latitude")?
-            .extract()?;
-        let longitudes: &PyArray<f64> = particles
-            .get_item("longitude")?
-            .extract()?;
-        let altitudes: &PyArray<f64> = particles
-            .get_item("altitude")?
-            .extract()?;
-        let azimuths: &PyArray<f64> = particles
-            .get_item("azimuth")?
-            .extract()?;
-        let elevations: &PyArray<f64> = particles
-            .get_item("elevation")?
-            .extract()?;
-        let weights = if weight.unwrap_or(generator.weight) {
-            let weight: &PyArray<f64> = particles
-                .get_item("weight")?
-                .extract()?;
-            Some(weight)
-        } else {
-            None
-        };
-
-        // Bind the PRNG.
-        let mut random = generator.random.bind(py).borrow_mut();
-
-        // Loop over particles.
-        let mut trials: usize = 0;
-        let n = latitudes.size();
-        for i in 0..n {
-            loop {
-                let (mut r, mut u) = {
-                    // select box side.
-                    let s = random.open01() * surface;
-                    let mut side = 0;
-                    let mut sum = 0.0;
-                    for (j, surface) in sides.iter().enumerate() {
-                        sum += *surface;
-                        if s <= sum {
-                            side = j;
-                            break
-                        }
-                    }
-
-                    // Randomise local coordinates.
-                    let u = random.open01() - 0.5;
-                    let v = random.open01() - 0.5;
-                    match side {
-                        0 => ([  0.5, u, v ], f64x3::new(-1.0, 0.0, 0.0)),
-                        1 => ([ -0.5, u, v ], f64x3::new( 1.0, 0.0, 0.0)),
-                        2 => ([ u,  0.5, v ], f64x3::new(0.0, -1.0, 0.0)),
-                        3 => ([ u, -0.5, v ], f64x3::new(0.0,  1.0, 0.0)),
-                        4 => ([ u, v,  0.5 ], f64x3::new(0.0, 0.0, -1.0)),
-                        5 => ([ u, v, -0.5 ], f64x3::new(0.0, 0.0,  1.0)),
-                        _ => unreachable!(),
-                    }
-                };
-                for j in 0..3 {
-                    r[j] *= size[j];
-                }
-                let cos_theta = random.open01().sqrt();
-                let phi = 2.0 * Self::PI * random.open01();
-                u.rotate(cos_theta, phi);
-                let u: [f64; 3] = u.into();
-
-                // Transform to geodetic.
-                let geodetic = frame.to_geodetic(&r);
-                let horizontal = frame.to_horizontal(&u, &geodetic);
-
-                trials += 1;
-                if ((trials % 1000) == 0) && ctrlc_catched() {
-                    return Err(Error::new(KeyboardInterrupt).to_err())
-                }
-                if let Some([el_min, el_max]) = elevation {
-                    // Find the second (outgoing) intersection (using the local frame).
-                    // Ref: https://iquilezles.org/articles/intersectors/ (axis-aligned box).
-                    let m = [ 1.0 / u[0], 1.0 / u[1], 1.0 / u[2] ];
-                    let n = [ m[0] * r[0], m[1] * r[1], m[2] * r[2] ];
-                    let k = [
-                        0.5 * m[0].abs() * size[0],
-                        0.5 * m[1].abs() * size[1],
-                        0.5 * m[2].abs() * size[2],
-                    ];
-                    let t2 = [ -n[0] + k[0], -n[1] + k[1], -n[2] + k[2] ];
-                    let tf = t2[0].min(t2[1]).min(t2[2]);
-                    let r2 = [
-                        r[0] + tf * u[0],
-                        r[1] + tf * u[1],
-                        r[2] + tf * u[2],
-                    ];
-
-                    let geodetic2 = frame.to_geodetic(&r2);
-                    let horizontal2 = frame.to_horizontal(&u, &geodetic2);
-
-                    // Check the elevation values (inclusively).
-                    let el0 = horizontal.elevation.min(horizontal2.elevation);
-                    let el1 = horizontal.elevation.max(horizontal2.elevation);
-                    if (el1 < el_min) || (el0 > el_max) {
-                        continue;
-                    }
-                }
-
-                // Update particle properties.
-                latitudes.set(i, geodetic.latitude)?;
-                longitudes.set(i, geodetic.longitude)?;
-                altitudes.set(i, geodetic.altitude)?;
-                azimuths.set(i, horizontal.azimuth)?;
-                elevations.set(i, horizontal.elevation)?;
-                if let Some(weights) = weights {
-                    let w = weights.get(i)? * surface * Self::PI;
-                    weights.set(i, w)?;
-                }
-                break;
-            }
-        }
-
-        drop(generator);
         let mut generator = slf.borrow_mut();
-        generator.is_position = true;
-        generator.is_direction = true;
-        if generator.mode_hint.is_none() {
-            generator.mode_hint = Some(Mode::Forward);
+        if let Some(weight) = weight {
+            generator.weight_position = weight;
         }
-        if elevation.is_some() {
-            if let Some(s) = generator.size {
-                trials += s - n;
-            }
-            generator.size = Some(trials);
-        }
-
+        generator.position = Position::Target { geobox: r#box.clone().unbind() };
         Ok(slf)
     }
 }
 
 impl ParticlesGenerator {
-    const DEG: f64 = 180.0 / std::f64::consts::PI;
     const RAD: f64 = std::f64::consts::PI / 180.0;
 
-    fn generate_inside<'py>(
-        &mut self,
-        r#box: &Bound<'py, GeoBox>,
-        elevation: Option<[f64; 2]>,
-        weight: Option<bool>,
-    ) -> PyResult<()> {
-        if self.is_position {
-            let err = Error::new(ValueError)
-                .what("inside")
-                .why("position already defined");
-            return Err(err.to_err())
+    fn generate_direction(&self, random: &mut Random, particle: &mut Particle) {
+        let (azimuth, elevation, weight) = self.direction.generate(random);
+        particle.azimuth = azimuth;
+        particle.elevation = elevation;
+        if self.weight_direction {
+            particle.weight *= weight;
         }
-        if self.is_direction {
-            let err = Error::new(ValueError)
-                .what("inside")
-                .why("direction already defined");
-            return Err(err.to_err())
-        }
-        if elevation.is_some() && !self.is_energy {
-            let err = Error::new(ValueError)
-                .what("inside")
-                .why("undefined energy");
-            return Err(err.to_err())
-        }
-
-        let py = r#box.py();
-        let (size, frame, box_geodesic) = {
-            let geobox = r#box.borrow();
-            (geobox.size, geobox.local_frame(), geobox.geodesic)
-        };
-        let mut geometry = self.geometry.bind(py).borrow_mut();
-        if geometry.geodesic != box_geodesic {
-            let geodesic: &str = geometry.geodesic.into();
-            let box_geodesic: &str = box_geodesic.into();
-            let why = format!(
-                "expected '{}' geodesic, found '{}'",
-                geodesic,
-                box_geodesic,
-            );
-            let err = Error::new(ValueError)
-                .what("box")
-                .why(&why);
-            return Err(err.to_err())
-        }
-        let tracer = Tracer::new(&mut geometry)?;
-
-        // Bind particles properties.
-        let particles = self.particles.bind(py);
-        let latitudes: &PyArray<f64> = particles
-            .get_item("latitude")?
-            .extract()?;
-        let longitudes: &PyArray<f64> = particles
-            .get_item("longitude")?
-            .extract()?;
-        let altitudes: &PyArray<f64> = particles
-            .get_item("altitude")?
-            .extract()?;
-        let (azimuths, elevations, energies) = if elevation.is_some() {
-            let azimuths: &PyArray<f64> = particles
-                .get_item("azimuth")?
-                .extract()?;
-            let elevations: &PyArray<f64> = particles
-                .get_item("elevation")?
-                .extract()?;
-            let energies: &PyArray<f64> = particles
-                .get_item("energy")?
-                .extract()?;
-            (Some(azimuths), Some(elevations), Some(energies))
-        } else {
-            (None, None, None)
-        };
-        let weights = if weight.unwrap_or(self.weight) {
-            let weight: &PyArray<f64> = particles
-                .get_item("weight")?
-                .extract()?;
-            Some(weight)
-        } else {
-            None
-        };
-
-        // Bind the PRNG.
-        let mut random = self.random.bind(py).borrow_mut();
-
-        // Pre-compute solid angle and weight.
-        let sin_elevation = elevation
-            .map(|[el0, el1]| -> PyResult<[f64; 2]> {
-                check_angle(el0, -90.0, 90.0, "elevation")?;
-                check_angle(el1, -90.0, 90.0, "elevation")?;
-                let el0 = el0 * Self::RAD;
-                let el1 = el1 * Self::RAD;
-                Ok([el0.sin(), el1.sin()])
-            })
-            .transpose()?;
-        let default_weight = {
-            let mut weight = size[0] * size[1] * size[2];
-            if let Some([sin_el0, sin_el1]) = sin_elevation {
-                weight *= (sin_el1 - sin_el0).abs() * 2.0 * ::std::f64::consts::PI;
-            }
-            weight
-        };
-
-        // Loop over particles.
-        let mut trials: usize = 0;
-        let n = latitudes.size();
-        for i in 0..n {
-            let energy = energies.as_ref().map(|v| v.get(i)).transpose()?;
-            loop {
-                trials += 1;
-                let r = [
-                    size[0] * (random.open01() - 0.5),
-                    size[1] * (random.open01() - 0.5),
-                    size[2] * (random.open01() - 0.5),
-                ];
-                let geodetic = frame.to_geodetic(&r);
-
-                // Check that the location is in the air.
-                let medium = tracer.medium(&geodetic);
-                if !medium.is_atmosphere() { continue }
-
-                let mut p = 1.0;
-                if let Some([sin_el0, sin_el1]) = sin_elevation {
-                    let sin_el = (sin_el1 - sin_el0) * random.open01() + sin_el0;
-                    let el = sin_el.asin() * Self::DEG;
-                    let az = 360.0 * random.open01() - 180.0;
-
-                    // Check the path length along the origin direction.
-                    let horizontal = HorizontalCoordinates { azimuth: az + 180.0, elevation: -el };
-                    let (_, distance, next_medium) = tracer.trace(&geodetic, &horizontal);
-                    const TAU_CTAU: f64 = 8.718E-05;
-                    const TAU_MASS: f64 = 1.77682;
-                    const P_MIN: f64 = 1E-02;
-                    p = if next_medium.is_atmosphere() {
-                        P_MIN
-                    } else {
-                        let decay_length = energy.unwrap() * TAU_CTAU / TAU_MASS;
-                        let p = (-distance / decay_length).exp();
-                        p.max(P_MIN)
-                    };
-                    if random.open01() > p {
-                        continue;
-                    }
-
-                    azimuths.as_ref().map(|v| v.set(i, az)).transpose()?;
-                    elevations.as_ref().map(|v| v.set(i, el)).transpose()?;
-                }
-
-                latitudes.set(i, geodetic.latitude)?;
-                longitudes.set(i, geodetic.longitude)?;
-                altitudes.set(i, geodetic.altitude)?;
-                if let Some(weights) = weights {
-                    let w = weights.get(i)? * default_weight / p;
-                    weights.set(i, w)?;
-                }
-                break;
-            }
-        }
-
-        if let Some(s) = self.size {
-            trials += s - n;
-        }
-        self.size = Some(trials);
-
-        self.is_position = true;
-        self.is_direction = true;
-        Ok(())
     }
 
-    fn generate_powerlaw(
-        &mut self,
-        py: Python,
-        energy_min: f64,
-        energy_max: f64,
-        exponent: Option<f64>,
-        weight: Option<bool>,
-    ) -> PyResult<()> {
-        if self.is_energy {
-            let err = Error::new(ValueError)
-                .what("powerlaw")
-                .why("energy already defined");
-            return Err(err.to_err())
+    fn generate_energy(&self, random: &mut Random, particle: &mut Particle) {
+        let (energy, weight) = self.energy.generate(random);
+        particle.energy = energy;
+        if self.weight_energy {
+            particle.weight *= weight;
+        }
+    }
+
+    fn generate_inside(
+        &self,
+        bg: &BoxGenerator,
+        tracer: &Tracer,
+        random: &mut Random,
+        particle: &mut Particle
+    ) -> (bool, bool, bool) {
+        let geodetic = bg.generate_inside(random);
+
+        // Check that the location is in the air.
+        let medium = tracer.medium(&geodetic);
+        if !medium.is_atmosphere() {
+            return (false, false, false)
         }
 
-        let exponent = exponent.unwrap_or(-1.0);
-        if energy_min >= energy_max || energy_min <= 0.0 {
-            let why = "expected energy_max > energy_min > 0.0";
-            let err = Error::new(ValueError).what("powerlaw").why(why);
-            return Err(err.to_err());
-        }
+        let Position::Inside { limit, .. } = self.position else { unreachable!() };
 
-        let weight = weight.unwrap_or(self.weight);
+        let mut is_direction = false;
+        let mut is_energy = false;
+        if let Some(limit) = limit {
+            let (azimuth, elevation, d_weight) = self.direction.generate(random);
+            let (energy, e_weight) = self.energy.generate(random);
 
-        let particles = self.particles
-            .bind(py);
-        let particles_energy: &PyArray<f64> = particles
-            .get_item("energy")?
-            .extract()?;
-        let weights: Option<&PyArray<f64>> = if weight {
-            let weights: &PyArray<f64> = particles
-                .get_item("weight")?
-                .extract()?;
-            Some(weights)
-        } else {
-            None
-        };
-
-        let mut random = self.random.bind(py).borrow_mut();
-        for i in 0..particles_energy.size() {
-            let (energy, energy_weight) = match exponent {
-                -1.0 => {
-                    let lne = (energy_max / energy_min).ln();
-                    let energy = energy_min * (random.open01() * lne).exp();
-                    (energy, energy * lne)
-                },
-                0.0 => {
-                    let de = energy_max - energy_min;
-                    let energy = de * random.open01() + energy_min;
-                    (energy, de)
-                },
-                exponent => {
-                    let a = exponent + 1.0;
-                    let b = energy_min.powf(a);
-                    let de = energy_max.powf(a) - b;
-                    let energy = (de * random.open01() + b).powf(1.0 / a);
-                    let weight = de / (a * energy.powf(exponent));
-                    (energy, weight)
-                },
+            // Check the path length along the track origin.
+            let horizontal = HorizontalCoordinates {
+                azimuth: azimuth + 180.0,
+                elevation: -elevation
             };
-            let energy = energy.clamp(energy_min, energy_max);
-            particles_energy.set(i, energy)?;
-            if let Some(weights) = weights {
-                let weight = weights.get(i)? * energy_weight;
-                weights.set(i, weight)?;
+            let (_, distance, next_medium) = tracer.trace(&geodetic, &horizontal);
+            // XXX should be until rocks or exit (also, use pmin to set max distance).
+            let p = if next_medium.is_atmosphere() {
+                (-limit).exp()
+            } else {
+                const TAU_CTAU: f64 = 8.718E-05;
+                const TAU_MASS: f64 = 1.77682;
+                let decay_length = energy * TAU_CTAU / TAU_MASS;
+                let u = (distance / decay_length).min(limit);
+                (-u).exp()
+            };
+            if random.open01() > p {
+                return (true, true, false);
+            } else {
+                particle.energy = energy;
+                particle.azimuth = azimuth;
+                particle.elevation = elevation;
+                if self.weight_position {
+                    particle.weight *= d_weight * e_weight / p;
+                }
+                is_direction = true;
+                is_energy = true;
             }
         }
 
-        self.is_energy = true;
-        Ok(())
+        particle.latitude = geodetic.latitude;
+        particle.longitude = geodetic.longitude;
+        particle.altitude = geodetic.altitude;
+
+        if self.weight_position {
+            particle.weight *= bg.volume();
+        }
+        (is_direction, is_energy, true)
     }
 
-    fn generate_solid_angle(
-        &mut self,
-        py: Python,
-        azimuth: Option<[f64; 2]>,
-        elevation: Option<[f64; 2]>,
-        weight: Option<bool>,
-    ) -> PyResult<()> {
-        if self.is_direction {
-            let err = Error::new(ValueError)
-                .what("solid_angle")
-                .why("direction already defined");
-            return Err(err.to_err())
-        }
+    fn generate_target(
+        &self,
+        bg: &BoxGenerator,
+        random: &mut Random,
+        particle: &mut Particle
+    ) -> (bool, bool, bool) {
+        let (r, u, geodetic, horizontal) = bg.generate_onto(random);
 
-        let weight = weight.unwrap_or(self.weight);
-        let (sin_el0, sin_el1) = match elevation {
-            None => (-1.0, 1.0),
-            Some([el0, el1]) => {
-                check_angle(el0, -90.0, 90.0, "elevation")?;
-                check_angle(el1, -90.0, 90.0, "elevation")?;
-                let el0 = el0 * Self::RAD;
-                let el1 = el1 * Self::RAD;
-                (el0.sin(), el1.sin())
+        match self.direction {
+            Direction::SolidAngle { azimuth, elevation, .. } => {
+                // Find the second (outgoing) intersection (using the local frame).
+                // Ref: https://iquilezles.org/articles/intersectors/ (axis-aligned box).
+                let m = [ 1.0 / u[0], 1.0 / u[1], 1.0 / u[2] ];
+                let n = [ m[0] * r[0], m[1] * r[1], m[2] * r[2] ];
+                let k = [
+                    0.5 * m[0].abs() * bg.size()[0],
+                    0.5 * m[1].abs() * bg.size()[1],
+                    0.5 * m[2].abs() * bg.size()[2],
+                ];
+                let t2 = [ -n[0] + k[0], -n[1] + k[1], -n[2] + k[2] ];
+                let tf = t2[0].min(t2[1]).min(t2[2]);
+                let r2 = [
+                    r[0] + tf * u[0],
+                    r[1] + tf * u[1],
+                    r[2] + tf * u[2],
+                ];
+
+                let geodetic2 = bg.frame().to_geodetic(&r2);
+                let horizontal2 = bg.frame().to_horizontal(&u, &geodetic2);
+
+                // Check the azimuth and elevation values (inclusively).
+                let az0 = horizontal.azimuth.min(horizontal2.azimuth);
+                let az1 = horizontal.azimuth.max(horizontal2.azimuth);
+                let el0 = horizontal.elevation.min(horizontal2.elevation);
+                let el1 = horizontal.elevation.max(horizontal2.elevation);
+
+                let [az_min, az_max] = azimuth;
+                let [el_min, el_max] = elevation;
+                if (az1 < az_min) || (az0 > az_max) || (el1 < el_min) || (el0 > el_max) {
+                    return (false, false, false)
+                }
             },
-        };
-
-        let (az0, az1) = match azimuth {
-            None => (-180.0, 180.0),
-            Some([az0, az1]) => {
-                check_angle(az0, -180.0, 180.0, "azimuth")?;
-                check_angle(az1, -180.0, 180.0, "azimuth")?;
-                (az0, az1)
-            },
-        };
-
-        let particles = self.particles.bind(py);
-        let azimuths: &PyArray<f64> = particles
-            .get_item("azimuth")?
-            .extract()?;
-        let elevations: &PyArray<f64> = particles
-            .get_item("elevation")?
-            .extract()?;
-        let weights: Option<&PyArray<f64>> = if weight {
-            let weights: &PyArray<f64> = particles
-                .get_item("weight")?
-                .extract()?;
-            Some(weights)
-        } else {
-            None
-        };
-        let mut random = self.random.bind(py).borrow_mut();
-        let n = azimuths.size();
-        for i in 0..n {
-            let sin_el = (sin_el1 - sin_el0) * random.open01() + sin_el0;
-            let el = sin_el.asin() * Self::DEG;
-            let az = (az1 - az0) * random.open01() + az0;
-            azimuths.set(i, az)?;
-            elevations.set(i, el)?;
-        }
-        if let Some(weights) = weights {
-            let solid_angle = (sin_el1 - sin_el0).abs() * (az1 - az0).abs() * Self::RAD;
-            for i in 0..n {
-                let weight = weights.get(i)? * solid_angle;
-                weights.set(i, weight)?;
-            }
+            Direction::None => (),
+            Direction::Point { .. } => unreachable!(),
         }
 
-        self.is_direction = true;
-        Ok(())
+        particle.latitude = geodetic.latitude;
+        particle.longitude = geodetic.longitude;
+        particle.altitude = geodetic.altitude;
+        particle.azimuth = horizontal.azimuth;
+        particle.elevation = horizontal.elevation;
+
+        if self.weight_position {
+            particle.weight *= bg.surface() * Self::PI;
+        }
+        (true, false, true)
     }
 }
 
@@ -967,5 +715,65 @@ fn check_angle(value: f64, min: f64, max: f64, what: &str) -> PyResult<()> {
         Err(err.to_err())
     } else {
         Ok(())
+    }
+}
+
+impl Direction {
+    const DEG: f64 = 180.0 / std::f64::consts::PI;
+    const RAD: f64 = std::f64::consts::PI / 180.0;
+
+    fn generate(&self, random: &mut Random) -> (f64, f64, f64) {
+        match self {
+            Self::None => (0.0, 0.0, 1.0),
+            Self::Point { azimuth, elevation } => (*azimuth, *elevation, 1.0),
+            Self::SolidAngle { .. } => self.generate_solid_angle(random),
+        }
+    }
+
+    fn generate_solid_angle(&self, random: &mut Random) -> (f64, f64, f64) {
+        let Direction::SolidAngle { azimuth, sin_elevation, .. } = *self else { unreachable!() };
+        let [az0, az1] = azimuth;
+        let [sin_el0, sin_el1] = sin_elevation;
+        let sin_el = (sin_el1 - sin_el0) * random.open01() + sin_el0;
+        let el = sin_el.asin() * Self::DEG;
+        let az = (az1 - az0) * random.open01() + az0;
+        let solid_angle = (sin_el1 - sin_el0).abs() * (az1 - az0).abs() * Self::RAD;
+        (az, el, solid_angle)
+    }
+}
+
+impl Energy {
+    fn generate(&self, random: &mut Random) -> (f64, f64) {
+        match self {
+            Self::None => (1E+09, 1.0),
+            Self::Point(value) => (*value, 1.0),
+            Self::PowerLaw { .. } => self.generate_powerlaw(random),
+        }
+    }
+
+    fn generate_powerlaw(&self, random: &mut Random) -> (f64, f64) {
+        let Energy::PowerLaw { energy_min, energy_max, exponent } = *self else { unreachable!() };
+        let (energy, weight) = match exponent {
+            -1.0 => {
+                let lne = (energy_max / energy_min).ln();
+                let energy = energy_min * (random.open01() * lne).exp();
+                (energy, energy * lne)
+            },
+            0.0 => {
+                let de = energy_max - energy_min;
+                let energy = de * random.open01() + energy_min;
+                (energy, de)
+            },
+            exponent => {
+                let a = exponent + 1.0;
+                let b = energy_min.powf(a);
+                let de = energy_max.powf(a) - b;
+                let energy = (de * random.open01() + b).powf(1.0 / a);
+                let weight = de / (a * energy.powf(exponent));
+                (energy, weight)
+            },
+        };
+        let energy = energy.clamp(energy_min, energy_max);
+        (energy, weight)
     }
 }

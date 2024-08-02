@@ -9,7 +9,7 @@ mod bindings;
 mod simulation;
 mod utils;
 
-// XXX Document the geometry, physics and random interfaces.
+// XXX Document the geometry, physics, random and particles generator interfaces.
 
 
 static PREFIX: GILOnceCell<String> = GILOnceCell::new();
