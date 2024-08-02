@@ -1,3 +1,12 @@
+try:
+    import danton
+except ModuleNotFoundError:
+    # Import local build.
+    from pathlib import Path
+    import sys
+    path = Path(__file__).parent.parent.parent / "src/python"
+    sys.path.append(str(path))
+
 project = "Danton"
 copyright = "Université Clermont Auvergne, CNRS/IN2P3, LPCA"
 author = "Valentin Niess"
