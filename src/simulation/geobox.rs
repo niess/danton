@@ -1,13 +1,14 @@
 use crate::simulation::random::Random;
 use crate::utils::convert::Geodesic;
-use crate::utils::coordinates::{Coordinates, GeodeticCoordinates, HorizontalCoordinates};
+use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
+    GeodeticsExport, HorizontalCoordinates, HorizontalsExport};
 use crate::utils::error::Error;
-use crate::utils::error::ErrorKind::{TypeError, ValueError};
+use crate::utils::error::ErrorKind::ValueError;
 use crate::utils::export::Export;
+use crate::utils::extract::{Direction, Position};
 use crate::utils::float::f64x3;
 use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
-use derive_more::{AsMut, AsRef, From};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
@@ -51,18 +52,6 @@ impl From<Size> for [f64; 3] {
         }
     }
 }
-
-#[derive(AsMut, AsRef, From)]
-#[pyclass(module="danton")]
-pub struct CoordinatesExport (Export<Coordinates>);
-
-#[derive(AsMut, AsRef, From)]
-#[pyclass(module="danton")]
-pub struct GeodeticsExport (Export<GeodeticCoordinates>);
-
-#[derive(AsMut, AsRef, From)]
-#[pyclass(module="danton")]
-pub struct HorizontalsExport (Export<HorizontalCoordinates>);
 
 #[pymethods]
 impl GeoBox {
@@ -156,6 +145,9 @@ impl GeoBox {
 
         fn check_shape(array: &PyArray<f64>, what: &str) -> PyResult<()> {
             let shape = array.shape();
+            if shape.len() == 1 && shape[0] == 3 {
+                return Ok(())
+            }
             if (shape.len() < 2) || (shape[shape.len() - 1] != 3) {
                 let why = format!(
                     "expected a shape [.., 3] array, found a shape {:?} array",
@@ -381,136 +373,6 @@ impl GeoBox {
         let projection = ProjectedBox::new(&self, &direction);
         projection.surface()
     }
-}
-
-struct Direction<'a> {
-    azimuth: &'a PyArray<f64>,
-    elevation: &'a PyArray<f64>,
-}
-
-impl<'a> Direction<'a> {
-    fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Option<Self>> {
-        let py = elements.py();
-        let azimuth = extract(py, elements, "azimuth")?;
-        let elevation = extract(py, elements, "elevation")?;
-
-        let all = azimuth.is_some() && elevation.is_some();
-        let any = azimuth.is_some() || elevation.is_some();
-        if all {
-            let azimuth = azimuth.unwrap();
-            let elevation = elevation.unwrap();
-            if azimuth.size() != elevation.size() {
-                let err = Error::new(ValueError)
-                    .what("direction")
-                    .why("differing arrays sizes")
-                    .to_err();
-                return Err(err);
-            }
-            let direction = Direction { azimuth, elevation };
-            Ok(Some(direction))
-        } else if any {
-            let why = if azimuth.is_some() {
-                "missing 'elevation'"
-            } else {
-                "missing 'azimuth'"
-            };
-            let err = Error::new(ValueError).what("direction").why(why);
-            Err(err.to_err())
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn shape(&self) -> Vec<usize> {
-        self.azimuth.shape()
-    }
-
-    fn shape3(&self) -> Vec<usize> {
-        let mut shape = self.shape();
-        shape.push(3);
-        shape
-    }
-
-    fn size(&self) -> usize {
-        self.azimuth.size()
-    }
-}
-
-struct Position<'a> {
-    latitude: &'a PyArray<f64>,
-    longitude: &'a PyArray<f64>,
-    altitude: &'a PyArray<f64>,
-}
-
-impl<'a> Position<'a> {
-    fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Option<Self>> {
-        let py = elements.py();
-        let latitude = extract(py, elements, "latitude")?;
-        let longitude = extract(py, elements, "longitude")?;
-        let altitude = extract(py, elements, "altitude")?;
-
-        let all = latitude.is_some() && longitude.is_some() && altitude.is_some();
-        let any = latitude.is_some() || longitude.is_some() || altitude.is_some();
-        if all {
-            let latitude = latitude.unwrap();
-            let longitude = longitude.unwrap();
-            let altitude = altitude.unwrap();
-            let size = latitude.size();
-            if (longitude.size() != size) || (altitude.size() != size) {
-                let err = Error::new(ValueError)
-                    .what("position")
-                    .why("differing arrays sizes")
-                    .to_err();
-                return Err(err);
-            }
-            let position = Self { latitude, longitude, altitude };
-            Ok(Some(position))
-        } else if any {
-            let mut missing: Vec<&str> = Vec::new();
-            if latitude.is_none() { missing.push("latitude") };
-            if longitude.is_none() { missing.push("longitude") };
-            if altitude.is_none() { missing.push("altitude") };
-            let why = if missing.len() == 2 {
-                format!("missing '{}' and '{}'", missing[0], missing[1])
-            } else {
-                format!("missing '{}'", missing[0])
-            };
-            let err = Error::new(ValueError).what("position").why(&why);
-            Err(err.to_err())
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn shape(&self) -> Vec<usize> {
-        self.latitude.shape()
-    }
-
-    fn shape3(&self) -> Vec<usize> {
-        let mut shape = self.shape();
-        shape.push(3);
-        shape
-    }
-
-    fn size(&self) -> usize {
-        self.latitude.size()
-    }
-}
-
-fn extract<'py>(
-    py: Python<'py>,
-    elements: &Bound<'py, PyAny>,
-    key: &str
-) -> PyResult<Option<&'py PyArray<f64>>> {
-    let value: Option<&PyArray<f64>> = elements
-        .get_item(key).ok()
-        .and_then(|a| Some(a.extract())).transpose()
-        .map_err(|err| {
-            Error::new(TypeError)
-                .what(key)
-                .why(&err.value_bound(py).to_string()).to_err()
-        })?;
-    Ok(value)
 }
 
 pub struct LocalFrame {

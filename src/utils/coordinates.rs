@@ -1,5 +1,8 @@
 use crate::bindings::{danton, turtle};
 use crate::utils::convert::Geodesic;
+use crate::utils::export::Export;
+use derive_more::{AsMut, AsRef, From};
+use pyo3::prelude::*;
 
 
 // ===============================================================================================
@@ -194,3 +197,22 @@ pub struct Coordinates {
     pub position: GeodeticCoordinates,
     pub direction: HorizontalCoordinates,
 }
+
+
+// ===============================================================================================
+//
+// Coordinates export.
+//
+// ===============================================================================================
+
+#[derive(AsMut, AsRef, From)]
+#[pyclass(module="danton")]
+pub struct CoordinatesExport (Export<Coordinates>);
+
+#[derive(AsMut, AsRef, From)]
+#[pyclass(module="danton")]
+pub struct GeodeticsExport (Export<GeodeticCoordinates>);
+
+#[derive(AsMut, AsRef, From)]
+#[pyclass(module="danton")]
+pub struct HorizontalsExport (Export<HorizontalCoordinates>);
