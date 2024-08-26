@@ -1,5 +1,5 @@
 use crate::bindings::danton;
-use crate::simulation::geobox::{GeoBox, BoxGenerator};
+use crate::simulation::geobox::{GeoBox, BoxGenerator, ProjectedBox};
 use crate::simulation::geometry::{Geometry, Tracer};
 use crate::simulation::random::Random;
 use crate::utils::coordinates::HorizontalCoordinates;
@@ -362,12 +362,7 @@ impl ParticlesGenerator {
                 }
                 match self.direction {
                     Direction::None => false,
-                    Direction::Point { .. } => {
-                        let err = Error::new(ValueError)
-                            .what("configuration")
-                            .why("'direction' conflicts with 'target' mode");
-                        return Err(err.to_err())
-                    },
+                    Direction::Point { .. } => false,
                     Direction::SolidAngle { .. } => true,
                 }
             },
@@ -385,10 +380,23 @@ impl ParticlesGenerator {
         let mut random = self.random.bind(py).borrow_mut();
 
         // Prepare any box generator.
-        let bg = match &self.position {
-            Position::Inside { geobox, .. } => Some(BoxGenerator::new(&geobox.bind(py).borrow())),
-            Position::Target { geobox } => Some(BoxGenerator::new(&geobox.bind(py).borrow())),
-            _ => None,
+        let (bg, pb) = match &self.position {
+            Position::Inside { geobox, .. } => {
+                let bg = BoxGenerator::new(&geobox.bind(py).borrow());
+                (Some(bg), None)
+            },
+            Position::Target { geobox } => match self.direction {
+                Direction::Point { azimuth, elevation } => {
+                    let direction = HorizontalCoordinates { azimuth, elevation };
+                    let pb = ProjectedBox::new(&geobox.bind(py).borrow(), &direction);
+                    (None, Some(pb))
+                },
+                _ => {
+                    let bg = BoxGenerator::new(&geobox.bind(py).borrow());
+                    (Some(bg), None)
+                },
+            },
+            _ => (None, None),
         };
 
         // Loop over events.
@@ -420,9 +428,10 @@ impl ParticlesGenerator {
                         particle.altitude = altitude;
                         (false, false, true)
                     },
-                    Position::Target { .. } => self.generate_target(
-                        bg.as_ref().unwrap(), &mut random, particle
-                    ),
+                    Position::Target { .. } => match bg.as_ref() {
+                        Some(bg) => self.generate_target(bg, &mut random, particle),
+                        None => self.generate_through(pb.as_ref().unwrap(), &mut random, particle),
+                    },
                 };
                 if !position {
                     continue;
@@ -704,6 +713,26 @@ impl ParticlesGenerator {
 
         if self.weight_position {
             particle.weight *= bg.surface() * Self::PI;
+        }
+        (true, false, true)
+    }
+
+    fn generate_through(
+        &self,
+        pb: &ProjectedBox,
+        random: &mut Random,
+        particle: &mut Particle
+    ) -> (bool, bool, bool) {
+        let (geodetic, horizontal) = pb.generate_inside(random);
+
+        particle.latitude = geodetic.latitude;
+        particle.longitude = geodetic.longitude;
+        particle.altitude = geodetic.altitude;
+        particle.azimuth = horizontal.azimuth;
+        particle.elevation = horizontal.elevation;
+
+        if self.weight_position {
+            particle.weight *= pb.surface();
         }
         (true, false, true)
     }

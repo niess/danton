@@ -374,6 +374,13 @@ impl GeoBox {
         };
         Ok(result)
     }
+
+    /// Compute the projected surface area, in square-metres.
+    fn projected_surface(&self, azimuth: f64, elevation: f64) -> f64 {
+        let direction = HorizontalCoordinates { azimuth, elevation };
+        let projection = ProjectedBox::new(&self, &direction);
+        projection.surface()
+    }
 }
 
 struct Direction<'a> {
@@ -684,5 +691,147 @@ impl BoxGenerator {
     #[inline]
     pub fn volume(&self) -> f64 {
         self.volume
+    }
+}
+
+
+// ===============================================================================================
+//
+// Projected box.
+//
+// ===============================================================================================
+
+pub struct ProjectedBox {
+    frame: LocalFrame,
+    u: f64x3,
+    v: f64x3,
+    w: f64x3,
+    o: [f64; 2],
+    k0: [f64; 2],
+    k1: [f64; 2],
+    k2: [f64; 2],
+    cumulated_surface: [f64; 3],
+}
+
+impl ProjectedBox {
+    pub fn new(geobox: &GeoBox, direction: &HorizontalCoordinates) -> Self {
+        let frame = geobox.local_frame();
+        let size = &geobox.size;
+        let u: f64x3 = (&frame.from_horizontal(direction, &geobox.origin()))
+            .into();
+        let (v, w) = u.covectors();
+        let e = [
+            [v.x(), w.x()],
+            [v.y(), w.y()],
+            [v.z(), w.z()],
+        ];
+
+        #[derive(Copy, Clone)]
+        enum Sign {
+            Negative,
+            Positive,
+        }
+
+        impl Sign {
+            fn new(v: f64) -> Self {
+                if v >= 0.0 { Sign::Positive } else { Sign::Negative }
+            }
+
+            fn flip(&mut self) {
+                match self {
+                    Sign::Negative => *self = Sign::Positive,
+                    Sign::Positive => *self = Sign::Negative,
+                }
+            }
+        }
+
+        let node = |signs: &[Sign; 3]| -> [f64; 2] {
+            let mut x = 0.0;
+            let mut y = 0.0;
+            for i in 0..3 {
+                let di = match signs[i] {
+                    Sign::Negative => -0.5 * size[i],
+                    Sign::Positive => 0.5 * size[i],
+                };
+                x += di * e[i][0];
+                y += di * e[i][1];
+            }
+            [x, y]
+        };
+
+        let signs = [
+            Sign::new(u.x()),
+            Sign::new(u.y()),
+            Sign::new(u.z())
+        ];
+        let o = node(&signs);
+
+        let vector = |i: usize| -> [f64; 2] {
+            let mut signs = signs.clone();
+            signs[i].flip();
+            let k = node(&signs);
+            [k[0] - o[0], k[1] - o[1]]
+        };
+
+        let k0 = vector(0);
+        let k1 = vector(1);
+        let k2 = vector(2);
+
+        let area = |a: &[f64; 2], b: &[f64; 2]| -> f64 {
+            (a[0] * b[1] - a[1] * b[0]).abs()
+        };
+
+        let mut cumulated_surface = [
+            area(&k0, &k1),
+            area(&k1, &k2),
+            area(&k2, &k0),
+        ];
+        for i in 1..3 {
+            cumulated_surface[i] += cumulated_surface[i - 1];
+        }
+
+        Self {
+            frame, u, v, w, o, k0, k1, k2, cumulated_surface
+        }
+    }
+
+    #[inline]
+    pub fn surface(&self) -> f64 {
+        self.cumulated_surface[2]
+    }
+
+    pub fn generate_inside(
+        &self,
+        random: &mut Random
+    ) -> (GeodeticCoordinates, HorizontalCoordinates) {
+        // select box side.
+        let s = random.open01() * self.cumulated_surface[2];
+        let mut side = 0;
+        for (j, surface) in self.cumulated_surface.iter().enumerate() {
+            if s <= *surface {
+                side = j;
+                break
+            }
+        }
+
+        // Randomise local coordinates.
+        let x = random.open01();
+        let y = random.open01();
+        let (kx, ky) = match side {
+            0 => (&self.k0, &self.k1),
+            1 => (&self.k1, &self.k2),
+            2 => (&self.k2, &self.k0),
+            _ => unreachable!(),
+        };
+        let (x, y) = (
+            self.o[0] + x * kx[0] + y * ky[0],
+            self.o[1] + x * kx[1] + y * ky[1],
+        );
+
+        let r: [f64; 3] = (x * self.v + y * self.w).into();
+        let position = self.frame.to_geodetic(&r);
+        let direction: [f64; 3] = self.u.into();
+        let direction = self.frame.to_horizontal(&direction, &position);
+        (position, direction)
     }
 }
