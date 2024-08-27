@@ -8,7 +8,7 @@ use ::std::ffi::{c_int, c_void};
 
 
 impl danton::Sampler {
-    const ALTITUDE_MIN: f64 = -1.1E+04;
+    const ALTITUDE_MIN: f64 = -1E+05;
     const ALTITUDE_MAX: f64 = 1E+05;
 
     pub fn destroy(sampler: &mut *mut danton::Sampler) {
