@@ -11,7 +11,7 @@ simulation.tau_decays = False
 simulation.longitudinal = True
 
 # Set a spherical Earth (using PREM model).
-simulation.geometry.geodesic = "PREM"
+simulation.geometry.geoid = "PREM"
 
 # Use Bertone, Gold and Rojo (BGR18) model for DIS collisions.
 simulation.physics.dis = "BGR18"

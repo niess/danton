@@ -3,13 +3,13 @@ use crate::utils::error::ErrorKind::ValueError;
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
 
-mod geodesic;
+mod geodesy;
 mod medium;
 mod mode;
 mod physics;
 mod state;
 
-pub use geodesic::Geodesic;
+pub use geodesy::{Ellipsoid, Geoid};
 pub use medium::Medium;
 pub use mode::Mode;
 pub use physics::{Bremsstrahlung, Dis, DisModel, PairProduction, Pdf, Photonuclear};

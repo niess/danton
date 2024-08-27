@@ -1,5 +1,5 @@
 use crate::bindings::danton;
-use crate::utils::convert::{Geodesic, Medium};
+use crate::utils::convert::{Ellipsoid, Geoid, Medium};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates};
 use crate::utils::error::{Error, to_result};
@@ -15,14 +15,16 @@ use ::std::ptr::null;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 
+// XXX Forward geoid undulations.
+
 static INSTANCES: AtomicUsize = AtomicUsize::new(0);
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
 
 #[pyclass(module="danton")]
 pub struct Geometry {
     #[pyo3(get)]
-    /// Reference geodesic for the sea level.
-    pub geodesic: Geodesic,
+    /// Reference geoid for the sea level.
+    pub geoid: Geoid,
     #[pyo3(get)]
     /// Topography elevation data.
     topography: Option<Topography>,
@@ -62,7 +64,7 @@ impl Geometry {
     #[new]
     pub fn new() -> Self {
         Self {
-            geodesic: Geodesic::default(),
+            geoid: Geoid::default(),
             topography: None,
             material: "Rock".to_string(),
             density: 2.65E+03,
@@ -80,11 +82,17 @@ impl Geometry {
         }
     }
 
+    /// Reference ellipsoid for geodetic coordinates.
+    #[getter]
+    fn get_ellipsoid(&self) -> Ellipsoid {
+        self.geoid.into()
+    }
+
     #[setter]
-    fn set_geodesic(&mut self, value: Geodesic) {
-        if value != self.geodesic {
+    fn set_geoid(&mut self, value: Geoid) {
+        if value != self.geoid {
             self.modified = true;
-            self.geodesic = value;
+            self.geoid = value;
         }
     }
 
@@ -176,7 +184,7 @@ impl Geometry {
                     position.get(3 * i + 1)?,
                     position.get(3 * i + 2)?,
                 ];
-                GeodeticCoordinates::from_ecef(&position, self.geodesic)
+                GeodeticCoordinates::from_ecef(&position, self.geoid.into())
             };
             match direction {
                 Some(direction) => {
@@ -186,7 +194,7 @@ impl Geometry {
                         direction.get(3 * i + 2)?,
                     ];
                     let horizontal = HorizontalCoordinates::from_ecef(
-                        &direction, self.geodesic, &geodetic
+                        &direction, self.geoid.into(), &geodetic
                     );
                     let coordinate = Coordinates {
                         position: geodetic,
@@ -248,8 +256,8 @@ impl Geometry {
     pub fn apply(&mut self) -> PyResult<()> {
         let previous = CURRENT.swap(self.instance, Ordering::SeqCst);
         if (previous != self.instance) || self.modified {
-            let geodesic: &str = self.geodesic.into();
-            let geodesic = CString::new(geodesic)?;
+            let geoid: &str = self.geoid.into();
+            let geoid = CString::new(geoid)?;
             let topography = self.topography.as_ref().map(|topography| match topography {
                 Topography::Dem(path) => CString::new(path.as_str()),
                 Topography::Flat(z) => CString::new(format!("flat://{:.6}", z)),
@@ -263,7 +271,7 @@ impl Geometry {
             to_result(
                 unsafe {
                     danton::earth_model(
-                        geodesic.as_ptr(),
+                        geoid.as_ptr(),
                         topography,
                         self.density,
                         &mut ocean,
@@ -317,7 +325,7 @@ impl Geometry {
                 longitude: position.longitude.get(i)?,
                 altitude: position.altitude.get(i)?,
             };
-            let r = geodetic.to_ecef(self.geodesic);
+            let r = geodetic.to_ecef(self.geoid.into());
             ecef_position.set(3 * i, r[0])?;
             ecef_position.set(3 * i + 1, r[1])?;
             ecef_position.set(3 * i + 2, r[2])?;
@@ -326,7 +334,7 @@ impl Geometry {
                     azimuth: azimuth.get(i)?,
                     elevation: elevation.get(i)?,
                 };
-                let u = horizontal.to_ecef(self.geodesic, &geodetic);
+                let u = horizontal.to_ecef(self.geoid.into(), &geodetic);
                 let ecef_direction = ecef_direction.unwrap();
                 ecef_direction.set(3 * i, u[0])?;
                 ecef_direction.set(3 * i + 1, u[1])?;
@@ -413,7 +421,7 @@ impl Geometry {
                     .to_err()
             })?;
         let ecef_position = PyArray::<f64>::empty(py, &[3])?;
-        let r = position.to_ecef(self.geodesic);
+        let r = position.to_ecef(self.geoid.into());
         for i in 0..3 {
             ecef_position.set(i, r[i])?
         }
@@ -422,7 +430,7 @@ impl Geometry {
             None => None,
             Some(direction) => {
                 let ecef_direction = PyArray::<f64>::empty(py, &[3])?;
-                let u = direction.to_ecef(self.geodesic, &position);
+                let u = direction.to_ecef(self.geoid.into(), &position);
                 for i in 0..3 {
                     ecef_direction.set(i, u[i])?
                 }
@@ -477,7 +485,7 @@ impl<'a> Tracer<'a> {
     }
 
     pub fn medium(&self, position: &GeodeticCoordinates) -> Medium {
-        let r = position.to_ecef(self.geometry.geodesic);
+        let r = position.to_ecef(self.geometry.geoid.into());
         let medium = unsafe { danton::tracer_medium(self.tracer, &r as *const f64) };
         (medium, self.geometry.ocean).into()
     }
@@ -487,8 +495,8 @@ impl<'a> Tracer<'a> {
         position: &GeodeticCoordinates,
         direction: &HorizontalCoordinates
     ) -> (Medium, f64, Medium) {
-        let r = position.to_ecef(self.geometry.geodesic);
-        let u = direction.to_ecef(self.geometry.geodesic, &position);
+        let r = position.to_ecef(self.geometry.geoid.into());
+        let u = direction.to_ecef(self.geometry.geoid.into(), &position);
         let mut distance: f64 = 0.0;
         let mut next_medium: c_int = -1;
         let medium = unsafe {

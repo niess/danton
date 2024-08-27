@@ -1,5 +1,5 @@
 use crate::bindings::{danton, turtle};
-use crate::utils::convert::Geodesic;
+use crate::utils::convert::Ellipsoid;
 use crate::utils::export::Export;
 use derive_more::{AsMut, AsRef, From};
 use pyo3::prelude::*;
@@ -20,9 +20,9 @@ pub struct GeodeticCoordinates {
 }
 
 impl GeodeticCoordinates {
-    pub fn from_ecef(position: &[f64; 3], geodesic: Geodesic) -> Self {
-        match geodesic {
-            Geodesic::Prem => {
+    pub fn from_ecef(position: &[f64; 3], ellipsoid: Ellipsoid) -> Self {
+        match ellipsoid {
+            Ellipsoid::Prem => {
                 const DEG: f64 = 180.0 / ::std::f64::consts::PI;
                 let r = position;
                 let rho2 = r[0] * r[0] + r[1] * r[1];
@@ -34,7 +34,7 @@ impl GeodeticCoordinates {
                 let altitude = (rho2 + r[2] * r[2]).sqrt() - danton::PREM_EARTH_RADIUS;
                 Self { latitude, longitude, altitude }
             },
-            _ => {
+            Ellipsoid::Wgs84 => {
                 let mut latitude = 0.0;
                 let mut longitude = 0.0;
                 let mut altitude = 0.0;
@@ -51,9 +51,9 @@ impl GeodeticCoordinates {
         }
     }
 
-    pub fn to_ecef(&self, geodesic: Geodesic) -> [f64; 3] {
-        match geodesic {
-            Geodesic::Prem => {
+    pub fn to_ecef(&self, ellipsoid: Ellipsoid) -> [f64; 3] {
+        match ellipsoid {
+            Ellipsoid::Prem => {
                 const RAD: f64 = ::std::f64::consts::PI / 180.0;
                 let r = danton::PREM_EARTH_RADIUS + self.altitude;
                 let theta = (90.0 - self.latitude) * RAD;
@@ -66,7 +66,7 @@ impl GeodeticCoordinates {
                     r * cos_theta,
                 ]
             },
-            _ => {
+            Ellipsoid::Wgs84 => {
                 let mut position = [0_f64; 3];
                 unsafe {
                     turtle::ecef_from_geodetic(
@@ -102,11 +102,11 @@ impl HorizontalCoordinates {
 
     pub fn from_ecef(
         direction: &[f64; 3],
-        geodesic: Geodesic,
+        ellipsoid: Ellipsoid,
         origin: &GeodeticCoordinates
     ) -> Self {
-        match geodesic {
-            Geodesic::Prem => {
+        match ellipsoid {
+            Ellipsoid::Prem => {
                 #[allow(non_snake_case)]
                 let R = Self::rotation(origin);
                 let u = direction;
@@ -122,7 +122,7 @@ impl HorizontalCoordinates {
                 };
                 Self { azimuth, elevation }
             },
-            _ => {
+            Ellipsoid::Wgs84 => {
                 let mut azimuth: f64 = 0.0;
                 let mut elevation: f64 = 0.0;
                 unsafe {
@@ -141,11 +141,11 @@ impl HorizontalCoordinates {
 
     pub fn to_ecef(
         &self,
-        geodesic: Geodesic,
+        ellipsoid: Ellipsoid,
         origin: &GeodeticCoordinates
     ) -> [f64; 3] {
-        match geodesic {
-            Geodesic::Prem => {
+        match ellipsoid {
+            Ellipsoid::Prem => {
                 #[allow(non_snake_case)]
                 let R = Self::rotation(origin);
                 let theta = (90.0 - self.elevation) * Self::RAD;
@@ -158,7 +158,7 @@ impl HorizontalCoordinates {
                 let vz = R[0][2] * u[0] + R[1][2] * u[1] + R[2][2] * u[2];
                 [ vx, vy, vz ]
             },
-            _ => {
+            Ellipsoid::Wgs84 => {
                 let mut direction = [0.0; 3];
                 unsafe {
                     turtle::ecef_from_horizontal(

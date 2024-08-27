@@ -9,7 +9,7 @@ Python interface
 
    .. autoattribute:: altitude
    .. autoattribute:: declination
-   .. autoattribute:: geodesic
+   .. autoattribute:: ellipsoid
    .. autoattribute:: latitude
    .. autoattribute:: longitude
    .. autoattribute:: size
@@ -40,27 +40,38 @@ Python interface
 
       >>> geometry.density = 0.92E+03
 
-   .. autoattribute:: geodesic
+   .. autoattribute:: ellipsoid
 
-      Get or set the reference model for the sea level. By default, a spherical
+      .. note::
+
+         This attribute is read-only. It is defined by the :py:attr:`geoid`
+         model (see :numref:`tab-geoid` below).
+
+   .. autoattribute:: geoid
+
+      Get or set the reference geoid for the sea level. By default, a spherical
       Earth is assumed, according to the `PREM`_. Possible values are listed
-      in :numref:`tab-geodesic` below.
+      in :numref:`tab-geoid` below.
 
-      .. _tab-geodesic:
+      .. _tab-geoid:
 
-      .. list-table:: Available geodesic models.
+      .. list-table:: Available geoid models.
          :width: 75%
          :widths: auto
          :header-rows: 1
 
          * - Model
            - Description
+           - Ellipsoid
          * - :python:`"EGM96"`
            - An undulated Earth, according to the `EGM96`_ model.
+           - :python:`"WGS84"`
          * - :python:`"PREM"`
            - A spherical Earth, according to the `PREM`_ model.
+           - :python:`"PREM"`
          * - :python:`"WGS84"`
            - An elliptical Earth, according to the `WGS84`_ ellipsoid.
+           - :python:`"WGS84"`
 
    .. autoattribute:: material
 
@@ -91,6 +102,16 @@ Python interface
       instance, as
 
       >>> geometry.topography = "/path/to/gdem/"
+
+   .. automethod:: from_ecef
+
+      The *position* and *direction* arguments must be
+      :external:py:class:`numpy.ndarray` containing cartesian coordinates in
+      Earth-Centered Earth-Fixed (ECEF) frame. For instance,
+
+      >>> geodetic = geometry.from_ecef(numpy.array([6378137.0, 0.0, 0.0]))
+
+   .. automethod:: to_ecef
 
 ----
 
@@ -158,7 +179,7 @@ Python interface
       the following sets an elliptical Earth, according to the `WGS84`_
       ellipsoid.
 
-      >>> simulation.geometry.geodesic = "WGS84"
+      >>> simulation.geometry.geoid = "WGS84"
 
    .. autoattribute:: longitudinal
 
@@ -185,8 +206,8 @@ Python interface
 
       By default, Danton is configured to sample tau decays over a volume.
       Setting this flag to :python:`False` results in the sampling of flux
-      events instead, through a boundary geodesic-like surface, defined by a
-      constant altitude.
+      events instead, through a boundary surface defined by a constant altitude
+      (w.r.t. the reference ellipsoid).
 
 ----
 

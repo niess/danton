@@ -1,7 +1,7 @@
 use crate::bindings::danton;
 use crate::simulation::particles::Particle;
 use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
-use crate::utils::convert::Geodesic;
+use crate::utils::convert::Ellipsoid;
 
 
 // ===============================================================================================
@@ -10,11 +10,11 @@ use crate::utils::convert::Geodesic;
 //
 // ===============================================================================================
 
-impl From<(&danton::State, Geodesic)> for Particle {
-    fn from(value: (&danton::State, Geodesic)) -> Self {
-        let (state, geodesic) = value;
-        let geodetic = GeodeticCoordinates::from_ecef(&state.position, geodesic);
-        let horizontal = HorizontalCoordinates::from_ecef(&state.direction, geodesic, &geodetic);
+impl From<(&danton::State, Ellipsoid)> for Particle {
+    fn from(value: (&danton::State, Ellipsoid)) -> Self {
+        let (state, ellipsoid) = value;
+        let geodetic = GeodeticCoordinates::from_ecef(&state.position, ellipsoid);
+        let horizontal = HorizontalCoordinates::from_ecef(&state.direction, ellipsoid, &geodetic);
 
         fn tozero(f: f64) -> f64 {
             if f.abs() <= ::std::f32::EPSILON as f64 {

@@ -359,7 +359,7 @@ DANTON_API void danton_destroy(void ** any);
 /**
  * Set or update the global Earth model.
  *
- * @param geodesic   The reference system for the sea level, or `NULL`.
+ * @param geoid      The reference geoid for the sea level, or `NULL`.
  * @param topography Topography model, path to any topographic data, or `NULL`.
  * @param material   Material for the topography.
  * @param density    Density of the topography material in kg / m^(3).
@@ -372,7 +372,7 @@ DANTON_API void danton_destroy(void ** any);
  * The default Earth model is the Preliminary Reference Earth Model, i.e. a
  * spherical Earth fully covered with a 3km deep sea.
  *
- * The supported values for the *geodesic* system are:
+ * The supported values for the *geoid* are:
  *
  *     - PREM  : spherical Earth
  *
@@ -380,7 +380,7 @@ DANTON_API void danton_destroy(void ** any);
  *
  *     - EGM96 : GPS ellipsoid + geoid undulations
  *
- * If *geodesic* is left `NULL`, then the PREM system is used.
+ * If *geoid* is left `NULL`, then the PREM model is assumed.
  *
  * The *topography* parameter can either specify a path to topographic data
  * (e.g. SRTMGL1 tiles) or encode a flat topography as `flat://${z}`, where
@@ -398,7 +398,7 @@ DANTON_API void danton_destroy(void ** any);
  * unchanged. It defaults to 2.650 kg / m^3.
  */
 DANTON_API int danton_earth_model(
-    const char * geodesic,
+    const char * geoid,
     const char * topography,
     double density,
     int * sea);

@@ -139,8 +139,8 @@ impl Simulation {
         altitude: Option<f64>,
         declination: Option<f64>,
     ) -> geobox::GeoBox {
-        let geodesic = Some(self.geometry.bind(py).borrow().geodesic);
-        geobox::GeoBox::new(size, latitude, longitude, altitude, declination, geodesic)
+        let ellipsoid = Some(self.geometry.bind(py).borrow().geoid.into());
+        geobox::GeoBox::new(size, latitude, longitude, altitude, declination, ellipsoid)
     }
 
     /// Generate Monte Carlo particles.
@@ -160,7 +160,7 @@ impl Simulation {
         let py = particles.py();
         let mode = self.get_mode(py);
         let decay = self.get_tau_decays(py);
-        let (geodesic, ocean) = {
+        let (geoid, ocean) = {
             let mut geometry = self.geometry.bind(py).borrow_mut();
             geometry.apply()?;
             let mut physics = self.physics.bind(py).borrow_mut();
@@ -168,14 +168,14 @@ impl Simulation {
                 unsafe { danton::context_reset(self.context) };
             }
             physics.apply(py, geometry.material.as_str())?;
-            (geometry.geodesic, geometry.ocean)
+            (geometry.geoid, geometry.ocean)
         };
-        self.recorder.geodesic = geodesic;
+        self.recorder.ellipsoid = geoid.into();
         self.recorder.mode = mode;
         self.recorder.decay = decay;
         if let Some(stepper) = self.stepper.as_mut() {
             stepper.mode = mode;
-            stepper.geodesic = geodesic;
+            stepper.ellipsoid = geoid.into();
             stepper.ocean = ocean;
         }
 

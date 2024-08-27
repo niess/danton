@@ -1,5 +1,5 @@
 use crate::simulation::random::Random;
-use crate::utils::convert::Geodesic;
+use crate::utils::convert::Ellipsoid;
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates, HorizontalsExport};
 use crate::utils::error::Error;
@@ -15,9 +15,9 @@ use pyo3::types::PyTuple;
 
 #[pyclass(name="Box", module="danton")]
 pub struct GeoBox {
-    /// Reference geodesic for coordinates.
+    /// Reference ellipsoid for geodetic coordinates.
     #[pyo3(get, set)]
-    pub geodesic: Geodesic,
+    pub ellipsoid: Ellipsoid,
     /// Latitude coordinate of box centre, in deg.
     #[pyo3(get, set)]
     latitude: f64,
@@ -62,15 +62,15 @@ impl GeoBox {
         longitude: Option<f64>,
         altitude: Option<f64>,
         declination: Option<f64>,
-        geodesic: Option<Geodesic>
+        ellipsoid: Option<Ellipsoid>
     ) -> Self {
         let latitude = latitude.unwrap_or(0.0);
         let longitude = longitude.unwrap_or(0.0);
         let altitude = altitude.unwrap_or(0.0);
-        let geodesic = geodesic.unwrap_or(Geodesic::default());
+        let ellipsoid = ellipsoid.unwrap_or(Ellipsoid::default());
         let size: [f64; 3] = size.into();
         let declination = declination.unwrap_or(0.0);
-        Self { geodesic, latitude, longitude, altitude, size, declination }
+        Self { ellipsoid, latitude, longitude, altitude, size, declination }
     }
 
     /// Box size along the x, y and z-axis, in m.
@@ -376,7 +376,7 @@ impl GeoBox {
 }
 
 pub struct LocalFrame {
-    geodesic: Geodesic,
+    ellipsoid: Ellipsoid,
     origin: f64x3,
     ux: f64x3,
     uy: f64x3,
@@ -386,14 +386,14 @@ pub struct LocalFrame {
 impl GeoBox {
     pub fn local_frame(&self) -> LocalFrame {
         let geodetic = self.origin();
-        let origin: f64x3 = (&geodetic.to_ecef(self.geodesic)).into();
+        let origin: f64x3 = (&geodetic.to_ecef(self.ellipsoid)).into();
         let ux = HorizontalCoordinates { azimuth: 90.0 + self.declination, elevation: 0.0 };
-        let ux: f64x3 = (&ux.to_ecef(self.geodesic, &geodetic)).into();
+        let ux: f64x3 = (&ux.to_ecef(self.ellipsoid, &geodetic)).into();
         let uy = HorizontalCoordinates { azimuth: self.declination, elevation: 0.0 };
-        let uy: f64x3 = (&uy.to_ecef(self.geodesic, &geodetic)).into();
+        let uy: f64x3 = (&uy.to_ecef(self.ellipsoid, &geodetic)).into();
         let uz = HorizontalCoordinates { azimuth: 0.0, elevation: 90.0 };
-        let uz: f64x3 = (&uz.to_ecef(self.geodesic, &geodetic)).into();
-        LocalFrame { geodesic: self.geodesic, origin, ux, uy, uz }
+        let uz: f64x3 = (&uz.to_ecef(self.ellipsoid, &geodetic)).into();
+        LocalFrame { ellipsoid: self.ellipsoid, origin, ux, uy, uz }
     }
 
     pub fn origin(&self) -> GeodeticCoordinates {
@@ -407,7 +407,7 @@ impl GeoBox {
 
 impl LocalFrame {
     pub fn from_geodetic(&self, coordinates: &GeodeticCoordinates) -> [f64; 3] {
-        let r_ecef = coordinates.to_ecef(self.geodesic);
+        let r_ecef = coordinates.to_ecef(self.ellipsoid);
         let r_ecef: f64x3 = (&r_ecef).into();
         let r = r_ecef - self.origin;
         [
@@ -422,7 +422,7 @@ impl LocalFrame {
         coordinates: &HorizontalCoordinates,
         origin: &GeodeticCoordinates
     ) -> [f64; 3] {
-        let u_ecef = coordinates.to_ecef(self.geodesic, origin);
+        let u_ecef = coordinates.to_ecef(self.ellipsoid, origin);
         let u_ecef: f64x3 = (&u_ecef).into();
         [
             u_ecef.dot(self.ux),
@@ -434,7 +434,7 @@ impl LocalFrame {
     pub fn to_geodetic(&self, r: &[f64; 3]) -> GeodeticCoordinates {
         let r_ecef = r[0] * self.ux + r[1] * self.uy + r[2] * self.uz + self.origin;
         let r_ecef: [f64; 3] = r_ecef.into();
-        GeodeticCoordinates::from_ecef(&r_ecef, self.geodesic)
+        GeodeticCoordinates::from_ecef(&r_ecef, self.ellipsoid)
     }
 
     pub fn to_horizontal(
@@ -444,7 +444,7 @@ impl LocalFrame {
     ) -> HorizontalCoordinates {
         let u_ecef = u[0] * self.ux + u[1] * self.uy + u[2] * self.uz;
         let u_ecef: [f64; 3] = u_ecef.into();
-        HorizontalCoordinates::from_ecef(&u_ecef, self.geodesic, origin)
+        HorizontalCoordinates::from_ecef(&u_ecef, self.ellipsoid, origin)
     }
 }
 

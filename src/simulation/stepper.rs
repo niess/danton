@@ -1,6 +1,6 @@
 use crate::bindings::danton;
 use crate::simulation::particles::Particle;
-use crate::utils::convert::{Geodesic, Medium, Mode};
+use crate::utils::convert::{Ellipsoid, Medium, Mode};
 use crate::utils::export::Export;
 use derive_more::{AsMut, AsRef, From};
 use pyo3::prelude::*;
@@ -13,7 +13,7 @@ pub struct Stepper {
     base: danton::RunAction,
     pub event: usize,
     pub mode: Mode,
-    pub geodesic: Geodesic,
+    pub ellipsoid: Ellipsoid,
     pub ocean: bool,
     steps: Option<Vec<Step>>,
 }
@@ -61,7 +61,7 @@ impl Stepper {
             base,
             event: 0,
             mode: Mode::Backward,
-            geodesic: Geodesic::Prem,
+            ellipsoid: Ellipsoid::Prem,
             ocean: true,
             steps: None,
         };
@@ -98,7 +98,7 @@ impl Stepper {
         if !state.is_null() {
             let state = unsafe { &*state };
             let step = {
-                let particle: Particle = (state, stepper.geodesic).into();
+                let particle: Particle = (state, stepper.ellipsoid).into();
                 let mut step: Step = particle.into();
                 step.event = stepper.event;
                 if let Mode::Grammage = stepper.mode {

@@ -167,7 +167,7 @@ extern "C" {
 
     #[link_name="danton_earth_model"]
     pub fn earth_model(
-        geodesic: *const c_char,
+        geoid: *const c_char,
         topography: *const c_char,
         density: f64,
         ocean: *mut c_int,

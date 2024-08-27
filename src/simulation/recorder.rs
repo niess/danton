@@ -1,6 +1,6 @@
 use crate::bindings::danton;
 use crate::simulation::particles::Particle;
-use crate::utils::convert::{Geodesic, Mode};
+use crate::utils::convert::{Ellipsoid, Mode};
 use crate::utils::export::Export;
 use crate::utils::float::f64x3;
 use crate::utils::tuple::NamedTuple;
@@ -18,7 +18,7 @@ pub struct Recorder {
     pub weight: f64,
     pub mode: Mode,
     pub decay: bool,
-    pub geodesic: Geodesic,
+    pub ellipsoid: Ellipsoid,
     grammages: Option<Vec<f64>>,
     primaries: Option<Vec<Primary>>,
     secondaries: Option<Vec<Secondary>>,
@@ -93,7 +93,7 @@ impl Recorder {
             weight: 1.0,
             mode: Mode::Backward,
             decay: true,
-            geodesic: Geodesic::Prem,
+            ellipsoid: Ellipsoid::Prem,
             grammages: None,
             primaries: None,
             secondaries: None,
@@ -224,7 +224,7 @@ impl Recorder {
         if let Mode::Backward = recorder.mode {
             let primary = {
                 let state = unsafe { &*event.primary };
-                let mut particle: Particle = (state, recorder.geodesic).into();
+                let mut particle: Particle = (state, recorder.ellipsoid).into();
                 particle.weight = event.weight * recorder.weight;
                 Primary {
                     event: recorder.event,
@@ -244,7 +244,7 @@ impl Recorder {
         if let Mode::Forward = recorder.mode {
             let secondary = {
                 let state = unsafe { &*event.secondary };
-                let mut particle: Particle = (state, recorder.geodesic).into();
+                let mut particle: Particle = (state, recorder.ellipsoid).into();
                 particle.weight = event.weight * recorder.weight;
                 Secondary {
                     event: recorder.event,
@@ -264,7 +264,7 @@ impl Recorder {
         if !event.vertex.is_null() {
             let vertex = {
                 let state = unsafe { &*event.vertex };
-                let particle: Particle = (state, recorder.geodesic).into();
+                let particle: Particle = (state, recorder.ellipsoid).into();
                 Vertex {
                     event: recorder.event,
                     particle,
