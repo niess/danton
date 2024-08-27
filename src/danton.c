@@ -2751,6 +2751,48 @@ const char * danton_error_pop(struct danton_context * context)
         return s;
 }
 
+/* Topography interface. */
+
+DANTON_API double danton_geoid_undulation(
+    double latitude, double longitude)
+{
+        if (earth.undulations == NULL) {
+                return 0.0;
+        } else {
+                double undulation = 0.0;
+                int inside = 0;
+                turtle_map_elevation(
+                    earth.undulations,
+                    longitude, // XXX Check X-Y order.
+                    latitude,
+                    &undulation,
+                    &inside
+                );
+                return inside ? undulation : 0.0;
+        }
+}
+
+DANTON_API double danton_topography_elevation(
+    double latitude, double longitude)
+{
+        if (earth.flat_topography) {
+                return earth.z0;
+        } else if (earth.stack == NULL) {
+                return 0.0;
+        } else {
+                double elevation = 0.0;
+                int inside = 0;
+                turtle_stack_elevation(
+                    earth.stack,
+                    longitude,
+                    latitude,
+                    &elevation,
+                    &inside
+                );
+                return inside ? elevation : 0.0;
+        }
+}
+
 /* Tracer interface. */
 
 struct danton_tracer {

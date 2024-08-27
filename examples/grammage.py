@@ -4,7 +4,7 @@ import danton
 simulation = danton.Simulation()
 simulation.mode = "grammage"
 simulation.record_steps = True
-simulation.geometry.geodesic = "PREM"
+simulation.geometry.geoid = "PREM"
 particles = danton.particles(1, elevation=-30.0)
 result = simulation.run(particles)
 print(result.steps)

@@ -1,3 +1,4 @@
+use crate::utils::convert::Array;
 use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::{TypeError, ValueError};
 use crate::utils::numpy::PyArray;
@@ -16,7 +17,7 @@ pub struct Direction<'a> {
 }
 
 impl<'a> Direction<'a> {
-    pub fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Option<Self>> {
+    pub fn maybe_new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Option<Self>> {
         let py = elements.py();
         let azimuth = extract(py, elements, "azimuth")?;
         let elevation = extract(py, elements, "elevation")?;
@@ -41,11 +42,22 @@ impl<'a> Direction<'a> {
             } else {
                 "missing 'azimuth'"
             };
-            let err = Error::new(ValueError).what("direction").why(why);
+            let err = Error::new(TypeError).what("direction").why(why);
             Err(err.to_err())
         } else {
             Ok(None)
         }
+    }
+
+    #[allow(dead_code)] // XXX needed?
+    pub fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Self> {
+        Self::maybe_new(elements)?
+            .ok_or_else(|| {
+                Error::new(ValueError)
+                    .what("direction")
+                    .why("missing azimuth and elevation")
+                    .to_err()
+            })
     }
 
     pub fn shape(&self) -> Vec<usize> {
@@ -77,7 +89,7 @@ pub struct Position<'a> {
 }
 
 impl<'a> Position<'a> {
-    pub fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Option<Self>> {
+    pub fn maybe_new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Option<Self>> {
         let py = elements.py();
         let latitude = extract(py, elements, "latitude")?;
         let longitude = extract(py, elements, "longitude")?;
@@ -109,11 +121,21 @@ impl<'a> Position<'a> {
             } else {
                 format!("missing '{}'", missing[0])
             };
-            let err = Error::new(ValueError).what("position").why(&why);
+            let err = Error::new(TypeError).what("position").why(&why);
             Err(err.to_err())
         } else {
             Ok(None)
         }
+    }
+
+    pub fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Self> {
+        Self::maybe_new(elements)?
+            .ok_or_else(|| {
+                Error::new(ValueError)
+                    .what("direction")
+                    .why("missing latitude, longitude and altitude")
+                    .to_err()
+            })
     }
 
     pub fn shape(&self) -> Vec<usize> {
@@ -124,6 +146,70 @@ impl<'a> Position<'a> {
         let mut shape = self.shape();
         shape.push(3);
         shape
+    }
+
+    pub fn size(&self) -> usize {
+        self.latitude.size()
+    }
+}
+
+
+// ===============================================================================================
+//
+// Generic geodetic projection.
+//
+// ===============================================================================================
+
+pub struct Projection<'a> {
+    pub latitude: &'a PyArray<f64>,
+    pub longitude: &'a PyArray<f64>,
+}
+
+impl<'a> Projection<'a> {
+    pub fn maybe_new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Option<Self>> {
+        let py = elements.py();
+        let latitude = extract(py, elements, "latitude")?;
+        let longitude = extract(py, elements, "longitude")?;
+
+        let all = latitude.is_some() && longitude.is_some();
+        let any = latitude.is_some() || longitude.is_some();
+        if all {
+            let latitude = latitude.unwrap();
+            let longitude = longitude.unwrap();
+            if latitude.size() != longitude.size() {
+                let err = Error::new(ValueError)
+                    .what("projection")
+                    .why("differing arrays sizes")
+                    .to_err();
+                return Err(err);
+            }
+            let projection = Projection { latitude, longitude };
+            Ok(Some(projection))
+        } else if any {
+            let why = if latitude.is_some() {
+                "missing 'longitude'"
+            } else {
+                "missing 'latitude'"
+            };
+            let err = Error::new(TypeError).what("projection").why(why);
+            Err(err.to_err())
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Self> {
+        Self::maybe_new(elements)?
+            .ok_or_else(|| {
+                Error::new(ValueError)
+                    .what("projection")
+                    .why("missing latitude and longitude")
+                    .to_err()
+            })
+    }
+
+    pub fn shape(&self) -> Vec<usize> {
+        self.latitude.shape()
     }
 
     pub fn size(&self) -> usize {
@@ -150,6 +236,7 @@ fn extract<'py>(
             Error::new(TypeError)
                 .what(key)
                 .why(&err.value_bound(py).to_string()).to_err()
-        })?;
+        })?
+        .map(|array: Array<f64>| array.resolve());
     Ok(value)
 }

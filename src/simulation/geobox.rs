@@ -10,7 +10,7 @@ use crate::utils::float::f64x3;
 use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyDict, PyTuple};
 
 
 #[pyclass(name="Box", module="danton")]
@@ -96,7 +96,7 @@ impl GeoBox {
         self.size[0] * self.size[1] * self.size[2]
     }
 
-    /// Convert local Cartesian coordinates to geodetic ones.
+    /// Convert local cartesian coordinates to geodetic ones.
     fn from_local(
         &self,
         py: Python,
@@ -257,21 +257,23 @@ impl GeoBox {
     }
 
     /// Check if elements are inside the box.
-    fn inside<'py>(&self, elements: &Bound<'py, PyAny>) -> PyResult<PyObject> {
-        let py = elements.py();
-        if elements.is_none() {
-            let inside: &PyAny = PyArray::<bool>::empty(py, &[0])?;
-            return Ok(inside.into_py(py));
-        }
-        let position = Position::new(elements)?
-            .ok_or_else(|| {
-                let why = "missing 'latitude', 'longitude' and 'altitude'";
-                let err = Error::new(ValueError)
-                    .what("position")
-                    .why(why);
-                err.to_err()
-            })?;
-
+    #[pyo3(signature=(array=None, /, **kwargs))]
+    fn inside<'py>(
+        &self,
+        py: Python<'py>,
+        array: Option<&Bound<'py, PyAny>>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let position = match array {
+            Some(array) => Position::new(array)?,
+            None => match kwargs {
+                Some(kwargs) => Position::new(kwargs.as_any())?,
+                None => {
+                    let inside: &PyAny = PyArray::<bool>::empty(py, &[0])?;
+                    return Ok(inside.into_py(py));
+                },
+            }
+        };
         let frame = self.local_frame();
         let inside = PyArray::<bool>::empty(py, &position.shape())?;
 
@@ -294,11 +296,24 @@ impl GeoBox {
         Ok(inside.into_py(py))
     }
 
-    /// Convert elements coordinates to local box-ones.
-    fn to_local<'py>(&self, elements: &Bound<'py, PyAny>) -> PyResult<PyObject> {
-        let py = elements.py();
-        let position = Position::new(elements)?;
-        let direction = Direction::new(elements)?;
+    /// Convert geodetic coordinates to local cartesian ones.
+    #[pyo3(signature=(array=None, /, **kwargs))]
+    fn to_local<'py>(
+        &self,
+        py: Python<'py>,
+        array: Option<&Bound<'py, PyAny>>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let (position, direction) = match array {
+            Some(array) => (Position::maybe_new(array)?, Direction::maybe_new(array)?),
+            None => match kwargs {
+                Some(kwargs) => {
+                    let any = kwargs.as_any();
+                    (Position::maybe_new(any)?, Direction::maybe_new(any)?)
+                },
+                None => (None, None),
+            }
+        };
 
         let size = match position.as_ref() {
             None => match direction.as_ref() {

@@ -11,7 +11,7 @@ mod physics;
 mod state;
 
 pub use array::Array;
-pub use geodesy::{Ellipsoid, Geoid};
+pub use geodesy::{Ellipsoid, Geoid, Reference};
 pub use medium::Medium;
 pub use mode::Mode;
 pub use physics::{Bremsstrahlung, Dis, DisModel, PairProduction, Pdf, Photonuclear};

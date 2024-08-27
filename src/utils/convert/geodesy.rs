@@ -91,3 +91,43 @@ impl From<Geoid> for Ellipsoid {
         }
     }
 }
+
+
+// ===============================================================================================
+//
+// Elevation reference.
+//
+// ===============================================================================================
+
+#[derive(Clone, Copy, Default, EnumVariantsStrings, PartialEq)]
+#[enum_variants_strings_transform(transform="lower_case")]
+pub enum Reference {
+    #[default]
+    Ellipsoid,
+    Geoid,
+}
+
+impl Convert for Reference {
+    #[inline]
+    fn what() -> &'static str {
+        "reference"
+    }
+}
+
+impl<'py> FromPyObject<'py> for Reference {
+    fn extract_bound(any: &Bound<'py, PyAny>) -> PyResult<Self> {
+        Self::from_any(any)
+    }
+}
+
+impl IntoPy<PyObject> for Reference {
+    fn into_py(self, py: Python) -> PyObject {
+        self.into_any(py)
+    }
+}
+
+impl From<Reference> for &'static str {
+    fn from(value: Reference) -> Self {
+        value.to_str()
+    }
+}

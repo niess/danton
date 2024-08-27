@@ -238,6 +238,12 @@ extern "C" {
     #[link_name="danton_tau_mass"]
     pub static mut tau_mass: *mut f64;
 
+    #[link_name="danton_geoid_undulation"]
+    pub fn geoid_undulation(latitude: f64, longitude: f64) -> f64;
+
+    #[link_name="danton_topography_elevation"]
+    pub fn topography_elevation(latitude: f64, longitude: f64) -> f64;
+
     #[link_name="danton_tracer_create"]
     pub fn tracer_create() -> *mut Tracer;
 

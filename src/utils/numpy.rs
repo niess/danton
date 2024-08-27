@@ -601,6 +601,19 @@ where
     }
 }
 
+impl<T> PyArray<T>
+where
+    T: Copy + Dtype + IntoPy<PyObject>,
+{
+    pub fn unbind(&self, py: Python) -> PyObject {
+        if (self.ndim() == 0) && (self.size() == 1) {
+            self.get(0).unwrap().into_py(py)
+        } else {
+            self.as_any().into_py(py)
+        }
+    }
+}
+
 // Private interface.
 impl<T> PyArray<T> {
     fn is_contiguous(&self) -> PyResult<()> {

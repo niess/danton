@@ -3,10 +3,6 @@ Python interface
 
 .. autoclass:: danton.Box
 
-   .. automethod:: from_local
-   .. automethod:: inside
-   .. automethod:: to_local
-
    .. autoattribute:: altitude
    .. autoattribute:: declination
    .. autoattribute:: ellipsoid
@@ -14,6 +10,10 @@ Python interface
    .. autoattribute:: longitude
    .. autoattribute:: size
    .. autoattribute:: surface
+
+   .. automethod:: from_local
+   .. automethod:: inside
+   .. automethod:: to_local
 
 ----
 
@@ -105,29 +105,64 @@ Python interface
 
    .. automethod:: from_ecef
 
-      The *position* and *direction* arguments must arrays-like containing
+      The *position* and *direction* arguments must be arrays-like containing
       cartesian coordinates in Earth-Centered Earth-Fixed (ECEF) frame. For
       instance,
 
       >>> geodetic_position = geometry.from_ecef([6378137, 0, 0])
 
+   .. automethod:: geoid_undulation
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      The *array* argument, if specified, must be a structured
+      :external:py:class:`numpy.ndarray` containing geodetic coordinates
+      (:python:`"latitude"`, :python:`"longitude"`).
+
+      Alternativelly, geodetic coordinates can be specified as *kwargs*. For
+      instance,
+
+      >>> undulation = geometry.geoid_undulation(latitude=45, longitude=3)
+
    .. automethod:: to_ecef
 
       .. note::
 
-         The positional *elements* argument and named *kwargs* arguments are
-         mutually exclusive.
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
 
-      The *elements* argument, if specified, must be a structured
+      The *array* argument, if specified, must be a structured
       :external:py:class:`numpy.ndarray` containing geodetic coordinates
       (:python:`"latitude"`, :python:`"longitude"`, :python:`"altitude"`), and
       optionally horizontal ones (:python:`"azimuth"`, :python:`"elevation"`).
 
-      Alternativelly, geodetic (and horizontal coordinates) can be specified as
-      *kwargs*. In the latter case, only scalar coordinates are supported. For
+      Alternativelly, geodetic (and horizontal) coordinates can be specified as
+      *kwargs*. For instance,
+
+      >>> ecef_position = geometry.to_ecef(latitude=45, longitude=3, altitude=0)
+
+   .. automethod:: topography_elevation
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      The optional *reference* argument specifies the reference surface for
+      elevation values. Possible values are :python:`"ellipsoid"` (default) or
+      :python:`"geoid"`.
+
+      The *array* argument, if specified, must be a structured
+      :external:py:class:`numpy.ndarray` containing geodetic coordinates
+      (:python:`"latitude"`, :python:`"longitude"`).
+
+      Alternativelly, geodetic coordinates can be specified as *kwargs*. For
       instance,
 
-      >>> ecef_position = geometry.to_ecef(latitude=45, longitude=3)
+      >>> z = geometry.topography_elevation(latitude=45, longitude=3)
 
 ----
 
@@ -157,9 +192,10 @@ Python interface
 
 .. autoclass:: danton.Random
 
-   .. automethod:: uniform01
    .. autoattribute:: index
    .. autoattribute:: seed
+
+   .. automethod:: uniform01
 
 ----
 
@@ -174,20 +210,6 @@ Python interface
       sampling of tau decays. For instance,
 
       >>> simulation = danton.Simulation()
-
-   .. automethod:: box
-   .. automethod:: particles
-
-   .. automethod:: run
-
-      The provided *particles* are transported through the Monte Carlo
-      :py:attr:`geometry`. The returned object depends on the simulation
-      :py:attr:`mode`, :py:attr:`record_steps` and :py:attr:`tau_decays`
-      attributes. For example, in :python:`Backward` mode with tau decays (but
-      no steps recording), a :external:py:class:`NamedTuple <typing.NamedTuple>`
-      is returned, containing the sampled primaries, as well as the tau creation
-      vertices, and the tau decay products (as
-      :external:py:class:`numpy.ndarray`, each).
 
    .. autoattribute:: geometry
 
@@ -224,6 +246,20 @@ Python interface
       Setting this flag to :python:`False` results in the sampling of flux
       events instead, through a boundary surface defined by a constant altitude
       (w.r.t. the reference ellipsoid).
+
+   .. automethod:: box
+   .. automethod:: particles
+
+   .. automethod:: run
+
+      The provided *particles* are transported through the Monte Carlo
+      :py:attr:`geometry`. The returned object depends on the simulation
+      :py:attr:`mode`, :py:attr:`record_steps` and :py:attr:`tau_decays`
+      attributes. For example, in :python:`Backward` mode with tau decays (but
+      no steps recording), a :external:py:class:`NamedTuple <typing.NamedTuple>`
+      is returned, containing the sampled primaries, as well as the tau creation
+      vertices, and the tau decay products (as
+      :external:py:class:`numpy.ndarray`, each).
 
 ----
 

@@ -1,11 +1,11 @@
 use crate::bindings::danton;
-use crate::utils::convert::{Array, Ellipsoid, Geoid, Medium};
+use crate::utils::convert::{Array, Ellipsoid, Geoid, Medium, Reference};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates};
 use crate::utils::error::{Error, to_result};
-use crate::utils::error::ErrorKind::{NotImplementedError, TypeError, ValueError};
+use crate::utils::error::ErrorKind::{NotImplementedError, ValueError};
 use crate::utils::export::Export;
-use crate::utils::extract::{Direction, Position};
+use crate::utils::extract::{Direction, Position, Projection};
 use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
@@ -15,7 +15,7 @@ use ::std::ptr::null;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 
-// XXX Forward geoid undulations.
+// XXX Add a tracer interface.
 
 static INSTANCES: AtomicUsize = AtomicUsize::new(0);
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
@@ -26,7 +26,7 @@ pub struct Geometry {
     /// Reference geoid for the sea level.
     pub geoid: Geoid,
     #[pyo3(get)]
-    /// Topography elevation data.
+    /// The topography elevation model.
     topography: Option<Topography>,
     #[pyo3(get)]
     /// The topography composition.
@@ -35,7 +35,7 @@ pub struct Geometry {
     /// The topography density.
     density: f64,
     #[pyo3(get)]
-    /// Flag to enable/disable the ocean.
+    /// Flag to enable / disable the ocean.
     pub ocean: bool,
 
     instance: usize,
@@ -229,28 +229,57 @@ impl Geometry {
         Ok(result)
     }
 
-    /// Convert geodetic coordinates to ECEF ones.
-    #[pyo3(signature=(elements=None, **kwargs))]
-    fn to_ecef<'py>(&self,
+    /// Get undulation(s) w.r.t. the geoid.
+    #[pyo3(signature=(array=None, /, **kwargs))]
+    fn geoid_undulation<'py>(
+        &mut self,
         py: Python<'py>,
-        elements: Option<&Bound<'py, PyAny>>,
+        array: Option<&Bound<'py, PyAny>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
-        let (position, direction) = match elements {
+        self.apply()?;
+        match array {
             None => match kwargs {
                 None => return Ok(py.None()),
                 Some(kwargs) => {
-                    self.to_ecef_from_kwargs(kwargs)?
+                    self.geoid_undulation_from_any(kwargs.as_any())
                 },
             },
-            Some(elements) => {
+            Some(array) => {
                 if kwargs.is_some() {
                     let err = Error::new(NotImplementedError)
                         .what("arguments")
-                        .why("cannot mix positional and keyword arguments");
+                        .why("cannot mix positional and keyword only arguments");
                     return Err(err.to_err())
                 }
-                self.to_ecef_from_elements(elements)?
+                self.geoid_undulation_from_any(array)
+            }
+        }
+    }
+
+    /// Convert geodetic coordinates to ECEF ones.
+    #[pyo3(signature=(array=None, /, **kwargs))]
+    fn to_ecef<'py>(
+        &self,
+        py: Python<'py>,
+        array: Option<&Bound<'py, PyAny>>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let (position, direction) = match array {
+            None => match kwargs {
+                None => return Ok(py.None()),
+                Some(kwargs) => {
+                    self.to_ecef_from_any(kwargs.as_any())?
+                },
+            },
+            Some(array) => {
+                if kwargs.is_some() {
+                    let err = Error::new(NotImplementedError)
+                        .what("arguments")
+                        .why("cannot mix positional and keyword only arguments");
+                    return Err(err.to_err())
+                }
+                self.to_ecef_from_any(array)?
             }
         };
 
@@ -263,6 +292,36 @@ impl Geometry {
             }
         };
         Ok(result)
+    }
+
+    /// Get topography elevation value(s).
+    #[pyo3(signature=(array=None, /, *, reference=None, **kwargs))]
+    fn topography_elevation<'py>(
+        &mut self,
+        py: Python<'py>,
+        array: Option<&Bound<'py, PyAny>>,
+        reference: Option<Reference>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let reference = reference.unwrap_or_else(|| Reference::default());
+        self.apply()?;
+        match array {
+            None => match kwargs {
+                None => return Ok(py.None()),
+                Some(kwargs) => {
+                    self.topography_elevation_from_any(kwargs.as_any(), reference)
+                },
+            },
+            Some(array) => {
+                if kwargs.is_some() {
+                    let err = Error::new(NotImplementedError)
+                        .what("arguments")
+                        .why("cannot mix positional and keyword only arguments");
+                    return Err(err.to_err())
+                }
+                self.topography_elevation_from_any(array, reference)
+            }
+        }
     }
 }
 
@@ -298,19 +357,32 @@ impl Geometry {
         Ok(())
     }
 
-    fn to_ecef_from_elements<'py>(
+    fn geoid_undulation_from_any<'py>(
         &self,
-        elements: &Bound<'py, PyAny>
+        any: &Bound<'py, PyAny>,
+    ) -> PyResult<PyObject> {
+        let py = any.py();
+        let projection = Projection::new(any)?;
+        let size = projection.size();
+        let undulations = PyArray::<f64>::empty(py, &projection.shape())?;
+
+        for i in 0..size {
+            let latitude = projection.latitude.get(i)?;
+            let longitude = projection.longitude.get(i)?;
+            let undulation = unsafe { danton::geoid_undulation(latitude, longitude) };
+            undulations.set(i, undulation)?;
+        }
+
+        Ok(undulations.unbind(py))
+    }
+
+    fn to_ecef_from_any<'py>(
+        &self,
+        any: &Bound<'py, PyAny>
     ) -> PyResult<(PyObject, Option<PyObject>)> {
-        let py = elements.py();
-        let position = Position::new(elements)?
-            .ok_or_else(|| {
-                Error::new(ValueError)
-                    .what("position")
-                    .why("missing latitude, longitude and altitude")
-                    .to_err()
-            })?;
-        let direction = Direction::new(elements)?;
+        let py = any.py();
+        let position = Position::new(any)?;
+        let direction = Direction::maybe_new(any)?;
 
         let size = match direction.as_ref() {
             None => position.size(),
@@ -356,15 +428,13 @@ impl Geometry {
             }
         }
 
-        let ecef_position: &PyAny = ecef_position;
-        let ecef_position = ecef_position.into_py(py);
+        let ecef_position = ecef_position.unbind(py);
 
         let result = {
             match ecef_direction {
                 None => (ecef_position, None),
                 Some(ecef_direction) => {
-                    let ecef_direction: &PyAny = ecef_direction;
-                    let ecef_direction = ecef_direction.into_py(py);
+                    let ecef_direction = ecef_direction.unbind(py);
                     (ecef_position, Some(ecef_direction))
                 },
             }
@@ -373,100 +443,27 @@ impl Geometry {
         Ok(result)
     }
 
-    fn to_ecef_from_kwargs<'py>(
+    fn topography_elevation_from_any<'py>(
         &self,
-        kwargs: &Bound<'py, PyDict>
-    ) -> PyResult<(PyObject, Option<PyObject>)> {
-        let py = kwargs.py();
-        let mut position: Option<GeodeticCoordinates> = None;
-        let mut direction: Option<HorizontalCoordinates> = None;
+        any: &Bound<'py, PyAny>,
+        reference: Reference,
+    ) -> PyResult<PyObject> {
+        let py = any.py();
+        let projection = Projection::new(any)?;
+        let size = projection.size();
+        let elevations = PyArray::<f64>::empty(py, &projection.shape())?;
 
-        let default_position = || GeodeticCoordinates {
-            latitude: 0.0, longitude: 0.0, altitude: 0.0
-        };
-        let default_direction = || HorizontalCoordinates {
-            azimuth: 0.0, elevation: 0.0
-        };
-
-        for (key, value) in kwargs.iter() {
-            let key: String = key.extract()?;
-            let value: f64 = value.extract()?;
-            match key.as_str() {
-                    "latitude" => {
-                        position
-                            .get_or_insert_with(default_position)
-                            .latitude = value;
-                    },
-                    "longitude" => {
-                        position
-                            .get_or_insert_with(default_position)
-                            .longitude = value;
-                    },
-                    "altitude" => {
-                        position
-                            .get_or_insert_with(default_position)
-                            .altitude = value;
-                    },
-                    "azimuth" => {
-                        direction
-                            .get_or_insert_with(default_direction)
-                            .azimuth = value;
-                    },
-                    "elevation" => {
-                        direction
-                            .get_or_insert_with(default_direction)
-                            .elevation = value;
-                    },
-                    _ => {
-                        let why = format!("unexpected keyword argument '{}'", key);
-                        let err = Error::new(TypeError)
-                            .what("argument")
-                            .why(&why);
-                        return Err(err.to_err())
-                    }
+        for i in 0..size {
+            let latitude = projection.latitude.get(i)?;
+            let longitude = projection.longitude.get(i)?;
+            let mut elevation = unsafe { danton::topography_elevation(latitude, longitude) };
+            if let Reference::Ellipsoid = reference {
+                elevation += unsafe { danton::geoid_undulation(latitude, longitude) };
             }
+            elevations.set(i, elevation)?;
         }
 
-        let position = position
-            .ok_or_else(|| {
-                Error::new(ValueError)
-                    .what("position")
-                    .why("missing latitude, longitude and altitude")
-                    .to_err()
-            })?;
-        let ecef_position = PyArray::<f64>::empty(py, &[3])?;
-        let r = position.to_ecef(self.geoid.into());
-        for i in 0..3 {
-            ecef_position.set(i, r[i])?
-        }
-
-        let ecef_direction: Option<&PyArray<f64>> = match direction.as_ref() {
-            None => None,
-            Some(direction) => {
-                let ecef_direction = PyArray::<f64>::empty(py, &[3])?;
-                let u = direction.to_ecef(self.geoid.into(), &position);
-                for i in 0..3 {
-                    ecef_direction.set(i, u[i])?
-                }
-                Some(ecef_direction)
-            },
-        };
-
-        let ecef_position: &PyAny = ecef_position;
-        let ecef_position = ecef_position.into_py(py);
-
-        let result = {
-            match ecef_direction {
-                None => (ecef_position, None),
-                Some(ecef_direction) => {
-                    let ecef_direction: &PyAny = ecef_direction;
-                    let ecef_direction = ecef_direction.into_py(py);
-                    (ecef_position, Some(ecef_direction))
-                },
-            }
-        };
-
-        Ok(result)
+        Ok(elevations.unbind(py))
     }
 }
 

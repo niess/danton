@@ -564,6 +564,12 @@ struct danton_material_index {
 
 extern struct danton_material_index * danton_material_index;
 
+/* Topography interface. */
+DANTON_API double danton_topography_elevation(
+    double latitude, double longitude);
+DANTON_API double danton_geoid_undulation(
+    double latitude, double longitude);
+
 /* Tracer interface. */
 struct danton_tracer;
 DANTON_API struct danton_tracer * danton_tracer_create(void);
