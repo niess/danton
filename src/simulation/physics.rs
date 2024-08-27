@@ -1,4 +1,5 @@
 use crate::bindings::{alouette, danton, ent, pumas};
+use crate::utils::cache;
 use crate::utils::convert::{Bremsstrahlung, Dis, PairProduction, Pdf, Photonuclear};
 use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::{CLibraryException, ValueError};
@@ -9,6 +10,8 @@ use ::std::fs::File;
 use ::std::os::fd::AsRawFd;
 use ::std::path::Path;
 use ::std::ptr::{null, null_mut};
+
+// XXX Provide a CLI?
 
 
 #[pyclass(module="danton")]
@@ -205,7 +208,7 @@ impl Physics {
 
     fn create_physics(&mut self, py: Python) -> PyResult<()> {
         // Load or create Pumas physics.
-        let pumas = match self.load_pumas(py) {
+        let pumas = match self.load_pumas() {
             None => self.create_pumas(py)?,
             Some(pumas) => pumas,
         };
@@ -258,7 +261,11 @@ impl Physics {
         );
         let prefix = Path::new(crate::PREFIX.get(py).unwrap());
         let mdf_path = prefix.join("data/materials/default.xml");
-        let dump_path = prefix.join(format!("data/materials/default-{}.pumas", tag));
+        let dump_path = cache::path()?
+            .join("materials");
+        std::fs::create_dir_all(&dump_path)?;
+        let dump_path = dump_path
+            .join(format!("default-{}.pumas", tag));
         let dedx_path = TempDir::new()?;
 
         let c_bremsstrahlung = CString::new::<&str>(self.bremsstrahlung.into())?;
@@ -318,14 +325,14 @@ impl Physics {
         Self::check_alouette(rc)
     }
 
-    fn load_pumas(&self, py: Python) -> Option<*mut pumas::Physics> {
+    fn load_pumas(&self) -> Option<*mut pumas::Physics> {
         let tag = Self::pumas_physics_tag(
             self.bremsstrahlung,
             self.pair_production,
             self.photonuclear
         );
-        let prefix = Path::new(crate::PREFIX.get(py).unwrap());
-        let path = prefix.join(format!("data/materials/default-{}.pumas", tag));
+        let path = cache::path().ok()?
+            .join(format!("materials/default-{}.pumas", tag));
         let file = File::open(path).ok()?;
         let mut physics = null_mut();
         let rc = unsafe {

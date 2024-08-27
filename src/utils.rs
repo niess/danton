@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod convert;
 pub mod coordinates;
 pub mod error;
