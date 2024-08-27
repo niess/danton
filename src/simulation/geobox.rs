@@ -1,5 +1,5 @@
 use crate::simulation::random::Random;
-use crate::utils::convert::Ellipsoid;
+use crate::utils::convert::{Array, Ellipsoid};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates, HorizontalsExport};
 use crate::utils::error::Error;
@@ -100,9 +100,14 @@ impl GeoBox {
     fn from_local(
         &self,
         py: Python,
-        position: Option<&PyArray<f64>>,
-        direction: Option<&PyArray<f64>>
+        position: Option<Array<f64>>,
+        direction: Option<Array<f64>>
     ) -> PyResult<PyObject> {
+        let position = position
+            .map(|position| position.resolve());
+        let direction = direction
+            .map(|direction| direction.resolve());
+
         enum Case {
             Both,
             Direction,
@@ -143,10 +148,10 @@ impl GeoBox {
             Case::Position => position.unwrap().size(),
         };
 
-        fn check_shape(array: &PyArray<f64>, what: &str) -> PyResult<()> {
+        fn check_shape(array: &PyArray<f64>, what: &str) -> PyResult<usize> {
             let shape = array.shape();
             if shape.len() == 1 && shape[0] == 3 {
-                return Ok(())
+                return Ok(1)
             }
             if (shape.len() < 2) || (shape[shape.len() - 1] != 3) {
                 let why = format!(
@@ -158,16 +163,20 @@ impl GeoBox {
                     .why(&why);
                 Err(err.to_err())
             } else {
-                Ok(())
+                Ok(shape.len())
             }
         }
 
-        if let Some(position) = position {
-            check_shape(position, "position")?
-        }
-        if let Some(direction) = direction {
-            check_shape(direction, "direction")?
-        }
+        let ndim = {
+            let mut ndim = 0;
+            if let Some(position) = position {
+                ndim = ndim.max(check_shape(position, "position")?)
+            }
+            if let Some(direction) = direction {
+                ndim = ndim.max(check_shape(direction, "direction")?)
+            }
+            ndim
+        };
 
         let (mut coordinates, mut horizontals, mut geodetics) = match case {
             Case::Both => {
@@ -235,6 +244,14 @@ impl GeoBox {
             Case::Both => Export::export::<CoordinatesExport>(py, coordinates.unwrap())?,
             Case::Direction => Export::export::<HorizontalsExport>(py, horizontals.unwrap())?,
             Case::Position => Export::export::<GeodeticsExport>(py, geodetics.unwrap())?,
+        };
+        let result = if ndim == 1 {
+            result
+                .bind(py)
+                .get_item(0)?
+                .unbind()
+        } else {
+            result
         };
         Ok(result)
     }

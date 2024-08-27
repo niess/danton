@@ -3,12 +3,14 @@ use crate::utils::error::ErrorKind::ValueError;
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
 
+mod array;
 mod geodesy;
 mod medium;
 mod mode;
 mod physics;
 mod state;
 
+pub use array::Array;
 pub use geodesy::{Ellipsoid, Geoid};
 pub use medium::Medium;
 pub use mode::Mode;

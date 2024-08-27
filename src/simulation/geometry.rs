@@ -1,5 +1,5 @@
 use crate::bindings::danton;
-use crate::utils::convert::{Ellipsoid, Geoid, Medium};
+use crate::utils::convert::{Array, Ellipsoid, Geoid, Medium};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates};
 use crate::utils::error::{Error, to_result};
@@ -124,28 +124,34 @@ impl Geometry {
     fn from_ecef(
         &self,
         py: Python,
-        position: &PyArray<f64>,
-        direction: Option<&PyArray<f64>>
+        position: Array<f64>,
+        direction: Option<Array<f64>>
     ) -> PyResult<PyObject> {
+        let position = position.resolve();
         let size = position.size();
-        if let Some(direction) = direction {
-            if direction.size() != size {
-                let why = format!(
-                    "expected a size {} array, found a size {} array",
-                    size,
-                    direction.size(),
-                );
-                let err = Error::new(ValueError)
-                    .what("direction")
-                    .why(&why);
-                return Err(err.to_err())
-            }
-        }
+        let direction = match direction {
+            Some(direction) => {
+                let direction = direction.resolve();
+                if direction.size() != size {
+                    let why = format!(
+                        "expected a size {} array, found a size {} array",
+                        size,
+                        direction.size(),
+                    );
+                    let err = Error::new(ValueError)
+                        .what("direction")
+                        .why(&why);
+                    return Err(err.to_err())
+                }
+                Some(direction)
+            },
+            None => None,
+        };
 
-        fn check_shape(array: &PyArray<f64>, what: &str) -> PyResult<()> {
+        fn check_shape(array: &PyArray<f64>, what: &str) -> PyResult<usize> {
             let shape = array.shape();
             if shape.len() == 1 && shape[0] == 3 {
-                return Ok(())
+                return Ok(1)
             }
             if (shape.len() < 2) || (shape[shape.len() - 1] != 3) {
                 let why = format!(
@@ -157,13 +163,13 @@ impl Geometry {
                     .why(&why);
                 Err(err.to_err())
             } else {
-                Ok(())
+                Ok(shape.len())
             }
         }
 
-        check_shape(position, "position")?;
+        let ndim = check_shape(position, "position")?;
         if let Some(direction) = direction {
-            check_shape(direction, "direction")?
+            check_shape(direction, "direction")?;
         }
 
         let (mut coordinates, mut geodetics) = match direction {
@@ -211,6 +217,14 @@ impl Geometry {
         let result = match direction {
             Some(_) => Export::export::<CoordinatesExport>(py, coordinates.unwrap())?,
             None => Export::export::<GeodeticsExport>(py, geodetics.unwrap())?,
+        };
+        let result = if ndim == 1 {
+            result
+                .bind(py)
+                .get_item(0)?
+                .unbind()
+        } else {
+            result
         };
         Ok(result)
     }

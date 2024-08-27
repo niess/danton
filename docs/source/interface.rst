@@ -105,13 +105,29 @@ Python interface
 
    .. automethod:: from_ecef
 
-      The *position* and *direction* arguments must be
-      :external:py:class:`numpy.ndarray` containing cartesian coordinates in
-      Earth-Centered Earth-Fixed (ECEF) frame. For instance,
+      The *position* and *direction* arguments must arrays-like containing
+      cartesian coordinates in Earth-Centered Earth-Fixed (ECEF) frame. For
+      instance,
 
-      >>> geodetic = geometry.from_ecef(numpy.array([6378137.0, 0.0, 0.0]))
+      >>> geodetic_position = geometry.from_ecef([6378137, 0, 0])
 
    .. automethod:: to_ecef
+
+      .. note::
+
+         The positional *elements* argument and named *kwargs* arguments are
+         mutually exclusive.
+
+      The *elements* argument, if specified, must be a structured
+      :external:py:class:`numpy.ndarray` containing geodetic coordinates
+      (:python:`"latitude"`, :python:`"longitude"`, :python:`"altitude"`), and
+      optionally horizontal ones (:python:`"azimuth"`, :python:`"elevation"`).
+
+      Alternativelly, geodetic (and horizontal coordinates) can be specified as
+      *kwargs*. In the latter case, only scalar coordinates are supported. For
+      instance,
+
+      >>> ecef_position = geometry.to_ecef(latitude=45, longitude=3)
 
 ----
 
