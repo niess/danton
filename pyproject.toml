@@ -21,6 +21,9 @@ dependencies = [
     "numpy >= 1.6.0",
 ]
 
+[project.scripts]
+danton = "danton.__main__:danton"
+
 [project.urls]
 source = "https://github.com/niess/danton"
 

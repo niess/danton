@@ -11,8 +11,6 @@ use ::std::os::fd::AsRawFd;
 use ::std::path::Path;
 use ::std::ptr::{null, null_mut};
 
-// XXX Provide a CLI?
-
 
 #[pyclass(module="danton")]
 pub struct Physics {
