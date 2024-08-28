@@ -12,6 +12,11 @@ use ::std::path::Path;
 use ::std::ptr::{null, null_mut};
 
 
+// XXX Manage materials profiles.
+// XXX Explicit pre-computation.
+// XXX Waitbar for pre-computations?
+
+
 #[pyclass(module="danton")]
 pub struct Physics {
     /// The Bremsstrahlung model for tau energy losses.

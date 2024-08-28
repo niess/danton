@@ -1,5 +1,5 @@
 use enum_variants_strings::EnumVariantsStrings;
-use ::std::ffi::c_int;
+use ::std::ffi::{c_int, CString};
 
 
 #[derive(Clone, Copy, EnumVariantsStrings)]
@@ -54,6 +54,28 @@ impl From<(c_int, bool)> for Medium {
 impl From<Medium> for &'static str {
     fn from(value: Medium) -> Self {
         value.to_str()
+    }
+}
+
+impl From<Medium> for CString {
+    fn from(value: Medium) -> Self {
+        let medium: &str = value.into();
+        CString::new(medium).unwrap()
+    }
+}
+
+impl From<Medium> for [u8; 16] {
+    fn from(value: Medium) -> Self {
+        let medium: CString = value.into();
+        let bytes = medium.as_bytes();
+        let mut array = [0_u8; 16];
+        for (i, bi) in bytes.iter().enumerate() {
+            if i >= array.len() - 1 {
+                break;
+            }
+            array[i] = *bi;
+        }
+        array
     }
 }
 

@@ -28,6 +28,7 @@ struct ArrayInterface {
     dtype_bool: PyObject,
     dtype_f64: PyObject,
     dtype_i32: PyObject,
+    dtype_u8x16: PyObject,
     dtype_coordinates: PyObject,
     dtype_geodetic: PyObject,
     dtype_horizontal: PyObject,
@@ -123,6 +124,10 @@ pub fn initialise(py: Python) -> PyResult<()> {
 
     let dtype_i32: PyObject = dtype
         .call1(("i4",))?
+        .into_py(py);
+
+    let dtype_u8x16: PyObject = dtype
+        .call1(("S16",))?
         .into_py(py);
 
     let dtype_coordinates: PyObject = {
@@ -281,6 +286,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
         dtype_bool,
         dtype_f64,
         dtype_i32,
+        dtype_u8x16,
         dtype_coordinates,
         dtype_geodetic,
         dtype_horizontal,
@@ -349,17 +355,27 @@ impl PyUntypedArray {
 
     #[inline]
     pub fn shape(&self) -> Vec<usize> {
-        self.shape_slice()
-            .iter()
-            .map(|v| *v as usize)
-            .collect()
+        match self.shape_slice() {
+            Some(shape) => {
+                shape
+                    .iter()
+                    .map(|v| *v as usize)
+                    .collect()
+            },
+            None => Vec::new(),
+        }
     }
 
     #[inline]
     pub fn size(&self) -> usize {
-        self.shape_slice()
-            .iter()
-            .product::<npy_intp>() as usize
+        match self.shape_slice() {
+            Some(shape) => {
+                shape
+                    .iter()
+                    .product::<npy_intp>() as usize
+            },
+            None => 1,
+        }
     }
 }
 
@@ -382,34 +398,48 @@ impl PyUntypedArray {
     }
 
     fn offset_of(&self, index: usize) -> isize {
-        let shape = self.shape_slice();
-        let strides = self.strides_slice();
-        let n = shape.len();
-        if n == 0 {
-            0
-        } else {
-            let mut remainder = index;
-            let mut offset = 0_isize;
-            for i in (0..n).rev() {
-                let m = shape[i] as usize;
-                let j = remainder % m;
-                remainder = (remainder - j) / m;
-                offset += (j as isize) * strides[i];
-            }
-            offset
+        match self.shape_slice() {
+            Some(shape) => {
+                let strides = self.strides_slice().unwrap();
+                let n = shape.len();
+                if n == 0 {
+                    0
+                } else {
+                    let mut remainder = index;
+                    let mut offset = 0_isize;
+                    for i in (0..n).rev() {
+                        let m = shape[i] as usize;
+                        let j = remainder % m;
+                        remainder = (remainder - j) / m;
+                        offset += (j as isize) * strides[i];
+                    }
+                    offset
+                }
+            },
+            None => 0,
         }
     }
 
     #[inline]
-    fn shape_slice(&self) -> &[npy_intp] {
+    fn shape_slice(&self) -> Option<&[npy_intp]> {
         let obj: &PyArrayObject = self.as_ref();
-        unsafe { std::slice::from_raw_parts(obj.dimensions, obj.nd as usize) }
+        if obj.nd > 0 {
+            let slice = unsafe { std::slice::from_raw_parts(obj.dimensions, obj.nd as usize) };
+            Some(slice)
+        } else {
+            None
+        }
     }
 
     #[inline]
-    fn strides_slice(&self) -> &[npy_intp] {
+    fn strides_slice(&self) -> Option<&[npy_intp]> {
         let obj: &PyArrayObject = self.as_ref();
-        unsafe { std::slice::from_raw_parts(obj.strides, obj.nd as usize) }
+        if obj.nd > 0 {
+            let slice = unsafe { std::slice::from_raw_parts(obj.strides, obj.nd as usize) };
+            Some(slice)
+        } else {
+            None
+        }
     }
 }
 
@@ -752,6 +782,13 @@ impl Dtype for i32 {
     #[inline]
     fn dtype(py: Python) -> PyResult<PyObject> {
         Ok(api(py).dtype_i32.clone_ref(py))
+    }
+}
+
+impl Dtype for [u8; 16] {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_u8x16.clone_ref(py))
     }
 }
 

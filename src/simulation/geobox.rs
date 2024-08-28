@@ -278,11 +278,7 @@ impl GeoBox {
         let inside = PyArray::<bool>::empty(py, &position.shape())?;
 
         for i in 0..position.size() {
-            let geodetic = GeodeticCoordinates {
-                latitude: position.latitude.get(i)?,
-                longitude: position.longitude.get(i)?,
-                altitude: position.altitude.get(i)?,
-            };
+            let geodetic = position.get(i)?;
             let r = frame.from_geodetic(&geodetic);
             const EPS: f64 = ::std::f32::EPSILON as f64;
             let b =
@@ -349,14 +345,10 @@ impl GeoBox {
         let origin = self.origin();
 
         for i in 0..size {
-            let geodetic = match position {
+            let geodetic = match position.as_ref() {
                 None => origin,
-                Some(Position { latitude, longitude, altitude }) => {
-                    let geodetic = GeodeticCoordinates {
-                        latitude: latitude.get(i)?,
-                        longitude: longitude.get(i)?,
-                        altitude: altitude.get(i)?,
-                    };
+                Some(position) => {
+                    let geodetic = position.get(i)?;
                     let r = frame.from_geodetic(&geodetic);
                     let local_position = local_position.unwrap();
                     local_position.set(3 * i, r[0])?;

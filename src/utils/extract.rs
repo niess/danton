@@ -1,4 +1,5 @@
 use crate::utils::convert::Array;
+use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::{TypeError, ValueError};
 use crate::utils::numpy::PyArray;
@@ -58,6 +59,14 @@ impl<'a> Direction<'a> {
                     .why("missing azimuth and elevation")
                     .to_err()
             })
+    }
+
+    pub fn get(&self, i: usize) -> PyResult<HorizontalCoordinates> {
+        let horizontal = HorizontalCoordinates {
+            azimuth: self.azimuth.get(i)?,
+            elevation: self.elevation.get(i)?,
+        };
+        Ok(horizontal)
     }
 
     pub fn shape(&self) -> Vec<usize> {
@@ -136,6 +145,15 @@ impl<'a> Position<'a> {
                     .why("missing latitude, longitude and altitude")
                     .to_err()
             })
+    }
+
+    pub fn get(&self, i: usize) -> PyResult<GeodeticCoordinates> {
+        let geodetic = GeodeticCoordinates {
+            latitude: self.latitude.get(i)?,
+            longitude: self.longitude.get(i)?,
+            altitude: self.altitude.get(i)?,
+        };
+        Ok(geodetic)
     }
 
     pub fn shape(&self) -> Vec<usize> {

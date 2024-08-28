@@ -4,7 +4,7 @@ use crate::utils::convert::{Ellipsoid, Medium, Mode};
 use crate::utils::export::Export;
 use derive_more::{AsMut, AsRef, From};
 use pyo3::prelude::*;
-use ::std::ffi::{c_int, CString, c_uint};
+use ::std::ffi::{c_int, c_uint};
 use ::std::pin::Pin;
 
 
@@ -114,15 +114,7 @@ impl Stepper {
                     }
                 }
                 let medium: Medium = (medium, stepper.ocean).into();
-                let medium: &str = medium.into();
-                let medium = CString::new(medium).unwrap();
-                let bytes = medium.as_bytes();
-                for (i, bi) in bytes.iter().enumerate() {
-                    if i >= step.medium.len() - 1 {
-                        break;
-                    }
-                    step.medium[i] = *bi;
-                }
+                step.medium = medium.into();
                 step
             };
             match stepper.steps.as_mut() {

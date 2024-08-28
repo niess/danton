@@ -257,6 +257,34 @@ impl Geometry {
         }
     }
 
+    /// Return medium at coordinates.
+    #[pyo3(signature=(array=None, /, **kwargs))]
+    fn locate<'py>(
+        &mut self,
+        py: Python<'py>,
+        array: Option<&Bound<'py, PyAny>>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let any = array
+            .or_else(|| kwargs.map(|kwargs| kwargs.as_any()));
+        let position = match any {
+            Some(any) => Position::new(any)?,
+            None => return Ok(py.None()),
+        };
+        let size = position.size();
+        let media = PyArray::<[u8; 16]>::empty(py, &position.shape())?;
+
+        let tracer = Tracer::new(self)?;
+        for i in 0..size {
+            let geodetic = position.get(i)?;
+            let medium = tracer.medium(&geodetic);
+            media.set(i, medium.into())?;
+        }
+
+        let media: &PyAny = media;
+        Ok(media.into_py(py))
+    }
+
     /// Convert geodetic coordinates to ECEF ones.
     #[pyo3(signature=(array=None, /, **kwargs))]
     fn to_ecef<'py>(
@@ -406,20 +434,13 @@ impl Geometry {
         };
 
         for i in 0..size {
-            let geodetic = GeodeticCoordinates {
-                latitude: position.latitude.get(i)?,
-                longitude: position.longitude.get(i)?,
-                altitude: position.altitude.get(i)?,
-            };
+            let geodetic = position.get(i)?;
             let r = geodetic.to_ecef(self.geoid.into());
             ecef_position.set(3 * i, r[0])?;
             ecef_position.set(3 * i + 1, r[1])?;
             ecef_position.set(3 * i + 2, r[2])?;
-            if let Some(Direction { azimuth, elevation }) = direction {
-                let horizontal = HorizontalCoordinates {
-                    azimuth: azimuth.get(i)?,
-                    elevation: elevation.get(i)?,
-                };
+            if let Some(direction) = direction.as_ref() {
+                let horizontal = direction.get(i)?;
                 let u = horizontal.to_ecef(self.geoid.into(), &geodetic);
                 let ecef_direction = ecef_direction.unwrap();
                 ecef_direction.set(3 * i, u[0])?;

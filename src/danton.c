@@ -565,10 +565,10 @@ static double medium(const double * position, const double * direction,
         }
 
         /* Let us compute the ground altitude. */
-        double zg;
+        double zg = -DBL_MAX;
         if (earth.flat_topography)
                 zg = earth.z0;
-        else {
+        else if (earth.stack != NULL) {
                 int inside;
                 if (lock != NULL) {
                         turtle_client_elevation(state->context->client,
