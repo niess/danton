@@ -42,13 +42,16 @@ impl Particle {
 
 /// Create an array of Monte Carlo particles.
 #[pyfunction]
-#[pyo3(signature=(shape, **kwargs))]
+#[pyo3(signature=(shape=None, /, **kwargs))]
 pub fn particles(
     py: Python,
-    shape: ShapeArg,
+    shape: Option<ShapeArg>,
     kwargs: Option<&Bound<PyDict>>
 ) -> PyResult<PyObject> {
-    let shape: Vec<usize> = shape.into();
+    let shape: Vec<usize> = match shape {
+        Some(shape) => shape.into(),
+        None => Vec::new(),
+    };
     let array: &PyAny = PyArray::<Particle>::zeros(py, &shape)?;
     let mut has_pid = false;
     let mut has_energy = false;
@@ -333,7 +336,8 @@ impl ParticlesGenerator {
     }
 
     /// Generate Monte Carlo particles according to current selection(s).
-    fn generate<'py>(&self, py: Python<'py>, shape: ShapeArg) -> PyResult<PyObject> {
+    #[pyo3(signature=(shape=None, /))]
+    fn generate<'py>(&self, py: Python<'py>, shape: Option<ShapeArg>) -> PyResult<PyObject> {
         // Check configuration.
         let is_rejection = match self.position {
             Position::Inside { limit, .. } => {
@@ -370,7 +374,10 @@ impl ParticlesGenerator {
         };
 
         // Create particles container.
-        let shape: Vec<usize> = shape.into();
+        let shape: Vec<usize> = match shape {
+            Some(shape) => shape.into(),
+            None => Vec::new(),
+        };
         let array = PyArray::<Particle>::zeros(py, &shape)?;
         let particles = unsafe { array.slice_mut()? };
 

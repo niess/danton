@@ -56,9 +56,10 @@ impl From<Size> for [f64; 3] {
 
 #[pymethods]
 impl GeoBox {
+    #[pyo3(signature=(size=None, *, latitude=None, longitude=None, altitude=None, declination=None, ellipsoid=None))]
     #[new]
     pub fn new(
-        size: Size,
+        size: Option<Size>,
         latitude: Option<f64>,
         longitude: Option<f64>,
         altitude: Option<f64>,
@@ -69,7 +70,10 @@ impl GeoBox {
         let longitude = longitude.unwrap_or(0.0);
         let altitude = altitude.unwrap_or(0.0);
         let ellipsoid = ellipsoid.unwrap_or(Ellipsoid::default());
-        let size: [f64; 3] = size.into();
+        let size: [f64; 3] = match size {
+            Some(size) => size.into(),
+            None => [1.0; 3],
+        };
         let declination = declination.unwrap_or(0.0);
         Self { ellipsoid, latitude, longitude, altitude, size, declination }
     }

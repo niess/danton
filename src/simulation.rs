@@ -129,11 +129,11 @@ impl Simulation {
     }
 
     /// Create a local box.
-    #[pyo3(name="r#box")]
+    #[pyo3(name="r#box", signature=(size=None, *, latitude=None, longitude=None, altitude=None, declination=None))]
     fn geobox(
         &self,
         py: Python,
-        size: geobox::Size,
+        size: Option<geobox::Size>,
         latitude: Option<f64>,
         longitude: Option<f64>,
         altitude: Option<f64>,
