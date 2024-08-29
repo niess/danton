@@ -2,7 +2,7 @@ use crate::utils::convert::Array;
 use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::{TypeError, ValueError};
-use crate::utils::numpy::PyArray;
+use crate::utils::numpy::{PyArray, PyUntypedArray};
 use pyo3::prelude::*;
 
 
@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 pub struct Direction<'a> {
     pub azimuth: &'a PyArray<f64>,
     pub elevation: &'a PyArray<f64>,
+    size: Size,
 }
 
 impl<'a> Direction<'a> {
@@ -28,14 +29,16 @@ impl<'a> Direction<'a> {
         if all {
             let azimuth = azimuth.unwrap();
             let elevation = elevation.unwrap();
-            if azimuth.size() != elevation.size() {
-                let err = Error::new(ValueError)
-                    .what("direction")
-                    .why("differing arrays sizes")
-                    .to_err();
-                return Err(err);
-            }
-            let direction = Direction { azimuth, elevation };
+            let azimuth_size = Size::new(azimuth);
+            let elevation_size = Size::new(elevation);
+            let size = azimuth_size.common(&elevation_size)
+                .ok_or_else(|| Error::new(ValueError)
+                    .what("azimuth and elevation")
+                    .why("inconsistent arrays sizes")
+                    .to_err()
+                )?
+                .clone();
+            let direction = Direction { azimuth, elevation, size };
             Ok(Some(direction))
         } else if any {
             let why = if azimuth.is_some() {
@@ -70,7 +73,10 @@ impl<'a> Direction<'a> {
     }
 
     pub fn shape(&self) -> Vec<usize> {
-        self.azimuth.shape()
+        match &self.size {
+            Size::Scalar => Vec::new(),
+            Size::Array { shape, .. } => shape.clone(),
+        }
     }
 
     pub fn shape3(&self) -> Vec<usize> {
@@ -80,7 +86,10 @@ impl<'a> Direction<'a> {
     }
 
     pub fn size(&self) -> usize {
-        self.azimuth.size()
+        match &self.size {
+            Size::Scalar => 1,
+            Size::Array { size, .. } => *size,
+        }
     }
 }
 
@@ -95,6 +104,7 @@ pub struct Position<'a> {
     pub latitude: &'a PyArray<f64>,
     pub longitude: &'a PyArray<f64>,
     pub altitude: &'a PyArray<f64>,
+    size: Size,
 }
 
 impl<'a> Position<'a> {
@@ -110,15 +120,19 @@ impl<'a> Position<'a> {
             let latitude = latitude.unwrap();
             let longitude = longitude.unwrap();
             let altitude = altitude.unwrap();
-            let size = latitude.size();
-            if (longitude.size() != size) || (altitude.size() != size) {
-                let err = Error::new(ValueError)
-                    .what("position")
-                    .why("differing arrays sizes")
-                    .to_err();
-                return Err(err);
-            }
-            let position = Self { latitude, longitude, altitude };
+            let latitude_size = Size::new(latitude);
+            let longitude_size = Size::new(longitude);
+            let altitude_size = Size::new(altitude);
+            let size = latitude_size
+                .common(&longitude_size)
+                .and_then(|size| size.common(&altitude_size))
+                .ok_or_else(|| Error::new(ValueError)
+                    .what("latitude, longitude and altitude")
+                    .why("inconsistent arrays sizes")
+                    .to_err()
+                )?
+                .clone();
+            let position = Self { latitude, longitude, altitude, size };
             Ok(Some(position))
         } else if any {
             let mut missing: Vec<&str> = Vec::new();
@@ -157,7 +171,10 @@ impl<'a> Position<'a> {
     }
 
     pub fn shape(&self) -> Vec<usize> {
-        self.latitude.shape()
+        match &self.size {
+            Size::Scalar => Vec::new(),
+            Size::Array { shape, .. } => shape.clone(),
+        }
     }
 
     pub fn shape3(&self) -> Vec<usize> {
@@ -167,7 +184,10 @@ impl<'a> Position<'a> {
     }
 
     pub fn size(&self) -> usize {
-        self.latitude.size()
+        match &self.size {
+            Size::Scalar => 1,
+            Size::Array { size, .. } => *size,
+        }
     }
 }
 
@@ -181,6 +201,7 @@ impl<'a> Position<'a> {
 pub struct Projection<'a> {
     pub latitude: &'a PyArray<f64>,
     pub longitude: &'a PyArray<f64>,
+    size: Size,
 }
 
 impl<'a> Projection<'a> {
@@ -194,14 +215,16 @@ impl<'a> Projection<'a> {
         if all {
             let latitude = latitude.unwrap();
             let longitude = longitude.unwrap();
-            if latitude.size() != longitude.size() {
-                let err = Error::new(ValueError)
-                    .what("projection")
-                    .why("differing arrays sizes")
-                    .to_err();
-                return Err(err);
-            }
-            let projection = Projection { latitude, longitude };
+            let latitude_size = Size::new(latitude);
+            let longitude_size = Size::new(longitude);
+            let size = latitude_size.common(&longitude_size)
+                .ok_or_else(|| Error::new(ValueError)
+                    .what("latitude and longitude")
+                    .why("inconsistent arrays sizes")
+                    .to_err()
+                )?
+                .clone();
+            let projection = Projection { latitude, longitude, size };
             Ok(Some(projection))
         } else if any {
             let why = if latitude.is_some() {
@@ -227,11 +250,17 @@ impl<'a> Projection<'a> {
     }
 
     pub fn shape(&self) -> Vec<usize> {
-        self.latitude.shape()
+        match &self.size {
+            Size::Scalar => Vec::new(),
+            Size::Array { shape, .. } => shape.clone(),
+        }
     }
 
     pub fn size(&self) -> usize {
-        self.latitude.size()
+        match &self.size {
+            Size::Scalar => 1,
+            Size::Array { size, .. } => *size,
+        }
     }
 }
 
@@ -257,4 +286,41 @@ fn extract<'py>(
         })?
         .map(|array: Array<f64>| array.resolve());
     Ok(value)
+}
+
+
+// ===============================================================================================
+//
+// Managed array size.
+//
+// ===============================================================================================
+
+#[derive(Clone)]
+enum Size {
+    Scalar,
+    Array { size: usize, shape: Vec<usize> },
+}
+
+impl Size {
+    fn new(array: &PyUntypedArray) -> Self {
+        if array.ndim() == 0 {
+            Self::Scalar
+        } else {
+            Self::Array { size: array.size(), shape: array.shape() }
+        }
+    }
+
+    fn common<'a>(&'a self, other: &'a Self) -> Option<&'a Self> {
+        match self {
+            Self::Scalar => Some(other),
+            Self::Array { size, .. } => match other {
+                Self::Scalar => Some(self),
+                Self::Array { size: other_size, .. } => if size == other_size {
+                    Some(self)
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }

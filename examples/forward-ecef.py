@@ -5,6 +5,7 @@ import danton
 # Simulation settings.
 energy = 1E+10 # eV
 latitude, longitude = -30.705, -68.263 # deg
+altitude = 700.0 # m
 ecef_direction = [0.96339066, 0.19163032, 0.1875]
 
 # Create a Danton simulation interface.
@@ -30,7 +31,8 @@ box = simulation.box(
 # the box centre.
 ecef_position = simulation.geometry.to_ecef(
     latitude = latitude,
-    longitude = longitude
+    longitude = longitude,
+    altitude = altitude
 )
 coordinates = simulation.geometry.from_ecef(ecef_position, ecef_direction)
 azimuth, elevation = coordinates["azimuth"], coordinates["elevation"]

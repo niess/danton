@@ -382,8 +382,9 @@ impl PyUntypedArray {
 // Private interface.
 impl PyUntypedArray {
     pub fn data(&self, index: usize) -> PyResult<*mut c_char> {
+        let ndim = self.ndim();
         let size = self.size();
-        if index >= size {
+        if (ndim > 0)  && (index >= size) {
             Err(PyIndexError::new_err(format!(
                 "ndarray index out of range (expected an index in [0, {}), found {})",
                 size,

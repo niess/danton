@@ -357,11 +357,8 @@ impl GeoBox {
                     geodetic
                 },
             };
-            if let Some(Direction { azimuth, elevation }) = direction {
-                let horizontal = HorizontalCoordinates {
-                    azimuth: azimuth.get(i)?,
-                    elevation: elevation.get(i)?,
-                };
+            if let Some(direction) = &direction {
+                let horizontal = direction.get(i)?;
                 let u = frame.from_horizontal(&horizontal, &geodetic);
                 let local_direction = local_direction.unwrap();
                 local_direction.set(3 * i, u[0])?;
