@@ -23,11 +23,11 @@ Python interface
    configured through attributes. See the :doc:`geometry` section for more
    details.
 
-   .. method:: __new__()
+   .. method:: __new__(**kwargs)
 
       Create a new Earth geometry.
 
-      >>> geometry = danton.Geometry()
+      >>> geometry = danton.Geometry(geoid="EGM96")
 
       By default, the Earth geometry is initialised according to the Preliminary
       Reference Earth Model (`PREM`_). See the attributes below for other

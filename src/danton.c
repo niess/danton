@@ -556,13 +556,7 @@ static double medium(const double * position, const double * direction,
         if (altitude == -DBL_MAX)
                 altitude = compute_geodetic(r, position, &latitude, &longitude);
 
-        double z_sea = 0.;
-        if (earth.undulations != NULL) {
-                int inside;
-                turtle_map_elevation(
-                    earth.undulations, longitude, latitude, &z_sea, &inside);
-                if (!inside) z_sea = 0.;
-        }
+        double z_sea = danton_geoid_undulation(latitude, longitude);
 
         /* Let us compute the ground altitude. */
         double zg = -DBL_MAX;
@@ -2761,9 +2755,15 @@ DANTON_API double danton_geoid_undulation(
         } else {
                 double undulation = 0.0;
                 int inside = 0;
+                while (longitude < 0.0) {
+                        longitude += 360.0;
+                }
+                while (longitude > 360.0) {
+                        longitude -= 360.0;
+                }
                 turtle_map_elevation(
                     earth.undulations,
-                    longitude, // XXX Check X-Y order.
+                    longitude,
                     latitude,
                     &undulation,
                     &inside
