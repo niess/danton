@@ -2784,8 +2784,8 @@ DANTON_API double danton_topography_elevation(
                 int inside = 0;
                 turtle_stack_elevation(
                     earth.stack,
-                    longitude,
                     latitude,
+                    longitude,
                     &elevation,
                     &inside
                 );

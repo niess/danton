@@ -383,19 +383,23 @@ impl Geometry {
                 Topography::Flat(z) => CString::new(format!("flat://{:.6}", z)),
             })
                 .transpose()?;
-            let topography = match topography {
-                None => null(),
-                Some(cstr) => cstr.as_ptr(),
-            };
             let mut ocean = if self.ocean { 1 } else { 0 };
             to_result(
                 unsafe {
-                    danton::earth_model(
-                        geoid.as_ptr(),
-                        topography,
-                        self.density,
-                        &mut ocean,
-                    )
+                    match topography {
+                        None => danton::earth_model(
+                            geoid.as_ptr(),
+                            null(),
+                            self.density,
+                            &mut ocean,
+                        ),
+                        Some(topography) => danton::earth_model(
+                            geoid.as_ptr(),
+                            topography.as_ptr(), // Ensures that topography isn't moved.
+                            self.density,
+                            &mut ocean,
+                        ),
+                    }
                 },
                 None
             )?;
