@@ -311,34 +311,28 @@ impl GeoBox {
             }
         };
 
-        let size = match position.as_ref() {
+        let (size, shape3) = match position.as_ref() {
             None => match direction.as_ref() {
                 None => return Ok(py.None()),
-                Some(direction) => direction.size(),
+                Some(direction) => (direction.size(), direction.shape3()),
             },
             Some(position) => match direction.as_ref() {
-                None => position.size(),
+                None => (position.size(), position.shape3()),
                 Some(direction) => {
-                    let size = position.size();
-                    if direction.size() != size {
-                        let err = Error::new(ValueError)
-                            .what("direction")
-                            .why("differing arrays sizes")
-                            .to_err();
-                        return Err(err);
-                    }
-                    size
+                    let (size, mut shape) = position.common(direction)?;
+                    shape.push(3);
+                    (size, shape)
                 },
             },
         };
 
         let local_position: Option<&PyArray<f64>> = match position.as_ref() {
             None => None,
-            Some(position) => Some(PyArray::<f64>::empty(py, &position.shape3())?),
+            Some(_) => Some(PyArray::<f64>::empty(py, &shape3)?),
         };
         let local_direction: Option<&PyArray<f64>> = match direction.as_ref() {
             None => None,
-            Some(direction) => Some(PyArray::<f64>::empty(py, &direction.shape3())?),
+            Some(_) => Some(PyArray::<f64>::empty(py, &shape3)?),
         };
 
         let frame = self.local_frame();

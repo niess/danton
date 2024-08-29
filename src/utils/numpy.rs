@@ -1,3 +1,4 @@
+use crate::simulation::geometry::Trace;
 use crate::simulation::particles::Particle;
 use crate::simulation::recorder::{Primary, Product, Secondary, Vertex};
 use crate::simulation::stepper::Step;
@@ -37,6 +38,7 @@ struct ArrayInterface {
     dtype_product: PyObject,
     dtype_secondary: PyObject,
     dtype_step: PyObject,
+    dtype_trace: PyObject,
     dtype_vertex: PyObject,
     type_ndarray: PyObject,
     // Functions.
@@ -246,6 +248,17 @@ pub fn initialise(py: Python) -> PyResult<()> {
             .into_py(py)
     };
 
+    let dtype_trace: PyObject = {
+        let arg: [_; 3] = [
+            ("distance", "f8"),
+            ("current", "S16"),
+            ("next", "S16"),
+        ];
+        dtype
+            .call1((arg, true))?
+            .into_py(py)
+    };
+
     let dtype_vertex: PyObject = {
         let arg: [_; 9] = [
             ("event", "u8"),
@@ -295,6 +308,7 @@ pub fn initialise(py: Python) -> PyResult<()> {
         dtype_product,
         dtype_secondary,
         dtype_step,
+        dtype_trace,
         dtype_vertex,
         type_ndarray: object(2),
         // Functions.
@@ -846,6 +860,13 @@ impl Dtype for Step {
     #[inline]
     fn dtype(py: Python) -> PyResult<PyObject> {
         Ok(api(py).dtype_step.clone_ref(py))
+    }
+}
+
+impl Dtype for Trace {
+    #[inline]
+    fn dtype(py: Python) -> PyResult<PyObject> {
+        Ok(api(py).dtype_trace.clone_ref(py))
     }
 }
 

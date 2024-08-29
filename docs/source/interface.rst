@@ -164,6 +164,29 @@ Python interface
 
       >>> z = geometry.topography_elevation(latitude=45, longitude=3)
 
+   .. automethod:: trace
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      The optional *backward* argument reverses the tracing direction, if set to
+      :python:`True`.
+
+      The *array* argument, if specified, must be a structured
+      :external:py:class:`numpy.ndarray` containing start position
+      (:python:`"latitude"`, :python:`"longitude"`, :python:`"altitude"`) and
+      tracing direction (:python:`"azimuth"`, :python:`"elevation"`).
+
+      Alternativelly, position and direction can be specified as *kwargs*. For
+      instance,
+
+      >>> trace = geometry.trace(
+      ...     latitude = 45, longitude = 3, altitude = 0,
+      ...     azimuth = 0, elevation = 90
+      ... )
+
 ----
 
 .. autoclass:: danton.ParticlesGenerator

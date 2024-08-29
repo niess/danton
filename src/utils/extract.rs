@@ -53,7 +53,6 @@ impl<'a> Direction<'a> {
         }
     }
 
-    #[allow(dead_code)] // XXX needed?
     pub fn new<'py: 'a>(elements: &'a Bound<'py, PyAny>) -> PyResult<Self> {
         Self::maybe_new(elements)?
             .ok_or_else(|| {
@@ -159,6 +158,19 @@ impl<'a> Position<'a> {
                     .why("missing latitude, longitude and altitude")
                     .to_err()
             })
+    }
+
+    pub fn common(&self, direction: &Direction) -> PyResult<(usize, Vec<usize>)> {
+        let size = self.size.common(&direction.size)
+            .ok_or_else(|| Error::new(ValueError)
+                .what("position and direction")
+                .why("inconsistent arrays size")
+            )?;
+        let result = match size {
+            Size::Scalar => (1, Vec::new()),
+            Size::Array { size, shape } => (*size, shape.clone()),
+        };
+        Ok(result)
     }
 
     pub fn get(&self, i: usize) -> PyResult<GeodeticCoordinates> {

@@ -15,8 +15,6 @@ use ::std::ptr::null;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 
-// XXX Add a tracer interface.
-
 static INSTANCES: AtomicUsize = AtomicUsize::new(0);
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
 
@@ -351,6 +349,51 @@ impl Geometry {
             }
         }
     }
+
+    /// Trace the distance to the next medium.
+    #[pyo3(signature=(array=None, /, *, backward=None, **kwargs))]
+    fn trace<'py>(
+        &mut self,
+        py: Python<'py>,
+        array: Option<&Bound<'py, PyAny>>,
+        backward: Option<bool>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let backward = backward.unwrap_or(false);
+        let any = array
+            .or_else(|| kwargs.map(|kwargs| kwargs.as_any()));
+        let (position, direction) = match any {
+            Some(any) => (Position::new(any)?, Direction::new(any)?),
+            None => return Ok(py.None()),
+        };
+        let (size, shape) = position.common(&direction)?;
+        let traces = PyArray::<Trace>::empty(py, &shape)?;
+
+        let tracer = Tracer::new(self)?;
+        for i in 0..size {
+            let geodetic = position.get(i)?;
+            let mut horizontal = direction.get(i)?;
+            if backward {
+                horizontal.azimuth += 180.0;
+                horizontal.elevation = -horizontal.elevation;
+            }
+            let (current, distance, next) = tracer.trace(&geodetic, &horizontal);
+            let trace = Trace { distance, current: current.into(), next: next.into() };
+            traces.set(i, trace)?;
+        }
+
+        let traces: &PyAny = traces;
+        Ok(traces.into_py(py))
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Trace {
+    distance: f64,
+    current: [u8; 16],
+    next: [u8; 16],
 }
 
 impl Geometry {
@@ -412,25 +455,19 @@ impl Geometry {
         let position = Position::new(any)?;
         let direction = Direction::maybe_new(any)?;
 
-        let size = match direction.as_ref() {
-            None => position.size(),
+        let (size, shape3) = match direction.as_ref() {
+            None => (position.size(), position.shape3()),
             Some(direction) => {
-                let size = position.size();
-                if direction.size() != size {
-                    let err = Error::new(ValueError)
-                        .what("direction")
-                        .why("differing arrays sizes")
-                        .to_err();
-                    return Err(err);
-                }
-                size
+                let (size, mut shape) = position.common(direction)?;
+                shape.push(3);
+                (size, shape)
             },
         };
 
-        let ecef_position = PyArray::<f64>::empty(py, &position.shape3())?;
+        let ecef_position = PyArray::<f64>::empty(py, &shape3)?;
         let ecef_direction: Option<&PyArray<f64>> = match direction.as_ref() {
             None => None,
-            Some(direction) => Some(PyArray::<f64>::empty(py, &direction.shape3())?),
+            Some(_) => Some(PyArray::<f64>::empty(py, &shape3)?),
         };
 
         for i in 0..size {
