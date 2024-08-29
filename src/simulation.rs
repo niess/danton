@@ -40,7 +40,7 @@ unsafe impl Send for Simulation {}
 impl Simulation {
     #[new]
     fn new(py: Python) -> PyResult<Self> {
-        let geometry = Py::new(py, geometry::Geometry::new())?;
+        let geometry = geometry::Geometry::new(py, None)?;
         let physics = Py::new(py, physics::Physics::new())?;
         let random = Py::new(py, random::Random::new(None)?)?;
         let mut recorder = recorder::Recorder::new();

@@ -288,7 +288,7 @@ impl ParticlesGenerator {
         weight: Option<bool>,
     ) -> PyResult<Self> {
         let geometry = match geometry {
-            None => Py::new(py, Geometry::new())?,
+            None => Geometry::new(py, None)?,
             Some(geometry) => geometry.unbind(),
         };
         let random = match random {

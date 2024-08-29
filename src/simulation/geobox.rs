@@ -5,7 +5,8 @@ use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordina
 use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::ValueError;
 use crate::utils::export::Export;
-use crate::utils::extract::{Direction, Position};
+use crate::utils::extract::{Direction, Position, select_coordinates, select_direction,
+    select_position};
 use crate::utils::float::f64x3;
 use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
@@ -264,15 +265,12 @@ impl GeoBox {
         array: Option<&Bound<'py, PyAny>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
-        let position = match array {
-            Some(array) => Position::new(array)?,
-            None => match kwargs {
-                Some(kwargs) => Position::new(kwargs.as_any())?,
-                None => {
-                    let inside: &PyAny = PyArray::<bool>::empty(py, &[0])?;
-                    return Ok(inside.into_py(py));
-                },
-            }
+        let position = match select_position(array, kwargs)? {
+            Some(any) => Position::new(any)?,
+            None => {
+                let inside: &PyAny = PyArray::<bool>::empty(py, &[0])?;
+                return Ok(inside.into_py(py));
+            },
         };
         let frame = self.local_frame();
         let inside = PyArray::<bool>::empty(py, &position.shape())?;
@@ -300,15 +298,9 @@ impl GeoBox {
         array: Option<&Bound<'py, PyAny>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
-        let (position, direction) = match array {
-            Some(array) => (Position::maybe_new(array)?, Direction::maybe_new(array)?),
-            None => match kwargs {
-                Some(kwargs) => {
-                    let any = kwargs.as_any();
-                    (Position::maybe_new(any)?, Direction::maybe_new(any)?)
-                },
-                None => (None, None),
-            }
+        let (position, direction) = match select_coordinates(array, kwargs)? {
+            Some(any) => (Position::maybe_new(any)?, Direction::maybe_new(any)?),
+            None => (None, None),
         };
 
         let (size, shape3) = match position.as_ref() {
@@ -383,10 +375,28 @@ impl GeoBox {
     }
 
     /// Compute the projected surface area, in square-metres.
-    fn projected_surface(&self, azimuth: f64, elevation: f64) -> f64 {
-        let direction = HorizontalCoordinates { azimuth, elevation };
-        let projection = ProjectedBox::new(&self, &direction);
-        projection.surface()
+    #[pyo3(signature=(array=None, /, **kwargs))]
+    fn projected_surface<'py>(
+        &self,
+        py: Python<'py>,
+        array: Option<&Bound<'py, PyAny>>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let direction = match select_direction(array, kwargs)? {
+            Some(any) => Direction::new(any)?,
+            None => return Ok(py.None()),
+        };
+
+        let surfaces = PyArray::<f64>::empty(py, &direction.shape())?;
+
+        let size = direction.size();
+        for i in 0..size {
+            let horizontal = direction.get(i)?;
+            let projection = ProjectedBox::new(&self, &horizontal);
+            surfaces.set(i, projection.surface())?;
+        }
+
+        Ok(surfaces.unbind(py))
     }
 }
 

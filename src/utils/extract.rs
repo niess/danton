@@ -1,9 +1,10 @@
 use crate::utils::convert::Array;
 use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::Error;
-use crate::utils::error::ErrorKind::{TypeError, ValueError};
+use crate::utils::error::ErrorKind::{KeyError, TypeError, ValueError};
 use crate::utils::numpy::{PyArray, PyUntypedArray};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 
 // ===============================================================================================
@@ -334,5 +335,80 @@ impl Size {
                 }
             }
         }
+    }
+}
+
+
+// ===============================================================================================
+//
+// Fields selector.
+//
+// ===============================================================================================
+
+pub fn select_coordinates<'a, 'py>(
+    array: Option<&'a Bound<'py, PyAny>>,
+    kwargs: Option<&'a Bound<'py, PyDict>>,
+) -> PyResult<Option<&'a Bound<'py, PyAny>>> {
+    const FIELDS: &'static [&'static str] = &[
+        "latitude", "longitude", "altitude", "azimuth", "elevation",
+    ];
+    select(array, kwargs, FIELDS)
+}
+
+pub fn select_direction<'a, 'py>(
+    array: Option<&'a Bound<'py, PyAny>>,
+    kwargs: Option<&'a Bound<'py, PyDict>>,
+) -> PyResult<Option<&'a Bound<'py, PyAny>>> {
+    const FIELDS: &'static [&'static str] = &["azimuth", "elevation",];
+    select(array, kwargs, FIELDS)
+}
+
+pub fn select_position<'a, 'py>(
+    array: Option<&'a Bound<'py, PyAny>>,
+    kwargs: Option<&'a Bound<'py, PyDict>>,
+) -> PyResult<Option<&'a Bound<'py, PyAny>>> {
+    const FIELDS: &'static [&'static str] = &["latitude", "longitude", "altitude"];
+    select(array, kwargs, FIELDS)
+}
+
+pub fn select_projection<'a, 'py>(
+    array: Option<&'a Bound<'py, PyAny>>,
+    kwargs: Option<&'a Bound<'py, PyDict>>,
+) -> PyResult<Option<&'a Bound<'py, PyAny>>> {
+    const FIELDS: &'static [&'static str] = &["latitude", "longitude"];
+    select(array, kwargs, FIELDS)
+}
+
+fn select<'a, 'py>(
+    array: Option<&'a Bound<'py, PyAny>>,
+    kwargs: Option<&'a Bound<'py, PyDict>>,
+    fields: &[&str],
+) -> PyResult<Option<&'a Bound<'py, PyAny>>> {
+    match array {
+        Some(_) => match kwargs {
+            Some(_) => {
+                let err = Error::new(TypeError)
+                    .what("arguments")
+                    .why("cannot mix positional and keyword only arguments");
+                return Err(err.to_err())
+            },
+            None => Ok(array),
+        },
+        None => match kwargs {
+            Some(kwargs) => {
+                for key in kwargs.keys() {
+                    let key: String = key.extract()?;
+                    if !fields.contains(&key.as_str()) {
+                        let why = format!("invalid key '{}'", key);
+                        let err = Error::new(KeyError)
+                            .what("kwargs")
+                            .why(&why);
+                        return Err(err.to_err())
+                    }
+                }
+                Ok(Some(kwargs.as_any()))
+            },
+            None => Ok(None),
+        },
     }
 }

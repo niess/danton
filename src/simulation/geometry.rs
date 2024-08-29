@@ -3,13 +3,14 @@ use crate::utils::convert::{Array, Ellipsoid, Geoid, Medium, Reference};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates};
 use crate::utils::error::{Error, to_result};
-use crate::utils::error::ErrorKind::{NotImplementedError, ValueError};
+use crate::utils::error::ErrorKind::ValueError;
 use crate::utils::export::Export;
-use crate::utils::extract::{Direction, Position, Projection};
+use crate::utils::extract::{Direction, Position, Projection, select_coordinates, select_position,
+    select_projection};
 use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyString};
 use ::std::ffi::{c_int, CString, c_void};
 use ::std::ptr::null;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
@@ -59,9 +60,13 @@ impl IntoPy<PyObject> for Topography {
 
 #[pymethods]
 impl Geometry {
+    #[pyo3(signature=(**kwargs))]
     #[new]
-    pub fn new() -> Self {
-        Self {
+    pub fn new<'py>(
+        py: Python<'py>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        let geometry = Self {
             geoid: Geoid::default(),
             topography: None,
             material: "Rock".to_string(),
@@ -69,7 +74,17 @@ impl Geometry {
             ocean: true,
             instance: INSTANCES.fetch_add(1, Ordering::SeqCst),
             modified: true,
+        };
+        let geometry = Bound::new(py, geometry)?;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs.iter() {
+                let key: Bound<PyString> = key.extract()?;
+                geometry.setattr(key, value)?
+            }
         }
+
+        Ok(geometry.unbind())
     }
 
     #[setter]
@@ -235,23 +250,12 @@ impl Geometry {
         array: Option<&Bound<'py, PyAny>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
-        self.apply()?;
-        match array {
-            None => match kwargs {
-                None => return Ok(py.None()),
-                Some(kwargs) => {
-                    self.geoid_undulation_from_any(kwargs.as_any())
-                },
+        match select_projection(array, kwargs)? {
+            None => return Ok(py.None()),
+            Some(any) => {
+                self.apply()?;
+                self.geoid_undulation_from_any(any)
             },
-            Some(array) => {
-                if kwargs.is_some() {
-                    let err = Error::new(NotImplementedError)
-                        .what("arguments")
-                        .why("cannot mix positional and keyword only arguments");
-                    return Err(err.to_err())
-                }
-                self.geoid_undulation_from_any(array)
-            }
         }
     }
 
@@ -263,9 +267,7 @@ impl Geometry {
         array: Option<&Bound<'py, PyAny>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
-        let any = array
-            .or_else(|| kwargs.map(|kwargs| kwargs.as_any()));
-        let position = match any {
+        let position = match select_position(array, kwargs)? {
             Some(any) => Position::new(any)?,
             None => return Ok(py.None()),
         };
@@ -291,22 +293,9 @@ impl Geometry {
         array: Option<&Bound<'py, PyAny>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
-        let (position, direction) = match array {
-            None => match kwargs {
-                None => return Ok(py.None()),
-                Some(kwargs) => {
-                    self.to_ecef_from_any(kwargs.as_any())?
-                },
-            },
-            Some(array) => {
-                if kwargs.is_some() {
-                    let err = Error::new(NotImplementedError)
-                        .what("arguments")
-                        .why("cannot mix positional and keyword only arguments");
-                    return Err(err.to_err())
-                }
-                self.to_ecef_from_any(array)?
-            }
+        let (position, direction) = match select_coordinates(array, kwargs)? {
+            None => return Ok(py.None()),
+            Some(any) => self.to_ecef_from_any(any)?,
         };
 
         let result = match direction {
@@ -330,23 +319,12 @@ impl Geometry {
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
         let reference = reference.unwrap_or_else(|| Reference::default());
-        self.apply()?;
-        match array {
-            None => match kwargs {
-                None => return Ok(py.None()),
-                Some(kwargs) => {
-                    self.topography_elevation_from_any(kwargs.as_any(), reference)
-                },
+        match select_projection(array, kwargs)? {
+            None => Ok(py.None()),
+            Some(any) => {
+                self.apply()?;
+                self.topography_elevation_from_any(any, reference)
             },
-            Some(array) => {
-                if kwargs.is_some() {
-                    let err = Error::new(NotImplementedError)
-                        .what("arguments")
-                        .why("cannot mix positional and keyword only arguments");
-                    return Err(err.to_err())
-                }
-                self.topography_elevation_from_any(array, reference)
-            }
         }
     }
 
@@ -360,9 +338,7 @@ impl Geometry {
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
         let backward = backward.unwrap_or(false);
-        let any = array
-            .or_else(|| kwargs.map(|kwargs| kwargs.as_any()));
-        let (position, direction) = match any {
+        let (position, direction) = match select_coordinates(array, kwargs)? {
             Some(any) => (Position::new(any)?, Direction::new(any)?),
             None => return Ok(py.None()),
         };
