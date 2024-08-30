@@ -154,6 +154,9 @@ pub struct Tracer {
     _unused: [u8; 0],
 }
 
+pub const FULL: c_uint = 0;
+pub const MERGE: c_uint = 1;
+
 #[link(name = "danton-c")]
 extern "C" {
     #[link_name="danton_initialise"]
@@ -245,7 +248,7 @@ extern "C" {
     pub fn topography_elevation(latitude: f64, longitude: f64) -> f64;
 
     #[link_name="danton_tracer_create"]
-    pub fn tracer_create() -> *mut Tracer;
+    pub fn tracer_create(mode: c_uint) -> *mut Tracer;
 
     #[link_name="danton_tracer_medium"]
     pub fn tracer_medium(tracer: *mut Tracer, position: *const f64) -> c_int;

@@ -22,6 +22,7 @@ pub enum Medium {
     Exosphere,
     Exit,
     Topography,
+    Atmosphere,
     Unknown,
 }
 
@@ -46,6 +47,7 @@ impl From<(c_int, bool)> for Medium {
             14 => Self::Exosphere,
             -1 => Self::Exit,
             100 => Self::Topography,
+            200 => Self::Atmosphere,
             _ => Self::Unknown,
         }
     }
@@ -88,6 +90,7 @@ impl ::std::fmt::Display for Medium {
 impl Medium {
     pub fn is_atmosphere(&self) -> bool {
         match self {
+            Self::Atmosphere => true,
             Self::Troposphere0 => true,
             Self::Troposphere1 => true,
             Self::Stratosphere => true,

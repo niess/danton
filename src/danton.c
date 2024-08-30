@@ -2798,9 +2798,12 @@ DANTON_API double danton_topography_elevation(
 struct danton_tracer {
         struct generic_state state;
         struct danton_context context;
+        enum danton_tracer_mode mode;
 };
 
-DANTON_API struct danton_tracer * danton_tracer_create(void) {
+DANTON_API struct danton_tracer * danton_tracer_create(
+    enum danton_tracer_mode mode)
+{
         struct danton_tracer * tracer;
         tracer = malloc(sizeof(*tracer));
         if (tracer == NULL) {
@@ -2808,6 +2811,7 @@ DANTON_API struct danton_tracer * danton_tracer_create(void) {
                     __FILE__, __LINE__);
                 return NULL;
         }
+        tracer->mode = mode;
         tracer->state.is_tau = 0;
         tracer->state.context = (void *)&tracer->context;
         tracer->context.decay = 1;
@@ -2822,6 +2826,8 @@ DANTON_API int danton_tracer_medium(
         return tracer->state.medium;
 }
 
+#define MEDIUM_ATMOSPHERE 200
+
 static int tracer_medium(
     struct danton_tracer * tracer,
     const double * r,
@@ -2830,7 +2836,16 @@ static int tracer_medium(
 {
         double s = medium(r, u, &tracer->state);
         if (step != NULL) *step = s;
-        return tracer->state.medium;
+        if (tracer->mode == DANTON_TRACER_FULL) {
+                return tracer->state.medium;
+        } else {
+                int medium = tracer->state.medium;
+                if ((10 <= medium) && (medium <= 13)) {
+                        return MEDIUM_ATMOSPHERE;
+                } else {
+                        return medium;
+                }
+        }
 }
 
 static int tracer_step(

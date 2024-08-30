@@ -1,6 +1,6 @@
 use crate::bindings::danton;
 use crate::simulation::geobox::{GeoBox, BoxGenerator, ProjectedBox};
-use crate::simulation::geometry::{Geometry, Tracer};
+use crate::simulation::geometry::{Geometry, Mode, Tracer};
 use crate::simulation::random::Random;
 use crate::utils::coordinates::HorizontalCoordinates;
 use crate::utils::error::{ctrlc_catched, Error};
@@ -383,7 +383,7 @@ impl ParticlesGenerator {
 
         // Bind geometry etc.
         let mut geometry = self.geometry.bind(py).borrow_mut();
-        let tracer = Tracer::new(&mut geometry)?;
+        let tracer = Tracer::new(&mut geometry, Mode::Merge)?;
         let mut random = self.random.bind(py).borrow_mut();
 
         // Prepare any box generator.
@@ -632,7 +632,7 @@ impl ParticlesGenerator {
                 elevation: -elevation
             };
             let (_, distance, next_medium) = tracer.trace(&geodetic, &horizontal);
-            // XXX should be until rocks or exit (also, use pmin to set max distance).
+            // XXX Use pmin to set max distance.
             let p = if next_medium.is_atmosphere() {
                 (-limit).exp()
             } else {

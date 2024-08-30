@@ -12,7 +12,7 @@ use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
-use ::std::ffi::{c_int, CString, c_void};
+use ::std::ffi::{c_int, CString, c_uint, c_void};
 use ::std::ptr::null;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -275,7 +275,7 @@ impl Geometry {
         let size = position.size();
         let media = PyArray::<[u8; 16]>::empty(py, &position.shape())?;
 
-        let tracer = Tracer::new(self)?;
+        let tracer = Tracer::new(self, Mode::Full)?;
         for i in 0..size {
             let geodetic = position.get(i)?;
             let medium = tracer.medium(&geodetic);
@@ -330,15 +330,17 @@ impl Geometry {
     }
 
     /// Trace the distance to the next medium.
-    #[pyo3(signature=(array=None, /, *, backward=None, **kwargs))]
+    #[pyo3(signature=(array=None, /, *, backward=None, full=None, **kwargs))]
     fn trace<'py>(
         &mut self,
         py: Python<'py>,
         array: Option<&Bound<'py, PyAny>>,
         backward: Option<bool>,
+        full: Option<bool>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
         let backward = backward.unwrap_or(false);
+        let full = full.unwrap_or(false);
         let (position, direction) = match select_coordinates(array, kwargs)? {
             Some(any) => (Position::new(any)?, Direction::new(any)?),
             None => return Ok(py.None()),
@@ -346,7 +348,8 @@ impl Geometry {
         let (size, shape) = position.common(&direction)?;
         let traces = PyArray::<Trace>::empty(py, &shape)?;
 
-        let tracer = Tracer::new(self)?;
+        let mode = if full { Mode::Full } else { Mode:: Merge };
+        let tracer = Tracer::new(self, mode)?;
         for i in 0..size {
             let geodetic = position.get(i)?;
             let mut horizontal = direction.get(i)?;
@@ -580,6 +583,20 @@ pub struct Tracer<'a> {
     tracer: *mut danton::Tracer,
 }
 
+pub enum Mode {
+    Full,
+    Merge,
+}
+
+impl From<Mode> for c_uint {
+    fn from(value: Mode) -> c_uint {
+        match value {
+            Mode::Full => danton::FULL,
+            Mode::Merge => danton::MERGE,
+        }
+    }
+}
+
 impl<'a> Drop for Tracer<'a> {
     fn drop(&mut self) {
         unsafe {
@@ -589,9 +606,9 @@ impl<'a> Drop for Tracer<'a> {
 }
 
 impl<'a> Tracer<'a> {
-    pub fn new(geometry: &'a mut Geometry) -> PyResult<Self> {
+    pub fn new(geometry: &'a mut Geometry, mode: Mode) -> PyResult<Self> {
         geometry.apply()?;
-        let tracer = unsafe { danton::tracer_create() };
+        let tracer = unsafe { danton::tracer_create(mode.into()) };
         let tracer = Self { geometry, tracer };
         Ok(tracer)
     }
