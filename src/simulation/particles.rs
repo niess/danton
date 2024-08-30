@@ -631,16 +631,17 @@ impl ParticlesGenerator {
                 azimuth: azimuth + 180.0,
                 elevation: -elevation
             };
-            let (_, distance, next_medium) = tracer.trace(&geodetic, &horizontal);
-            // XXX Use pmin to set max distance.
+            let decay_length = {
+                const TAU_CTAU: f64 = 8.718E-05;
+                const TAU_MASS: f64 = 1.77682;
+                energy * TAU_CTAU / TAU_MASS
+            };
+            let distance_limit = Some(limit * decay_length);
+            let (_, distance, next_medium) = tracer.trace(&geodetic, &horizontal, distance_limit);
             let p = if next_medium.is_atmosphere() {
                 (-limit).exp()
             } else {
-                const TAU_CTAU: f64 = 8.718E-05;
-                const TAU_MASS: f64 = 1.77682;
-                let decay_length = energy * TAU_CTAU / TAU_MASS;
-                let u = (distance / decay_length).min(limit);
-                (-u).exp()
+                (-distance / decay_length).exp()
             };
             if random.open01() > p {
                 return (true, true, false);

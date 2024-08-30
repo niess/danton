@@ -154,8 +154,8 @@ pub struct Tracer {
     _unused: [u8; 0],
 }
 
-pub const FULL: c_uint = 0;
-pub const MERGE: c_uint = 1;
+pub const MERGE: c_uint = 0;
+pub const RESOLVE: c_uint = 1;
 
 #[link(name = "danton-c")]
 extern "C" {
@@ -258,6 +258,7 @@ extern "C" {
         tracer: *mut Tracer,
         position: *const f64,
         direction: *const f64,
+        distance_max: f64,
         distance: *mut f64,
         next_medium: *mut c_int,
     ) -> c_int;

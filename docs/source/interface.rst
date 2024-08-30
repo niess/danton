@@ -127,6 +127,16 @@ Python interface
 
       >>> undulation = geometry.geoid_undulation(latitude=45, longitude=3)
 
+   .. automethod:: locate
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      If *resolve* is :python:`False` (the default), then atmospheric layers are
+      undifferentiated.
+
    .. automethod:: to_ecef
 
       .. note::
@@ -151,10 +161,6 @@ Python interface
          The positional *array* argument and keyword only (*kwargs*) arguments
          are mutually exclusive.
 
-      The optional *reference* argument specifies the reference surface for
-      elevation values. Possible values are :python:`"ellipsoid"` (default) or
-      :python:`"geoid"`.
-
       The *array* argument, if specified, must be a structured
       :external:py:class:`numpy.ndarray` containing geodetic coordinates
       (:python:`"latitude"`, :python:`"longitude"`).
@@ -164,15 +170,16 @@ Python interface
 
       >>> z = geometry.topography_elevation(latitude=45, longitude=3)
 
+      The optional *reference* argument specifies the reference surface for
+      elevation values. Possible values are :python:`"ellipsoid"` (default) or
+      :python:`"geoid"`.
+
    .. automethod:: trace
 
       .. note::
 
          The positional *array* argument and keyword only (*kwargs*) arguments
          are mutually exclusive.
-
-      The optional *backward* argument reverses the tracing direction, if set to
-      :python:`True`.
 
       The *array* argument, if specified, must be a structured
       :external:py:class:`numpy.ndarray` containing start position
@@ -186,6 +193,16 @@ Python interface
       ...     latitude = 45, longitude = 3, altitude = 0,
       ...     azimuth = 0, elevation = 90
       ... )
+
+      The optional *backward* argument reverses the tracing direction, if set to
+      :python:`True`.
+
+      The optional *limit* argument specifies a maximum distance, in m, for the
+      tracing.
+
+      If *resolve* is :python:`False` (the default), then atmospheric layers are
+      undifferentiated.
+
 
    .. automethod:: translate
 

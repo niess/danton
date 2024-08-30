@@ -572,8 +572,8 @@ DANTON_API double danton_geoid_undulation(
 
 /* Tracer interface. */
 enum danton_tracer_mode {
-    DANTON_TRACER_FULL = 0,
-    DANTON_TRACER_MERGE
+    DANTON_TRACER_MERGE = 0,
+    DANTON_TRACER_RESOLVE
 };
 
 struct danton_tracer;
@@ -586,6 +586,7 @@ DANTON_API int danton_tracer_trace(
     struct danton_tracer * tracer,
     const double * position,
     const double * direction,
+    double limit,
     double * distance,
     int * next_medium
 );

@@ -2836,7 +2836,7 @@ static int tracer_medium(
 {
         double s = medium(r, u, &tracer->state);
         if (step != NULL) *step = s;
-        if (tracer->mode == DANTON_TRACER_FULL) {
+        if (tracer->mode == DANTON_TRACER_RESOLVE) {
                 return tracer->state.medium;
         } else {
                 int medium = tracer->state.medium;
@@ -2852,6 +2852,7 @@ static int tracer_step(
     struct danton_tracer * tracer,
     const double * ri,
     const double * u,
+    double s_max,
     double * step,
     int * medium)
 {
@@ -2861,6 +2862,9 @@ static int tracer_step(
                 *step = 0.0;
                 *medium = mi;
                 return mi;
+        }
+        if ((s_max > 0.0) && (si > s_max)) {
+                si = s_max;
         }
 
         double rf[3] = {
@@ -2915,6 +2919,7 @@ DANTON_API int danton_tracer_trace(
     struct danton_tracer * tracer,
     const double * position,
     const double * direction,
+    double limit,
     double * distance,
     int * next_medium)
 {
@@ -2925,10 +2930,15 @@ DANTON_API int danton_tracer_trace(
         for (;;) {
                 int mf;
                 double s;
-                mi = tracer_step(tracer, r, direction, &s, &mf);
+                double s_max = -1.0;
+                if (limit > 0.0) {
+                        s_max = limit - d;
+                }
+                mi = tracer_step(tracer, r, direction, s_max, &s, &mf);
                 if ((mi < 0) || (s <= 0.0)) break;
                 d += s;
-                if (mf != mi) {
+                if ((mf != mi) ||
+                    ((limit > 0.0) && (d >= limit - FLT_EPSILON))) {
                         *next_medium = mf;
                         break;
                 }

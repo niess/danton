@@ -260,14 +260,16 @@ impl Geometry {
         }
     }
 
-    /// Return medium at coordinates.
-    #[pyo3(signature=(array=None, /, **kwargs))]
+    /// Return the medium at geodetic coordinates.
+    #[pyo3(signature=(array=None, /, *, resolve=None, **kwargs))]
     fn locate<'py>(
         &mut self,
         py: Python<'py>,
         array: Option<&Bound<'py, PyAny>>,
+        resolve: Option<bool>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
+        let resolve = resolve.unwrap_or(false);
         let position = match select_position(array, kwargs)? {
             Some(any) => Position::new(any)?,
             None => return Ok(py.None()),
@@ -275,7 +277,8 @@ impl Geometry {
         let size = position.size();
         let media = PyArray::<[u8; 16]>::empty(py, &position.shape())?;
 
-        let tracer = Tracer::new(self, Mode::Full)?;
+        let mode = if resolve { Mode::Resolve } else { Mode::Merge };
+        let tracer = Tracer::new(self, mode)?;
         for i in 0..size {
             let geodetic = position.get(i)?;
             let medium = tracer.medium(&geodetic);
@@ -330,17 +333,18 @@ impl Geometry {
     }
 
     /// Trace the distance to the next medium.
-    #[pyo3(signature=(array=None, /, *, backward=None, full=None, **kwargs))]
+    #[pyo3(signature=(array=None, /, *, backward=None, limit=None, resolve=None, **kwargs))]
     fn trace<'py>(
         &mut self,
         py: Python<'py>,
         array: Option<&Bound<'py, PyAny>>,
         backward: Option<bool>,
-        full: Option<bool>,
+        limit: Option<f64>,
+        resolve: Option<bool>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
         let backward = backward.unwrap_or(false);
-        let full = full.unwrap_or(false);
+        let resolve = resolve.unwrap_or(false);
         let (position, direction) = match select_coordinates(array, kwargs)? {
             Some(any) => (Position::new(any)?, Direction::new(any)?),
             None => return Ok(py.None()),
@@ -348,7 +352,7 @@ impl Geometry {
         let (size, shape) = position.common(&direction)?;
         let traces = PyArray::<Trace>::empty(py, &shape)?;
 
-        let mode = if full { Mode::Full } else { Mode:: Merge };
+        let mode = if resolve { Mode::Resolve } else { Mode:: Merge };
         let tracer = Tracer::new(self, mode)?;
         for i in 0..size {
             let geodetic = position.get(i)?;
@@ -357,7 +361,7 @@ impl Geometry {
                 horizontal.azimuth += 180.0;
                 horizontal.elevation = -horizontal.elevation;
             }
-            let (current, distance, next) = tracer.trace(&geodetic, &horizontal);
+            let (current, distance, next) = tracer.trace(&geodetic, &horizontal, limit);
             let trace = Trace { distance, current: current.into(), next: next.into() };
             traces.set(i, trace)?;
         }
@@ -584,15 +588,15 @@ pub struct Tracer<'a> {
 }
 
 pub enum Mode {
-    Full,
     Merge,
+    Resolve,
 }
 
 impl From<Mode> for c_uint {
     fn from(value: Mode) -> c_uint {
         match value {
-            Mode::Full => danton::FULL,
             Mode::Merge => danton::MERGE,
+            Mode::Resolve => danton::RESOLVE,
         }
     }
 }
@@ -622,10 +626,12 @@ impl<'a> Tracer<'a> {
     pub fn trace(
         &self,
         position: &GeodeticCoordinates,
-        direction: &HorizontalCoordinates
+        direction: &HorizontalCoordinates,
+        distance_max: Option<f64>,
     ) -> (Medium, f64, Medium) {
         let r = position.to_ecef(self.geometry.geoid.into());
         let u = direction.to_ecef(self.geometry.geoid.into(), &position);
+        let distance_max = distance_max.unwrap_or(-1.0);
         let mut distance: f64 = 0.0;
         let mut next_medium: c_int = -1;
         let medium = unsafe {
@@ -633,6 +639,7 @@ impl<'a> Tracer<'a> {
                 self.tracer,
                 &r as *const f64,
                 &u as *const f64,
+                distance_max,
                 &mut distance,
                 &mut next_medium,
             )
