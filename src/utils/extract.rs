@@ -72,6 +72,12 @@ impl<'a> Direction<'a> {
         Ok(horizontal)
     }
 
+    pub fn set(&self, i: usize, horizontal: &HorizontalCoordinates) -> PyResult<()> {
+        self.azimuth.set(i, horizontal.azimuth)?;
+        self.elevation.set(i, horizontal.elevation)?;
+        Ok(())
+    }
+
     pub fn shape(&self) -> Vec<usize> {
         match &self.size {
             Size::Scalar => Vec::new(),
@@ -90,6 +96,51 @@ impl<'a> Direction<'a> {
             Size::Scalar => 1,
             Size::Array { size, .. } => *size,
         }
+    }
+}
+
+
+// ===============================================================================================
+//
+// Generic distance.
+//
+// ===============================================================================================
+
+pub struct Distance<'a> {
+    value: &'a PyArray<f64>,
+    size: Size,
+}
+
+impl<'a> Distance<'a> {
+    pub fn new<'py: 'a>(any: &'a Bound<'py, PyAny>) -> PyResult<Self> {
+        let array: Array<f64> = any.extract()?;
+        let value = array.resolve();
+        let size = Size::new(value);
+        let distance = Self { value, size };
+        Ok(distance)
+    }
+
+    pub fn common(
+        &self,
+        position: &Position,
+        direction: &Direction
+    ) -> PyResult<(usize, Vec<usize>)> {
+        let size = self.size
+            .common(&position.size)
+            .and_then(|size| size.common(&direction.size))
+            .ok_or_else(|| Error::new(ValueError)
+                .what("distance, position and direction")
+                .why("inconsistent arrays size")
+            )?;
+        let result = match size {
+            Size::Scalar => (1, Vec::new()),
+            Size::Array { size, shape } => (*size, shape.clone()),
+        };
+        Ok(result)
+    }
+
+    pub fn get(&self, i: usize) -> PyResult<f64> {
+        self.value.get(i)
     }
 }
 
@@ -181,6 +232,13 @@ impl<'a> Position<'a> {
             altitude: self.altitude.get(i)?,
         };
         Ok(geodetic)
+    }
+
+    pub fn set(&self, i: usize, geodetic: &GeodeticCoordinates) -> PyResult<()> {
+        self.latitude.set(i, geodetic.latitude)?;
+        self.longitude.set(i, geodetic.longitude)?;
+        self.altitude.set(i, geodetic.altitude)?;
+        Ok(())
     }
 
     pub fn shape(&self) -> Vec<usize> {

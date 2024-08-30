@@ -187,6 +187,34 @@ Python interface
       ...     azimuth = 0, elevation = 90
       ... )
 
+   .. automethod:: translate
+
+      Translate geodetic coordinates by *distance* (in m) along a straight line.
+      If a negative distance is provided, then the translation direction is
+      reversed.
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      The positional *array* argument, if specified, must be a structured
+      :external:py:class:`numpy.ndarray` containing the initial position
+      (:python:`"latitude"`, :python:`"longitude"`, :python:`"altitude"`) and
+      the translation direction (:python:`"azimuth"`, :python:`"elevation"`).
+
+      Alternativelly, the initial position and the translation direction can be
+      specified as *kwargs*. For instance,
+
+      >>> coordinates = geometry.translate(
+      ...     1000,
+      ...     latitude = 45, longitude = 3, altitude = 0,
+      ...     azimuth = 0, elevation = 90
+      ... )
+
+      When an *array* argument is provided, set *copy* to :python:`False` in
+      order to translate coordinates in-place.
+
 ----
 
 .. autoclass:: danton.ParticlesGenerator

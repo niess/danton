@@ -3,10 +3,11 @@ use crate::utils::convert::{Array, Ellipsoid, Geoid, Medium, Reference};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates};
 use crate::utils::error::{Error, to_result};
-use crate::utils::error::ErrorKind::ValueError;
+use crate::utils::error::ErrorKind::{NotImplementedError, ValueError};
 use crate::utils::export::Export;
-use crate::utils::extract::{Direction, Position, Projection, select_coordinates, select_position,
-    select_projection};
+use crate::utils::extract::{Direction, Distance, Position, Projection, select_coordinates,
+    select_position, select_projection};
+use crate::utils::float::f64x3;
 use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
@@ -360,6 +361,68 @@ impl Geometry {
 
         let traces: &PyAny = traces;
         Ok(traces.into_py(py))
+    }
+
+    /// Translate geodetic coordinates.
+    #[pyo3(signature=(distance, array=None, /, *, copy=None, **kwargs))]
+    fn translate<'py>(
+        &mut self,
+        py: Python<'py>,
+        distance: &Bound<'py, PyAny>,
+        array: Option<&Bound<'py, PyAny>>,
+        copy: Option<bool>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyObject> {
+        let copy = copy.unwrap_or(true);
+        let distance = Distance::new(distance)?;
+        let (position, direction) = match select_coordinates(array, kwargs)? {
+            Some(any) => (Position::new(any)?, Direction::new(any)?),
+            None => return Ok(py.None()),
+        };
+        if kwargs.is_some() && !copy {
+            let err = Error::new(NotImplementedError)
+                .what("arguments")
+                .why("cannot in-place translate kwargs");
+            return Err(err.to_err())
+        }
+        let (size, shape) = distance.common(&position, &direction)?;
+        let result = if copy {
+            Some(PyArray::<Coordinates>::empty(py, &shape)?)
+        } else {
+            None
+        };
+
+        for i in 0..size {
+            let distance = distance.get(i)?;
+            let geodetic = position.get(i)?;
+            let horizontal = direction.get(i)?;
+            let mut r: f64x3 = (&geodetic.to_ecef(self.geoid.into())).into();
+            let u: f64x3 = (&horizontal.to_ecef(self.geoid.into(), &geodetic)).into();
+            r += distance * u;
+            let geodetic = GeodeticCoordinates::from_ecef(&r.into(), self.geoid.into());
+            let horizontal = HorizontalCoordinates::from_ecef(
+                &u.into(), self.geoid.into(), &geodetic
+            );
+            match result {
+                Some(result) => {
+                    let coordinates = Coordinates { position: geodetic, direction: horizontal };
+                    result.set(i, coordinates)?;
+                },
+                None => {
+                    position.set(i, &geodetic)?;
+                    direction.set(i, &horizontal)?;
+                },
+            }
+        }
+
+        let result = match result {
+            Some(result) => {
+                let result: &PyAny = result;
+                result.into_py(py)
+            },
+            None => py.None(),
+        };
+        Ok(result)
     }
 }
 
