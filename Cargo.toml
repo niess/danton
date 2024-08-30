@@ -5,9 +5,11 @@ edition = "2021"
 license = "LGPL-3.0-only"
 
 [dependencies]
+console = "0.15"
 derive_more = "0.99"
 enum-variants-strings = "0.3"
 getrandom = "0.2"
+indicatif = "0.17"
 libc = "0.2"
 process_path = "0.1"
 pyo3 = { version = "0.21", features = ["abi3", "extension-module"] }

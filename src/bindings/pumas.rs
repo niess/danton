@@ -30,6 +30,7 @@ pub const UNKNOWN_ELEMENT: c_uint = 21;
 pub const UNKNOWN_MATERIAL: c_uint = 22;
 pub const UNKNOWN_PARTICLE: c_uint = 23;
 pub const VALUE_ERROR: c_uint = 24;
+pub const INTERRUPT: c_uint = 25;
 
 pub const BREMSSTRAHLUNG: c_uint = 0;
 pub const PAIR_PRODUCTION: c_uint = 1;
@@ -57,6 +58,20 @@ pub type Dcs = Option<
     unsafe extern "C" fn(Z: f64, A: f64, m: f64, K: f64, q: f64) -> f64,
 >;
 
+#[repr(C)]
+pub struct PhysicsNotifier {
+    pub configure: Configure,
+    pub notify: Notify,
+}
+
+pub type Configure = Option<
+    unsafe extern "C" fn(slf: *mut PhysicsNotifier, *const c_char, steps: c_int) -> c_uint,
+>;
+
+pub type Notify = Option<
+    unsafe extern "C" fn(slf: *mut PhysicsNotifier) -> c_uint,
+>;
+
 #[link(name = "danton-c")]
 extern "C" {
     #[link_name="pumas_physics_create"]
@@ -66,6 +81,7 @@ extern "C" {
         mdf_path: *const c_char,
         dedx_path: *const c_char,
         settings: *const PhysicsSettings,
+        notifier: *mut PhysicsNotifier,
     ) -> c_uint;
 
     #[link_name="pumas_physics_dcs"]

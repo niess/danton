@@ -1,10 +1,13 @@
+use console::style;
 use crate::bindings::{alouette, danton, ent, pumas};
 use crate::utils::cache;
 use crate::utils::convert::{Bremsstrahlung, Dis, PairProduction, Pdf, Photonuclear};
-use crate::utils::error::Error;
-use crate::utils::error::ErrorKind::{CLibraryException, ValueError};
+use crate::utils::error::{ctrlc_catched, Error};
+use crate::utils::error::ErrorKind::{CLibraryException, KeyboardInterrupt, ValueError};
+use indicatif::{ProgressBar, ProgressStyle};
 use pyo3::prelude::*;
 use temp_dir::TempDir;
+use ::std::borrow::Cow;
 use ::std::ffi::{c_char, c_int, CStr, CString, c_uint};
 use ::std::fs::File;
 use ::std::os::fd::AsRawFd;
@@ -14,7 +17,6 @@ use ::std::ptr::{null, null_mut};
 
 // XXX Manage materials profiles.
 // XXX Explicit pre-computation.
-// XXX Waitbar for pre-computations?
 
 
 #[pyclass(module="danton")]
@@ -290,15 +292,24 @@ impl Physics {
             let mut physics: *mut pumas::Physics = null_mut();
             let mdf_path = CString::new(mdf_path.to_string_lossy().as_ref())?;
             let dedx_path = CString::new(dedx_path.path().to_string_lossy().as_ref())?;
+            let mut notifier = Notifier::new();
             let rc = pumas::physics_create(
                 &mut physics,
                 pumas::TAU,
                 mdf_path.as_c_str().as_ptr(),
                 dedx_path.as_c_str().as_ptr(),
                 &mut settings,
+                &mut notifier as *mut Notifier as *mut pumas::PhysicsNotifier,
             );
-            Self::check_pumas(rc)?;
-            physics
+            if rc == pumas::INTERRUPT {
+                // Ctrl-C has been catched.
+                let err = Error::new(KeyboardInterrupt)
+                    .why("while tabulating physics");
+                return Err(err.to_err())
+            } else {
+                Self::check_pumas(rc)?;
+                physics
+            }
         };
 
         // Cache physics data for subsequent usage.
@@ -404,5 +415,92 @@ impl Physics {
             pair_production,
             photonuclear,
         )
+    }
+}
+
+#[repr(C)]
+struct Notifier {
+    interface: pumas::PhysicsNotifier,
+    bar: Option<ProgressBar>,
+    section: usize,
+}
+
+impl Notifier {
+    fn new() -> Self {
+        let interface = pumas::PhysicsNotifier {
+            configure: Some(pumas_physics_notifier_configure),
+            notify: Some(pumas_physics_notifier_notify),
+        };
+        Self { interface, bar: None, section: 0 }
+    }
+
+    fn configure(&mut self, title: Option<&str>, steps: c_int) {
+        self.bar = match self.bar {
+            None => {
+                self.section += 1;
+                let title = title.unwrap();
+                let title = if title.starts_with("multiple") {
+                    Cow::Borrowed(title)
+                } else {
+                    Cow::Owned(format!("{}s", title))
+                };
+                let bar = ProgressBar::new(steps as u64);
+                let bar_style = ProgressStyle::with_template(
+                    "{msg} [{wide_bar:.dim}] {percent}%, {elapsed})"
+                )
+                    .unwrap()
+                    .progress_chars("=> ");
+                bar.set_style(bar_style);
+                let section = style(format!("[{}/3]", self.section)).dim();
+                bar.set_message(format!("{} Computing {}", section, title));
+                bar.set_position(0);
+                Some(bar)
+            },
+            Some(_) => None,
+        }
+    }
+
+    fn notify(&self) {
+        self.bar.as_ref().unwrap().inc(1)
+    }
+}
+
+impl Drop for Notifier {
+    fn drop(&mut self) {
+        if let Some(bar) = self.bar.as_ref() {
+            bar.finish_and_clear()
+        }
+    }
+}
+
+#[no_mangle]
+extern "C" fn pumas_physics_notifier_configure(
+    slf: *mut pumas::PhysicsNotifier,
+    title: *const c_char,
+    steps: c_int
+) -> c_uint {
+    if ctrlc_catched() {
+        pumas::INTERRUPT
+    } else {
+        let notifier = unsafe { &mut *(slf as *mut Notifier) };
+        let title = if title.is_null() {
+            None
+        } else {
+            let title = unsafe { CStr::from_ptr(title) };
+            Some(title.to_str().unwrap())
+        };
+        notifier.configure(title, steps);
+        pumas::SUCCESS
+    }
+}
+
+#[no_mangle]
+extern "C" fn pumas_physics_notifier_notify(slf: *mut pumas::PhysicsNotifier) -> c_uint {
+    if ctrlc_catched() {
+        pumas::INTERRUPT
+    } else {
+        let notifier = unsafe { &*(slf as *mut Notifier) };
+        notifier.notify();
+        pumas::SUCCESS
     }
 }
