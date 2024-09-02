@@ -68,6 +68,7 @@ fn danton(module: &Bound<PyModule>) -> PyResult<()> {
 
     // Register function(s).
     module.add_function(wrap_pyfunction!(simulation::particles::particles, module)?)?;
+    module.add_function(wrap_pyfunction!(simulation::physics::compute, module)?)?;
 
     // Register constants.
     let default_cache = utils::cache::default_path()

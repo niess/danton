@@ -39,9 +39,9 @@ unsafe impl Send for Simulation {}
 #[pymethods]
 impl Simulation {
     #[new]
-    fn new(py: Python) -> PyResult<Self> {
+    fn new(py: Python) -> PyResult<Self> { // XXX Allow for keyword args?
         let geometry = geometry::Geometry::new(py, None)?;
-        let physics = Py::new(py, physics::Physics::new())?;
+        let physics = physics::Physics::new(py, None)?;
         let random = Py::new(py, random::Random::new(None)?)?;
         let mut recorder = recorder::Recorder::new();
         let mut primaries = core::array::from_fn(|_| danton::Primary::new());

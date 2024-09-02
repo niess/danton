@@ -6,6 +6,7 @@ use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{CLibraryException, KeyboardInterrupt, ValueError};
 use indicatif::{ProgressBar, ProgressStyle};
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyString};
 use temp_dir::TempDir;
 use ::std::borrow::Cow;
 use ::std::ffi::{c_char, c_int, CStr, CString, c_uint};
@@ -16,7 +17,6 @@ use ::std::ptr::{null, null_mut};
 
 
 // XXX Manage materials profiles.
-// XXX Explicit pre-computation.
 
 
 #[pyclass(module="danton")]
@@ -46,8 +46,12 @@ unsafe impl Send for Physics {}
 
 #[pymethods]
 impl Physics {
+    #[pyo3(signature=(**kwargs))]
     #[new]
-    pub fn new() -> Self {
+    pub fn new<'py>(
+        py: Python<'py>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Py<Self>> {
         let bremsstrahlung = Bremsstrahlung::default();
         let pair_production = PairProduction::default();
         let photonuclear = Photonuclear::default();
@@ -57,10 +61,20 @@ impl Physics {
         let material_index = danton::MaterialIndex::default();
         let modified = false;
 
-        Self {
+        let physics = Self {
             bremsstrahlung, pair_production, photonuclear, dis, pdf, physics, material_index,
             modified,
+        };
+        let physics = Bound::new(py, physics)?;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs.iter() {
+                let key: Bound<PyString> = key.extract()?;
+                physics.setattr(key, value)?
+            }
         }
+
+        Ok(physics.unbind())
     }
 
     #[setter]
@@ -304,7 +318,7 @@ impl Physics {
             if rc == pumas::INTERRUPT {
                 // Ctrl-C has been catched.
                 let err = Error::new(KeyboardInterrupt)
-                    .why("while tabulating physics");
+                    .why("while computing materials tables");
                 return Err(err.to_err())
             } else {
                 Self::check_pumas(rc)?;
@@ -418,6 +432,13 @@ impl Physics {
     }
 }
 
+
+// ===============================================================================================
+//
+// Notifier for physics computations.
+//
+// ===============================================================================================
+
 #[repr(C)]
 struct Notifier {
     interface: pumas::PhysicsNotifier,
@@ -426,6 +447,8 @@ struct Notifier {
 }
 
 impl Notifier {
+    const SECTIONS: usize = 4;
+
     fn new() -> Self {
         let interface = pumas::PhysicsNotifier {
             configure: Some(pumas_physics_notifier_configure),
@@ -451,7 +474,7 @@ impl Notifier {
                     .unwrap()
                     .progress_chars("=> ");
                 bar.set_style(bar_style);
-                let section = style(format!("[{}/3]", self.section)).dim();
+                let section = style(format!("[{}/{}]", self.section, Self::SECTIONS)).dim();
                 bar.set_message(format!("{} Computing {}", section, title));
                 bar.set_position(0);
                 Some(bar)
@@ -503,4 +526,25 @@ extern "C" fn pumas_physics_notifier_notify(slf: *mut pumas::PhysicsNotifier) ->
         notifier.notify();
         pumas::SUCCESS
     }
+}
+
+
+// ===============================================================================================
+//
+// Pre-computation interface.
+//
+// ===============================================================================================
+
+/// Compute materials tables.
+#[pyfunction]
+#[pyo3(signature=(**kwargs))]
+pub fn compute(
+    py: Python,
+    kwargs: Option<&Bound<PyDict>>,
+) -> PyResult<()> {
+    Physics::new(py, kwargs)?
+        .bind(py)
+        .borrow_mut()
+        .create_physics(py)?;
+    Ok(())
 }
