@@ -3,6 +3,7 @@ use crate::utils::convert::Mode;
 use crate::utils::error::{ctrlc_catched, Error, to_result};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, NotImplementedError};
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyString};
 use ::std::pin::Pin;
 use ::std::ptr::null_mut;
 
@@ -38,10 +39,41 @@ unsafe impl Send for Simulation {}
 
 #[pymethods]
 impl Simulation {
+    #[pyo3(signature=(**kwargs))]
     #[new]
-    fn new(py: Python) -> PyResult<Self> { // XXX Allow for keyword args?
-        let geometry = geometry::Geometry::new(py, None)?;
-        let physics = physics::Physics::new(py, None)?;
+    pub fn new<'py>(
+        py: Python<'py>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        let (geometry_kwargs, physics_kwargs) = match kwargs {
+            None => (None, None),
+            Some(kwargs) => {
+                let extract = |fields: &[&str]| -> PyResult<Option<Bound<'py, PyDict>>> {
+                    let mut result = None;
+                    for field in fields {
+                        if let Some(value) = kwargs.get_item(field)? {
+                            result
+                                .get_or_insert_with(|| {
+                                    PyDict::new_bound(py)
+                                })
+                                .set_item(field, value)?;
+                            kwargs.del_item(field)?;
+                        }
+                    }
+                    Ok(result)
+                };
+                let geometry_kwargs = extract(
+                    &["density", "geoid", "materials", "ocean", "topography"]
+                )?;
+                let physics_kwargs = extract(
+                    &["bremsstrahlung", "dis", "pair_production", "pdf", "photonuclear"]
+                )?;
+                (geometry_kwargs, physics_kwargs)
+            },
+        };
+
+        let geometry = geometry::Geometry::new(py, geometry_kwargs.as_ref())?;
+        let physics = physics::Physics::new(py, physics_kwargs.as_ref())?;
         let random = Py::new(py, random::Random::new(None)?)?;
         let mut recorder = recorder::Recorder::new();
         let mut primaries = core::array::from_fn(|_| danton::Primary::new());
@@ -58,7 +90,16 @@ impl Simulation {
         let simulation = Self {
             geometry, physics, random, context, recorder, primaries, stepper: None
         };
-        Ok(simulation)
+        let simulation = Bound::new(py, simulation)?;
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs.iter() {
+                let key: Bound<PyString> = key.extract()?;
+                simulation.setattr(key, value)?
+            }
+        }
+
+        Ok(simulation.unbind())
     }
 
     /// Flag to control the sampling of tau decays.
