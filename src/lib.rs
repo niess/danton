@@ -58,6 +58,9 @@ fn danton(module: &Bound<PyModule>) -> PyResult<()> {
     // Initialise the physics.
     simulation::physics::Physics::initialise()?;
 
+    // Initialise atomic elements table.
+    simulation::materials::ElementsTable::initialise(py);
+
     // Register class object(s).
     module.add_class::<simulation::Simulation>()?;
     module.add_class::<simulation::geobox::GeoBox>()?;

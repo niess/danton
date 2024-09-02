@@ -5,6 +5,8 @@ use pyo3::prelude::*;
 
 mod array;
 mod geodesy;
+mod materials;
+mod mdf;
 mod medium;
 mod mode;
 mod physics;
@@ -12,6 +14,7 @@ mod state;
 
 pub use array::Array;
 pub use geodesy::{Ellipsoid, Geoid, Reference};
+pub use mdf::Mdf;
 pub use medium::Medium;
 pub use mode::Mode;
 pub use physics::{Bremsstrahlung, Dis, DisModel, PairProduction, Pdf, Photonuclear};

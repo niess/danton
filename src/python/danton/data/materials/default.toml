@@ -1,0 +1,12 @@
+[Rock]
+density = 2.65
+composition = "Rk" # Fictitious Rockium.
+                   # See: https://pdg.lbl.gov/2024/AtomicNuclearProperties/standardrock.html.
+
+[Water]
+density = 1.0 # PREM density (salted water).
+composition = "H2O"
+
+[Air]
+density = 1.205E-03 # Dry air at sea level atmospheric pressure.
+composition = { C = 0.000124, N = 0.755267, O = 0.231781, Ar = 0.012827 }

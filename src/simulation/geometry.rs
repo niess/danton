@@ -33,7 +33,7 @@ pub struct Geometry {
     pub material: String,
     #[pyo3(get)]
     /// The topography density.
-    density: f64,
+    density: Option<f64>,
     #[pyo3(get)]
     /// Flag to enable / disable the ocean.
     pub ocean: bool,
@@ -71,7 +71,7 @@ impl Geometry {
             geoid: Geoid::default(),
             topography: None,
             material: "Rock".to_string(),
-            density: 2.65E+03,
+            density: None,
             ocean: true,
             instance: INSTANCES.fetch_add(1, Ordering::SeqCst),
             modified: true,
@@ -89,7 +89,7 @@ impl Geometry {
     }
 
     #[setter]
-    fn set_density(&mut self, value: f64) {
+    fn set_density(&mut self, value: Option<f64>) {
         if value != self.density {
             self.modified = true;
             self.density = value;
@@ -460,13 +460,13 @@ impl Geometry {
                         None => danton::earth_model(
                             geoid.as_ptr(),
                             null(),
-                            self.density,
+                            self.density.unwrap_or(0.0),
                             &mut ocean,
                         ),
                         Some(topography) => danton::earth_model(
                             geoid.as_ptr(),
                             topography.as_ptr(), // Ensures that topography isn't moved.
-                            self.density,
+                            self.density.unwrap_or(0.0),
                             &mut ocean,
                         ),
                     }

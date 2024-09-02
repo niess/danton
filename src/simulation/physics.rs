@@ -1,7 +1,8 @@
 use console::style;
 use crate::bindings::{alouette, danton, ent, pumas};
+use crate::simulation::materials::MaterialsData;
 use crate::utils::cache;
-use crate::utils::convert::{Bremsstrahlung, Dis, PairProduction, Pdf, Photonuclear};
+use crate::utils::convert::{Bremsstrahlung, Dis, Mdf, PairProduction, Pdf, Photonuclear};
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{CLibraryException, KeyboardInterrupt, ValueError};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -9,14 +10,11 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 use temp_dir::TempDir;
 use ::std::borrow::Cow;
-use ::std::ffi::{c_char, c_int, CStr, CString, c_uint};
+use ::std::ffi::{c_char, c_int, CStr, CString, c_uint, OsStr};
 use ::std::fs::File;
 use ::std::os::fd::AsRawFd;
 use ::std::path::Path;
 use ::std::ptr::{null, null_mut};
-
-
-// XXX Manage materials profiles.
 
 
 #[pyclass(module="danton")]
@@ -36,6 +34,9 @@ pub struct Physics {
     /// The Parton Distribution Functions (PDF) for neutrino interactions.
     #[pyo3(get)]
     pdf: Option<Pdf>,
+    /// The set of target materials.
+    #[pyo3(get)]
+    materials: String,
 
     physics: danton::Physics,
     material_index: danton::MaterialIndex,
@@ -44,9 +45,13 @@ pub struct Physics {
 
 unsafe impl Send for Physics {}
 
+impl Physics {
+    const DEFAULT_MATERIALS: &'static str = "default";
+}
+
 #[pymethods]
 impl Physics {
-    #[pyo3(signature=(**kwargs))]
+    #[pyo3(signature=(*, **kwargs))]
     #[new]
     pub fn new<'py>(
         py: Python<'py>,
@@ -57,13 +62,14 @@ impl Physics {
         let photonuclear = Photonuclear::default();
         let dis = Dis::default();
         let pdf = None;
+        let materials = Self::DEFAULT_MATERIALS.to_string();
         let physics = danton::Physics { ent: null_mut(), pumas: null_mut() };
         let material_index = danton::MaterialIndex::default();
         let modified = false;
 
         let physics = Self {
-            bremsstrahlung, pair_production, photonuclear, dis, pdf, physics, material_index,
-            modified,
+            bremsstrahlung, pair_production, photonuclear, dis, pdf, materials, physics,
+            material_index, modified,
         };
         let physics = Bound::new(py, physics)?;
 
@@ -115,6 +121,138 @@ impl Physics {
             self.pdf = value;
             self.modified = true;
         }
+    }
+
+    #[setter]
+    fn set_materials(&mut self, py: Python, value: &str) -> PyResult<()> {
+        if value == self.materials {
+            return Ok(())
+        }
+
+        let path = Path::new(value);
+        let get_tag = || -> PyResult<&str> {
+            path
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .ok_or_else(|| {
+                    let stem = path.file_stem()
+                        .and_then(|stem| Some(stem.to_string_lossy()))
+                        .unwrap_or(path.to_string_lossy());
+                    let why = format!("invalid tag '{}'", stem);
+                    Error::new(ValueError)
+                        .what("materials")
+                        .why(&why)
+                        .to_err()
+                })
+        };
+
+        let cache = cache::path()?;
+        let materials = match path.extension().and_then(OsStr::to_str) {
+            None => match path.parent() { // Value should be a valid materials tag.
+                Some(_) => {
+                    let why = format!("invalid tag '{}'", value);
+                    let err = Error::new(ValueError)
+                        .what("materials")
+                        .why(&why);
+                    return Err(err.to_err())
+                },
+                None => {
+                    let tag = get_tag()?;
+                    if tag == Self::DEFAULT_MATERIALS {
+                        tag.to_string()
+                    } else {
+                        let cached = cache
+                            .join(format!("materials/{}.toml", tag));
+                        if cached.try_exists().unwrap_or(false) {
+                            tag.to_string()
+                        } else {
+                            let why = format!("unknown tag '{}'", tag);
+                            let err = Error::new(ValueError)
+                                .what("materials")
+                                .why(&why);
+                            return Err(err.to_err())
+                        }
+                    }
+                },
+            },
+            Some("toml") => { // Value should be a materials definition file.
+                let tag = get_tag()?;
+                if tag == Self::DEFAULT_MATERIALS {
+                    let why = format!("cannot modify '{}'", Self::DEFAULT_MATERIALS);
+                    let err = Error::new(ValueError)
+                        .what("materials")
+                        .why(&why);
+                    return Err(err.to_err())
+                }
+
+                let data = MaterialsData::from_file(py, path)?;
+                for material in ["Air", "Rock", "Water"] {
+                    if !data.0.contains_key(material) {
+                        let why = format!("missing '{}' material", material);
+                        let err = Error::new(ValueError)
+                            .what("materials")
+                            .why(&why);
+                        return Err(err.to_err())
+                    }
+                }
+
+                let materials_cache = cache
+                    .join("materials");
+                let cached = materials_cache
+                    .join(format!("{}.toml", tag));
+
+                let mut copy_materials_definition = || -> PyResult<()> {
+                    match std::fs::read_dir(&materials_cache) {
+                        Ok(content) => {
+                            // Remove any cached data.
+                            for entry in content {
+                                if let Ok(entry) = entry {
+                                    if let Some(filename) = entry.file_name().to_str() {
+                                        if filename.starts_with(tag) &&
+                                           filename.ends_with(".pumas") {
+                                            std::fs::remove_file(&entry.path())?;
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        Err(_) => std::fs::create_dir_all(&materials_cache)?,
+                    }
+
+                    std::fs::copy(path, &cached)?;
+                    self.modified = true;
+                    Ok(())
+                };
+
+                if cached
+                    .try_exists()
+                    .unwrap_or(false) {
+                    // Compare the materials definitions.
+                    let cached = MaterialsData::from_file(py, &cached)?;
+                    if cached != data {
+                        copy_materials_definition()?;
+                    }
+                } else {
+                    // Apply the materials definition.
+                    copy_materials_definition()?;
+                }
+
+                tag.to_string()
+            },
+            _ => {
+                let why = format!("invalid file format '{}'", path.display());
+                let err = Error::new(ValueError)
+                    .what("materials")
+                    .why(&why);
+                return Err(err.to_err())
+            },
+        };
+
+        if materials != self.materials {
+            self.materials = materials;
+            self.modified = true;
+        }
+        Ok(())
     }
 }
 
@@ -273,19 +411,24 @@ impl Physics {
     }
 
     fn create_pumas(&self, py: Python) -> PyResult<*mut pumas::Physics> {
-        let tag = Self::pumas_physics_tag(
-            self.bremsstrahlung,
-            self.pair_production,
-            self.photonuclear
-        );
-        let prefix = Path::new(crate::PREFIX.get(py).unwrap());
-        let mdf_path = prefix.join("data/materials/default.xml");
+        let tag = self.pumas_physics_tag();
         let dump_path = cache::path()?
             .join("materials");
+        let description = match self.materials.as_str() {
+            Self::DEFAULT_MATERIALS => {
+                let prefix = Path::new(crate::PREFIX.get(py).unwrap());
+                prefix.join(format!("data/materials/{}.toml", Self::DEFAULT_MATERIALS))
+            },
+            materials => dump_path.join(format!("{}.toml", materials)),
+        };
+        let description = MaterialsData::from_file(py, &description)?;
         std::fs::create_dir_all(&dump_path)?;
         let dump_path = dump_path
-            .join(format!("default-{}.pumas", tag));
+            .join(format!("{}-{}.pumas", self.materials, tag));
         let dedx_path = TempDir::new()?;
+        let mdf_path = dedx_path.path().join("materials.xml");
+        Mdf::new(py, &description)
+            .dump(&mdf_path)?;
 
         let c_bremsstrahlung = CString::new::<&str>(self.bremsstrahlung.into())?;
         let c_pair_production = CString::new::<&str>(self.pair_production.into())?;
@@ -354,13 +497,9 @@ impl Physics {
     }
 
     fn load_pumas(&self) -> Option<*mut pumas::Physics> {
-        let tag = Self::pumas_physics_tag(
-            self.bremsstrahlung,
-            self.pair_production,
-            self.photonuclear
-        );
+        let tag = self.pumas_physics_tag();
         let path = cache::path().ok()?
-            .join(format!("materials/default-{}.pumas", tag));
+            .join(format!("materials/{}-{}.pumas", self.materials, tag));
         let file = File::open(path).ok()?;
         let mut physics = null_mut();
         let rc = unsafe {
@@ -415,14 +554,10 @@ impl Physics {
         }
     }
 
-    fn pumas_physics_tag(
-        bremsstrahlung: Bremsstrahlung,
-        pair_production: PairProduction,
-        photonuclear: Photonuclear
-    ) -> String {
-        let bremsstrahlung: &str = bremsstrahlung.into();
-        let pair_production: &str = pair_production.into();
-        let photonuclear: &str = photonuclear.into();
+    fn pumas_physics_tag(&self)-> String {
+        let bremsstrahlung: &str = self.bremsstrahlung.into();
+        let pair_production: &str = self.pair_production.into();
+        let photonuclear: &str = self.photonuclear.into();
         format!(
             "{}-{}-{}",
             bremsstrahlung,

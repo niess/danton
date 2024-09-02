@@ -9,6 +9,7 @@ use ::std::ptr::null_mut;
 
 pub mod geobox;
 pub mod geometry;
+pub mod materials;
 pub mod particles;
 pub mod physics;
 mod primary;
@@ -63,10 +64,11 @@ impl Simulation {
                     Ok(result)
                 };
                 let geometry_kwargs = extract(
-                    &["density", "geoid", "materials", "ocean", "topography"]
+                    &["density", "geoid", "material", "ocean", "topography"]
                 )?;
                 let physics_kwargs = extract(
-                    &["bremsstrahlung", "dis", "pair_production", "pdf", "photonuclear"]
+                    &["bremsstrahlung", "dis", "pair_production", "pdf", "photonuclear",
+                      "materials"]
                 )?;
                 (geometry_kwargs, physics_kwargs)
             },
