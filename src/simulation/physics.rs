@@ -148,7 +148,8 @@ impl Physics {
 
         let cache = cache::path()?;
         let materials = match path.extension().and_then(OsStr::to_str) {
-            None => match path.parent() { // Value should be a valid materials tag.
+            None => match path.parent().filter(|parent| *parent != Path::new("")) {
+                // Value should be a valid materials tag.
                 Some(_) => {
                     let why = format!("invalid tag '{}'", value);
                     let err = Error::new(ValueError)

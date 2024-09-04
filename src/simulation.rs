@@ -1,7 +1,7 @@
 use crate::bindings::danton;
 use crate::utils::convert::Mode;
 use crate::utils::error::{ctrlc_catched, Error, to_result};
-use crate::utils::error::ErrorKind::{KeyboardInterrupt, NotImplementedError};
+use crate::utils::error::ErrorKind::{KeyboardInterrupt, NotImplementedError, TypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 use ::std::pin::Pin;
@@ -46,8 +46,8 @@ impl Simulation {
         py: Python<'py>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Py<Self>> {
-        let (geometry_kwargs, physics_kwargs) = match kwargs {
-            None => (None, None),
+        let (geometry_kwargs, physics_kwargs, seed, index) = match kwargs {
+            None => (None, None, None, None),
             Some(kwargs) => {
                 let extract = |fields: &[&str]| -> PyResult<Option<Bound<'py, PyDict>>> {
                     let mut result = None;
@@ -70,13 +70,43 @@ impl Simulation {
                     &["bremsstrahlung", "dis", "pair_production", "pdf", "photonuclear",
                       "materials"]
                 )?;
-                (geometry_kwargs, physics_kwargs)
+                let seed = match kwargs.get_item("seed")? {
+                    Some(seed) => {
+                        let seed: u128 = seed.extract()
+                            .map_err(|_| {
+                                let tp = seed.get_type();
+                                let why = format!("expected a 'u128', found a '{:?}'", tp);
+                                Error::new(TypeError)
+                                    .what("seed")
+                                    .why(&why)
+                                    .to_err()
+                            })?;
+                        Some(seed)
+                    },
+                    None => None,
+                };
+                let index = match kwargs.get_item("index")? {
+                    Some(index) => {
+                        let index: random::Index = index.extract()
+                            .map_err(|_| {
+                                let tp = index.get_type();
+                                let why = format!("expected a 'u128', found a '{:?}'", tp);
+                                Error::new(TypeError)
+                                    .what("index")
+                                    .why(&why)
+                                    .to_err()
+                            })?;
+                        Some(index)
+                    },
+                    None => None,
+                };
+                (geometry_kwargs, physics_kwargs, seed, index)
             },
         };
 
         let geometry = geometry::Geometry::new(py, geometry_kwargs.as_ref())?;
         let physics = physics::Physics::new(py, physics_kwargs.as_ref())?;
-        let random = Py::new(py, random::Random::new(None)?)?;
+        let random = Py::new(py, random::Random::new(seed, index)?)?;
         let mut recorder = recorder::Recorder::new();
         let mut primaries = core::array::from_fn(|_| danton::Primary::new());
         let context = unsafe {

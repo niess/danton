@@ -295,7 +295,7 @@ impl ParticlesGenerator {
             Some(geometry) => geometry.unbind(),
         };
         let random = match random {
-            None => Py::new(py, Random::new(None)?)?,
+            None => Py::new(py, Random::new(None, None)?)?,
             Some(random) => random.unbind(),
         };
         let weight = weight.unwrap_or(true);

@@ -11,8 +11,6 @@ use pyo3::types::PyDict;
 //
 // ===============================================================================================
 
-// XXX ToPy for MaterialsData.
-
 impl<'py> TryFrom<Bound<'py, PyDict>> for MaterialsData {
     type Error = PyErr;
 

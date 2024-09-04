@@ -33,10 +33,13 @@ pub struct Random {
 #[pymethods]
 impl Random {
     #[new]
-    pub fn new(seed: Option<u128>) -> PyResult<Self> {
+    pub fn new(seed: Option<u128>, index: Option<Index>) -> PyResult<Self> {
         let rng = Pcg64Mcg::new(0xCAFEF00DD15EA5E5);
         let mut random = Self { rng, seed: 0, index: 0 };
         random.initialise(seed)?;
+        if index.is_some() {
+            random.set_index(index)?;
+        }
         Ok(random)
     }
 
@@ -82,7 +85,7 @@ impl Random {
 }
 
 #[derive(FromPyObject)]
-enum Index {
+pub enum Index {
     #[pyo3(transparent, annotation = "[u64;2]")]
     Array([u64; 2]),
     #[pyo3(transparent, annotation = "u128")]
