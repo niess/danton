@@ -1,3 +1,5 @@
+use crate::utils::cache;
+use crate::utils::convert::ToToml;
 use crate::utils::error::ErrorKind::{self, KeyError, ValueError};
 use crate::utils::io::{ConfigFormat, Toml};
 use pyo3::prelude::*;
@@ -5,6 +7,28 @@ use pyo3::sync::GILOnceCell;
 use regex::Regex;
 use ::std::collections::HashMap;
 use ::std::path::Path;
+
+
+// ===============================================================================================
+//
+// Materials interface initialisation.
+//
+// ===============================================================================================
+
+pub const DEFAULT_MATERIALS: &'static str = "default";
+
+pub fn initialise(py: Python) -> PyResult<()> {
+    // Initialise atomic elements data.
+    ElementsTable::initialise(py);
+
+    // Synchronize default materials.
+    let path = Path::new(crate::PREFIX.get(py).unwrap())
+        .join(format!("data/materials/{}.toml", DEFAULT_MATERIALS));
+    let data = MaterialsData::from_file(py, path)?;
+    let _unused = data.sync(py, DEFAULT_MATERIALS)?;
+
+    Ok(())
+}
 
 
 // ===============================================================================================
@@ -26,7 +50,7 @@ pub struct ElementsTable (pub HashMap<&'static str, AtomicElement>);
 pub static ELEMENTS: GILOnceCell<ElementsTable> = GILOnceCell::new();
 
 impl ElementsTable {
-    pub fn initialise(py: Python) {
+    fn initialise(py: Python) {
         // Data from https://pdg.lbl.gov/2024/AtomicNuclearProperties/index.html.
         let table = HashMap::from([
             ("H",  AtomicElement { Z: 1,   A: 1.008,   I: 19.2   }),
@@ -163,7 +187,7 @@ impl ElementsTable {
 // ===============================================================================================
 
 #[allow(non_snake_case)]
-#[derive(PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Material {
     pub density: f64,
     mass: f64,
@@ -171,10 +195,35 @@ pub struct Material {
     pub I: Option<f64>,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Component {
     pub name: String,
     pub weight: f64,
+}
+
+impl PartialEq for Material {
+    fn eq(&self, other: &Self) -> bool {
+        if self.density != other.density {
+            return false;
+        }
+        if (self.mass - other.mass).abs() > 1E-09 { // Prevent rounding errors.
+            return false;
+        }
+        if self.I != other.I {
+            return false;
+        }
+        self.composition.eq(&other.composition)
+    }
+}
+
+impl PartialEq for Component {
+    fn eq(&self, other: &Self) -> bool {
+        if self.name.eq(&other.name) {
+            (self.weight - other.weight).abs() <= 1E-09 // Prevent rounding errors.
+        } else {
+            false
+        }
+    }
 }
 
 type Error = (ErrorKind, String);
@@ -291,6 +340,7 @@ impl Material {
         let table = ELEMENTS.get(py).unwrap();
         let re = Regex::new(r"([A-Z][a-z]?)([0-9]*)").unwrap();
         let mut composition = Vec::<Component>::new();
+        let mut sum = 0.0;
         for captures in re.captures_iter(formula) {
             let symbol = captures.get(1).unwrap().as_str();
             if !table.0.contains_key(symbol) {
@@ -312,6 +362,12 @@ impl Material {
                     })?
             };
             composition.push(Component { name: symbol.to_string(), weight });
+            sum += weight;
+        }
+        if (sum - 1.0).abs() > 1E-09 {
+            for component in composition.iter_mut() {
+                component.weight /= sum;
+            }
         }
         Material::from_elements(py, density, &composition, I)
     }
@@ -330,7 +386,7 @@ impl Component {
 //
 // ===============================================================================================
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct MaterialsData (pub HashMap<String, Material>);
 
 impl MaterialsData {
@@ -341,5 +397,52 @@ impl MaterialsData {
     pub fn from_file<P: AsRef<Path>>(py: Python, path: P) -> PyResult<Self> {
         Toml::load_dict(py, path.as_ref())?
             .try_into()
+    }
+
+    pub fn sync(&self, py: Python, tag: &str) -> PyResult<bool> {
+        let materials_cache = cache::path()?
+            .join("materials");
+        let cached = materials_cache
+            .join(format!("{}.toml", tag));
+
+        let update_materials_definition = || -> PyResult<()> {
+            match std::fs::read_dir(&materials_cache) {
+                Ok(content) => {
+                    // Remove any cached data.
+                    for entry in content {
+                        if let Ok(entry) = entry {
+                            if let Some(filename) = entry.file_name().to_str() {
+                                if filename.starts_with(tag) &&
+                                   filename.ends_with(".pumas") {
+                                    std::fs::remove_file(&entry.path())?;
+                                }
+                            }
+                        }
+                    }
+                },
+                Err(_) => std::fs::create_dir_all(&materials_cache)?,
+            }
+
+            std::fs::write(&cached, self.to_toml())?;
+            Ok(())
+        };
+
+        let updated = if cached
+            .try_exists()
+            .unwrap_or(false) {
+            // Compare the materials definitions.
+            let cached = MaterialsData::from_file(py, &cached)?;
+            if cached != *self {
+                update_materials_definition()?;
+                true
+            } else {
+                false
+            }
+        } else {
+            // Apply the materials definition.
+            update_materials_definition()?;
+            true
+        };
+        Ok(updated)
     }
 }

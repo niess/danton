@@ -1,6 +1,6 @@
 use console::style;
 use crate::bindings::{alouette, danton, ent, pumas};
-use crate::simulation::materials::MaterialsData;
+use crate::simulation::materials::{DEFAULT_MATERIALS, MaterialsData};
 use crate::utils::cache;
 use crate::utils::convert::{Bremsstrahlung, Dis, Mdf, PairProduction, Pdf, Photonuclear};
 use crate::utils::error::{ctrlc_catched, Error};
@@ -45,10 +45,6 @@ pub struct Physics {
 
 unsafe impl Send for Physics {}
 
-impl Physics {
-    const DEFAULT_MATERIALS: &'static str = "default";
-}
-
 #[pymethods]
 impl Physics {
     #[pyo3(signature=(*, **kwargs))]
@@ -62,7 +58,7 @@ impl Physics {
         let photonuclear = Photonuclear::default();
         let dis = Dis::default();
         let pdf = None;
-        let materials = Self::DEFAULT_MATERIALS.to_string();
+        let materials = DEFAULT_MATERIALS.to_string();
         let physics = danton::Physics { ent: null_mut(), pumas: null_mut() };
         let material_index = danton::MaterialIndex::default();
         let modified = false;
@@ -146,7 +142,6 @@ impl Physics {
                 })
         };
 
-        let cache = cache::path()?;
         let materials = match path.extension().and_then(OsStr::to_str) {
             None => match path.parent().filter(|parent| *parent != Path::new("")) {
                 // Value should be a valid materials tag.
@@ -159,10 +154,10 @@ impl Physics {
                 },
                 None => {
                     let tag = get_tag()?;
-                    if tag == Self::DEFAULT_MATERIALS {
+                    if tag == DEFAULT_MATERIALS {
                         tag.to_string()
                     } else {
-                        let cached = cache
+                        let cached = cache::path()?
                             .join(format!("materials/{}.toml", tag));
                         if cached.try_exists().unwrap_or(false) {
                             tag.to_string()
@@ -178,64 +173,35 @@ impl Physics {
             },
             Some("toml") => { // Value should be a materials definition file.
                 let tag = get_tag()?;
-                if tag == Self::DEFAULT_MATERIALS {
-                    let why = format!("cannot modify '{}'", Self::DEFAULT_MATERIALS);
+                if tag == DEFAULT_MATERIALS {
+                    let why = format!("cannot modify '{}'", DEFAULT_MATERIALS);
                     let err = Error::new(ValueError)
                         .what("materials")
                         .why(&why);
                     return Err(err.to_err())
                 }
 
-                let data = MaterialsData::from_file(py, path)?;
-                for material in ["Air", "Rock", "Water"] {
-                    if !data.0.contains_key(material) {
-                        let why = format!("missing '{}' material", material);
-                        let err = Error::new(ValueError)
-                            .what("materials")
-                            .why(&why);
-                        return Err(err.to_err())
+                let data = {
+                    let mut data = MaterialsData::from_file(py, path)?;
+                    let mut default_data: Option<MaterialsData> = None;
+                    for material in ["Air", "Rock", "Water"] {
+                        data.0.entry(material.to_string()).or_insert_with(|| {
+                            let default_data = default_data.get_or_insert_with(|| {
+                                let path = Path::new(crate::PREFIX.get(py).unwrap())
+                                    .join(format!(
+                                        "data/materials/{}.toml",
+                                        DEFAULT_MATERIALS
+                                    ));
+                                MaterialsData::from_file(py, path).unwrap()
+                            });
+                            default_data.0[material].clone()
+                        });
                     }
-                }
-
-                let materials_cache = cache
-                    .join("materials");
-                let cached = materials_cache
-                    .join(format!("{}.toml", tag));
-
-                let mut copy_materials_definition = || -> PyResult<()> {
-                    match std::fs::read_dir(&materials_cache) {
-                        Ok(content) => {
-                            // Remove any cached data.
-                            for entry in content {
-                                if let Ok(entry) = entry {
-                                    if let Some(filename) = entry.file_name().to_str() {
-                                        if filename.starts_with(tag) &&
-                                           filename.ends_with(".pumas") {
-                                            std::fs::remove_file(&entry.path())?;
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        Err(_) => std::fs::create_dir_all(&materials_cache)?,
-                    }
-
-                    std::fs::copy(path, &cached)?;
-                    self.modified = true;
-                    Ok(())
+                    data
                 };
 
-                if cached
-                    .try_exists()
-                    .unwrap_or(false) {
-                    // Compare the materials definitions.
-                    let cached = MaterialsData::from_file(py, &cached)?;
-                    if cached != data {
-                        copy_materials_definition()?;
-                    }
-                } else {
-                    // Apply the materials definition.
-                    copy_materials_definition()?;
+                if data.sync(py, tag)? {
+                    self.modified = true;
                 }
 
                 tag.to_string()
@@ -415,13 +381,7 @@ impl Physics {
         let tag = self.pumas_physics_tag();
         let dump_path = cache::path()?
             .join("materials");
-        let description = match self.materials.as_str() {
-            Self::DEFAULT_MATERIALS => {
-                let prefix = Path::new(crate::PREFIX.get(py).unwrap());
-                prefix.join(format!("data/materials/{}.toml", Self::DEFAULT_MATERIALS))
-            },
-            materials => dump_path.join(format!("{}.toml", materials)),
-        };
+        let description = dump_path.join(format!("{}.toml", &self.materials));
         let description = MaterialsData::from_file(py, &description)?;
         std::fs::create_dir_all(&dump_path)?;
         let dump_path = dump_path

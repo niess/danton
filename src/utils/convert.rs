@@ -11,6 +11,7 @@ mod medium;
 mod mode;
 mod physics;
 mod state;
+mod toml;
 
 pub use array::Array;
 pub use geodesy::{Ellipsoid, Geoid, Reference};
@@ -18,6 +19,7 @@ pub use mdf::Mdf;
 pub use medium::Medium;
 pub use mode::Mode;
 pub use physics::{Bremsstrahlung, Dis, DisModel, PairProduction, Pdf, Photonuclear};
+pub use toml::ToToml;
 
 
 trait Convert {
