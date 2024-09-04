@@ -798,25 +798,21 @@ impl Energy {
 
     fn generate_powerlaw(&self, random: &mut Random) -> (f64, f64) {
         let Energy::PowerLaw { energy_min, energy_max, exponent } = *self else { unreachable!() };
-        let (energy, weight) = match exponent {
-            -1.0 => {
-                let lne = (energy_max / energy_min).ln();
-                let energy = energy_min * (random.open01() * lne).exp();
-                (energy, energy * lne)
-            },
-            0.0 => {
-                let de = energy_max - energy_min;
-                let energy = de * random.open01() + energy_min;
-                (energy, de)
-            },
-            exponent => {
-                let a = exponent + 1.0;
-                let b = energy_min.powf(a);
-                let de = energy_max.powf(a) - b;
-                let energy = (de * random.open01() + b).powf(1.0 / a);
-                let weight = de / (a * energy.powf(exponent));
-                (energy, weight)
-            },
+        let (energy, weight) = if exponent == -1.0 {
+            let lne = (energy_max / energy_min).ln();
+            let energy = energy_min * (random.open01() * lne).exp();
+            (energy, energy * lne)
+        } else if exponent == 0.0 {
+            let de = energy_max - energy_min;
+            let energy = de * random.open01() + energy_min;
+            (energy, de)
+        } else {
+            let a = exponent + 1.0;
+            let b = energy_min.powf(a);
+            let de = energy_max.powf(a) - b;
+            let energy = (de * random.open01() + b).powf(1.0 / a);
+            let weight = de / (a * energy.powf(exponent));
+            (energy, weight)
         };
         let energy = energy.clamp(energy_min, energy_max);
         (energy, weight)

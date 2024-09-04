@@ -5,6 +5,7 @@ use crate::utils::io::{ConfigFormat, Toml};
 use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
 use regex::Regex;
+use ::std::borrow::Cow;
 use ::std::collections::HashMap;
 use ::std::path::Path;
 
@@ -257,11 +258,16 @@ impl Material {
                     xi
                 },
                 None => {
-                    let material = others.0.get(name.as_str())
-                        .ok_or_else(|| Self::from_formula(py, 0.0, name.as_str(), None));
+                    let material: Option<Cow<Material>> = others.0.get(name.as_str())
+                        .map(|material| Cow::Borrowed(material))
+                        .or_else(||
+                            Self::from_formula(py, 0.0, name.as_str(), None)
+                                .ok()
+                                .map(|material| Cow::Owned(material))
+                        );
 
                     match material {
-                        Ok(material) => {
+                        Some(material) => {
                             let xi = wi / material.mass;
                             for cj in material.composition.iter() {
                                 let Component { name: symbol, weight: wj } = cj;
@@ -276,7 +282,7 @@ impl Material {
                             }
                             xi
                         },
-                        Err(_) => {
+                        None => {
                             let why = format!(
                                 "unknown element, material or molecule '{}'",
                                 name.as_str(),

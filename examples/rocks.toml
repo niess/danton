@@ -1,0 +1,7 @@
+[Limestone]
+density = 2.71
+composition = "CaCO3"
+
+[Sandstone]
+density = 2.6
+composition = { SiO2 = 0.94, Al2O3 = 0.06 } # mass fractions.

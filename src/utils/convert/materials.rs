@@ -53,7 +53,7 @@ impl<'a, 'py> TryFrom<Context<'a, 'py>> for Material {
         let (name, data, others) = value;
         let py = data.py();
         let to_err = |kind: ErrorKind, why: &str| -> PyErr {
-            let what = format!("bad '{}' material", name);
+            let what = format!("'{}' material", name);
             Error::new(kind)
                 .what(&what)
                 .why(why)

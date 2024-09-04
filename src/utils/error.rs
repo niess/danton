@@ -16,14 +16,14 @@ use ::std::ptr::null_mut;
 //
 // ===============================================================================================
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Error<'a> {
     pub kind: Option<ErrorKind>,
     pub what: Option<&'a str>,
     pub why: Option<&'a str>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ErrorKind {
     CLibraryException,
     Exception,
