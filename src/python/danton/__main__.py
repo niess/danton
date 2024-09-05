@@ -21,6 +21,10 @@ def main():
     compute = subparsers.add_parser("compute",
         help = "Compute materials tables."
     )
+    compute.add_argument("files",
+        help = "Materials description file(s).",
+        nargs = "*"
+    )
     compute.add_argument("-b", "--bremsstrahlung",
         help = "Specify the bremsstralung model.",
         choices = ["ABB", "KKP", "SSR"],
@@ -58,6 +62,7 @@ def main():
 
     if args.command == "compute":
         danton.compute(
+            *args.files,
             bremsstrahlung = args.bremsstrahlung,
             pair_production = args.pair_production,
             photonuclear = args.photonuclear,

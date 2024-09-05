@@ -1,13 +1,13 @@
 use console::style;
 use crate::bindings::{alouette, danton, ent, pumas};
-use crate::simulation::materials::{DEFAULT_MATERIALS, Materials, MaterialsData};
+use crate::simulation::materials::{Materials, MaterialsData};
 use crate::utils::cache;
 use crate::utils::convert::{Bremsstrahlung, Dis, Mdf, PairProduction, Pdf, Photonuclear};
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{CLibraryException, KeyboardInterrupt, ValueError};
 use indicatif::{ProgressBar, ProgressStyle};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString};
+use pyo3::types::{PyDict, PyString, PyTuple};
 use temp_dir::TempDir;
 use ::std::borrow::Cow;
 use ::std::ffi::{c_char, c_int, CStr, CString, c_uint};
@@ -315,7 +315,7 @@ impl Physics {
             let mut physics: *mut pumas::Physics = null_mut();
             let mdf_path = CString::new(mdf_path.to_string_lossy().as_ref())?;
             let dedx_path = CString::new(dedx_path.path().to_string_lossy().as_ref())?;
-            let mut notifier = Notifier::new();
+            let mut notifier = Notifier::new(materials);
             let rc = pumas::physics_create(
                 &mut physics,
                 pumas::TAU,
@@ -444,18 +444,19 @@ impl Physics {
 struct Notifier {
     interface: pumas::PhysicsNotifier,
     bar: Option<ProgressBar>,
+    client: String,
     section: usize,
 }
 
 impl Notifier {
     const SECTIONS: usize = 4;
 
-    fn new() -> Self {
+    fn new(client: &str) -> Self {
         let interface = pumas::PhysicsNotifier {
             configure: Some(pumas_physics_notifier_configure),
             notify: Some(pumas_physics_notifier_notify),
         };
-        Self { interface, bar: None, section: 0 }
+        Self { interface, bar: None, client: client.to_string(), section: 0 }
     }
 
     fn configure(&mut self, title: Option<&str>, steps: c_int) {
@@ -476,7 +477,7 @@ impl Notifier {
                     .progress_chars("=> ");
                 bar.set_style(bar_style);
                 let section = style(format!("[{}/{}]", self.section, Self::SECTIONS)).dim();
-                bar.set_message(format!("{} Computing {}", section, title));
+                bar.set_message(format!("({} {} Computing {}", self.client, section, title));
                 bar.set_position(0);
                 Some(bar)
             },
@@ -538,14 +539,26 @@ extern "C" fn pumas_physics_notifier_notify(slf: *mut pumas::PhysicsNotifier) ->
 
 /// Compute materials tables.
 #[pyfunction]
-#[pyo3(signature=(**kwargs))]
+#[pyo3(signature=(*args, **kwargs))]
 pub fn compute(
     py: Python,
+    args: &Bound<PyTuple>,
     kwargs: Option<&Bound<PyDict>>,
 ) -> PyResult<()> {
-    Physics::new(py, kwargs)?
+    let mut physics = Physics::new(py, kwargs)?
         .bind(py)
-        .borrow_mut()
-        .create_physics(py, DEFAULT_MATERIALS)?; // XXX Allow for materials.
+        .borrow_mut();
+    if args.is_empty() {
+        let materials = Materials::new(py, None)?;
+        physics
+            .create_physics(py, materials.tag.as_str())?;
+    } else {
+        for arg in args.iter() {
+            let arg: String = arg.extract()?;
+            let materials = Materials::new(py, Some(arg.as_str()))?;
+            physics
+                .create_physics(py, materials.tag.as_str())?;
+        }
+    }
     Ok(())
 }
