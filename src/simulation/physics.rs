@@ -10,10 +10,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 use temp_dir::TempDir;
 use ::std::borrow::Cow;
-use ::std::ffi::{c_char, c_int, CStr, CString, c_uint, OsStr};
+use ::std::ffi::{c_char, c_int, CStr, CString, c_uint};
 use ::std::fs::File;
 use ::std::os::fd::AsRawFd;
-use ::std::path::Path;
 use ::std::ptr::{null, null_mut};
 
 
@@ -34,9 +33,6 @@ pub struct Physics {
     /// The Parton Distribution Functions (PDF) for neutrino interactions.
     #[pyo3(get)]
     pdf: Option<Pdf>,
-    /// The set of target materials.
-    #[pyo3(get)]
-    materials: String,
 
     physics: danton::Physics,
     material_index: danton::MaterialIndex,
@@ -58,13 +54,12 @@ impl Physics {
         let photonuclear = Photonuclear::default();
         let dis = Dis::default();
         let pdf = None;
-        let materials = DEFAULT_MATERIALS.to_string();
         let physics = danton::Physics { ent: null_mut(), pumas: null_mut() };
         let material_index = danton::MaterialIndex::default();
         let modified = false;
 
         let physics = Self {
-            bremsstrahlung, pair_production, photonuclear, dis, pdf, materials, physics,
+            bremsstrahlung, pair_production, photonuclear, dis, pdf, physics,
             material_index, modified,
         };
         let physics = Bound::new(py, physics)?;
@@ -118,109 +113,6 @@ impl Physics {
             self.modified = true;
         }
     }
-
-    #[setter]
-    fn set_materials(&mut self, py: Python, value: &str) -> PyResult<()> {
-        if value == self.materials {
-            return Ok(())
-        }
-
-        let path = Path::new(value);
-        let get_tag = || -> PyResult<&str> {
-            path
-                .file_stem()
-                .and_then(OsStr::to_str)
-                .ok_or_else(|| {
-                    let stem = path.file_stem()
-                        .and_then(|stem| Some(stem.to_string_lossy()))
-                        .unwrap_or(path.to_string_lossy());
-                    let why = format!("invalid tag '{}'", stem);
-                    Error::new(ValueError)
-                        .what("materials")
-                        .why(&why)
-                        .to_err()
-                })
-        };
-
-        let materials = match path.extension().and_then(OsStr::to_str) {
-            None => match path.parent().filter(|parent| *parent != Path::new("")) {
-                // Value should be a valid materials tag.
-                Some(_) => {
-                    let why = format!("invalid tag '{}'", value);
-                    let err = Error::new(ValueError)
-                        .what("materials")
-                        .why(&why);
-                    return Err(err.to_err())
-                },
-                None => {
-                    let tag = get_tag()?;
-                    if tag == DEFAULT_MATERIALS {
-                        tag.to_string()
-                    } else {
-                        let cached = cache::path()?
-                            .join(format!("materials/{}.toml", tag));
-                        if cached.try_exists().unwrap_or(false) {
-                            tag.to_string()
-                        } else {
-                            let why = format!("unknown tag '{}'", tag);
-                            let err = Error::new(ValueError)
-                                .what("materials")
-                                .why(&why);
-                            return Err(err.to_err())
-                        }
-                    }
-                },
-            },
-            Some("toml") => { // Value should be a materials definition file.
-                let tag = get_tag()?;
-                if tag == DEFAULT_MATERIALS {
-                    let why = format!("cannot modify '{}'", DEFAULT_MATERIALS);
-                    let err = Error::new(ValueError)
-                        .what("materials")
-                        .why(&why);
-                    return Err(err.to_err())
-                }
-
-                let data = {
-                    let mut data = MaterialsData::from_file(py, path)?;
-                    let mut default_data: Option<MaterialsData> = None;
-                    for material in ["Air", "Rock", "Water"] {
-                        data.0.entry(material.to_string()).or_insert_with(|| {
-                            let default_data = default_data.get_or_insert_with(|| {
-                                let path = Path::new(crate::PREFIX.get(py).unwrap())
-                                    .join(format!(
-                                        "data/materials/{}.toml",
-                                        DEFAULT_MATERIALS
-                                    ));
-                                MaterialsData::from_file(py, path).unwrap()
-                            });
-                            default_data.0[material].clone()
-                        });
-                    }
-                    data
-                };
-
-                if data.sync(py, tag)? {
-                    self.modified = true;
-                }
-
-                tag.to_string()
-            },
-            _ => {
-                let why = format!("invalid file format '{}'", path.display());
-                let err = Error::new(ValueError)
-                    .what("materials")
-                    .why(&why);
-                return Err(err.to_err())
-            },
-        };
-
-        if materials != self.materials {
-            self.materials = materials;
-            self.modified = true;
-        }
-        Ok(())
-    }
 }
 
 impl Drop for Physics {
@@ -230,10 +122,15 @@ impl Drop for Physics {
 }
 
 impl Physics {
-    pub fn apply(&mut self, py: Python, topography_material: &str) -> PyResult<()> {
+    pub fn apply(
+        &mut self,
+        py: Python,
+        materials: &str,
+        topography_material: &str
+    ) -> PyResult<()> {
         if self.physics.ent.is_null() || self.modified {
             self.destroy_physics();
-            self.create_physics(py)?;
+            self.create_physics(py, materials)?;
             self.modified = false;
         }
 
@@ -330,10 +227,10 @@ impl Physics {
         Ok(physics)
     }
 
-    fn create_physics(&mut self, py: Python) -> PyResult<()> {
+    fn create_physics(&mut self, py: Python, materials: &str) -> PyResult<()> {
         // Load or create Pumas physics.
-        let pumas = match self.load_pumas() {
-            None => self.create_pumas(py)?,
+        let pumas = match self.load_pumas(materials) {
+            None => self.create_pumas(py, materials)?,
             Some(pumas) => pumas,
         };
         let mut material_index = danton::MaterialIndex::default();
@@ -377,15 +274,15 @@ impl Physics {
         Ok(())
     }
 
-    fn create_pumas(&self, py: Python) -> PyResult<*mut pumas::Physics> {
+    fn create_pumas(&self, py: Python, materials: &str) -> PyResult<*mut pumas::Physics> {
         let tag = self.pumas_physics_tag();
         let dump_path = cache::path()?
             .join("materials");
-        let description = dump_path.join(format!("{}.toml", &self.materials));
+        let description = dump_path.join(format!("{}.toml", materials));
         let description = MaterialsData::from_file(py, &description)?;
         std::fs::create_dir_all(&dump_path)?;
         let dump_path = dump_path
-            .join(format!("{}-{}.pumas", self.materials, tag));
+            .join(format!("{}-{}.pumas", materials, tag));
         let dedx_path = TempDir::new()?;
         let mdf_path = dedx_path.path().join("materials.xml");
         Mdf::new(py, &description)
@@ -457,10 +354,10 @@ impl Physics {
         Self::check_alouette(rc)
     }
 
-    fn load_pumas(&self) -> Option<*mut pumas::Physics> {
+    fn load_pumas(&self, materials: &str) -> Option<*mut pumas::Physics> {
         let tag = self.pumas_physics_tag();
         let path = cache::path().ok()?
-            .join(format!("materials/{}-{}.pumas", self.materials, tag));
+            .join(format!("materials/{}-{}.pumas", materials, tag));
         let file = File::open(path).ok()?;
         let mut physics = null_mut();
         let rc = unsafe {
@@ -641,6 +538,6 @@ pub fn compute(
     Physics::new(py, kwargs)?
         .bind(py)
         .borrow_mut()
-        .create_physics(py)?;
+        .create_physics(py, DEFAULT_MATERIALS)?; // XXX Allow for materials.
     Ok(())
 }

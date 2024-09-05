@@ -1,4 +1,6 @@
 use crate::bindings::danton;
+use crate::simulation::materials::{DEFAULT_MATERIALS, MaterialsData};
+use crate::utils::cache;
 use crate::utils::convert::{Array, Ellipsoid, Geoid, Medium, Reference};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates};
@@ -12,7 +14,8 @@ use crate::utils::numpy::PyArray;
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
-use ::std::ffi::{c_int, CString, c_uint, c_void};
+use ::std::ffi::{c_int, CString, c_uint, c_void, OsStr};
+use ::std::path::Path;
 use ::std::ptr::null;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -26,13 +29,16 @@ pub struct Geometry {
     /// Reference geoid for the sea level.
     pub geoid: Geoid,
     #[pyo3(get)]
+    /// The set of constituve materials.
+    pub materials: String,
+    #[pyo3(get)]
     /// The topography elevation model.
     topography: Option<Topography>,
     #[pyo3(get)]
-    /// The topography composition.
+    /// The topography constitutive material.
     pub topography_material: String,
     #[pyo3(get)]
-    /// The topography density.
+    /// The topography bulk density.
     topography_density: Option<f64>,
     #[pyo3(get)]
     /// Flag to enable / disable the ocean.
@@ -69,6 +75,7 @@ impl Geometry {
     ) -> PyResult<Py<Self>> {
         let geometry = Self {
             geoid: Geoid::default(),
+            materials: DEFAULT_MATERIALS.to_string(),
             topography: None,
             topography_density: None,
             topography_material: "Rock".to_string(),
@@ -100,6 +107,109 @@ impl Geometry {
             self.modified = true;
             self.geoid = value;
         }
+    }
+
+    #[setter]
+    fn set_materials(&mut self, py: Python, value: &str) -> PyResult<()> {
+        if value == self.materials {
+            return Ok(())
+        }
+
+        let path = Path::new(value);
+        let get_tag = || -> PyResult<&str> {
+            path
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .ok_or_else(|| {
+                    let stem = path.file_stem()
+                        .and_then(|stem| Some(stem.to_string_lossy()))
+                        .unwrap_or(path.to_string_lossy());
+                    let why = format!("invalid tag '{}'", stem);
+                    Error::new(ValueError)
+                        .what("materials")
+                        .why(&why)
+                        .to_err()
+                })
+        };
+
+        let materials = match path.extension().and_then(OsStr::to_str) {
+            None => match path.parent().filter(|parent| *parent != Path::new("")) {
+                // Value should be a valid materials tag.
+                Some(_) => {
+                    let why = format!("invalid tag '{}'", value);
+                    let err = Error::new(ValueError)
+                        .what("materials")
+                        .why(&why);
+                    return Err(err.to_err())
+                },
+                None => {
+                    let tag = get_tag()?;
+                    if tag == DEFAULT_MATERIALS {
+                        tag.to_string()
+                    } else {
+                        let cached = cache::path()?
+                            .join(format!("materials/{}.toml", tag));
+                        if cached.try_exists().unwrap_or(false) {
+                            tag.to_string()
+                        } else {
+                            let why = format!("unknown tag '{}'", tag);
+                            let err = Error::new(ValueError)
+                                .what("materials")
+                                .why(&why);
+                            return Err(err.to_err())
+                        }
+                    }
+                },
+            },
+            Some("toml") => { // Value should be a materials definition file.
+                let tag = get_tag()?;
+                if tag == DEFAULT_MATERIALS {
+                    let why = format!("cannot modify '{}'", DEFAULT_MATERIALS);
+                    let err = Error::new(ValueError)
+                        .what("materials")
+                        .why(&why);
+                    return Err(err.to_err())
+                }
+
+                let data = {
+                    let mut data = MaterialsData::from_file(py, path)?;
+                    let mut default_data: Option<MaterialsData> = None;
+                    for material in ["Air", "Rock", "Water"] {
+                        data.0.entry(material.to_string()).or_insert_with(|| {
+                            let default_data = default_data.get_or_insert_with(|| {
+                                let path = Path::new(crate::PREFIX.get(py).unwrap())
+                                    .join(format!(
+                                        "data/materials/{}.toml",
+                                        DEFAULT_MATERIALS
+                                    ));
+                                MaterialsData::from_file(py, path).unwrap()
+                            });
+                            default_data.0[material].clone()
+                        });
+                    }
+                    data
+                };
+
+                if data.sync(py, tag)? {
+                    self.modified = true;
+                }
+
+                tag.to_string()
+            },
+            _ => {
+                let why = format!("invalid file format '{}'", path.display());
+                let err = Error::new(ValueError)
+                    .what("materials")
+                    .why(&why);
+                return Err(err.to_err())
+            },
+        };
+
+        if materials != self.materials {
+            self.materials = materials;
+            self.modified = true;
+        }
+        Ok(())
     }
 
     #[setter]

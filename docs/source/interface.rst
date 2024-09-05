@@ -35,13 +35,6 @@ Python interface
       Reference Earth Model (`PREM`_). See the attributes below for other
       options.
 
-   .. autoattribute:: density
-
-      Get or set the density of the topography layer, in kg/m\ :sup:`3`. For
-      example, the following sets the ground density to 0.92 g/cm\ :sup:`3`.
-
-      >>> geometry.density = 0.92E+03
-
    .. autoattribute:: ellipsoid
 
       .. note::
@@ -75,13 +68,7 @@ Python interface
            - An elliptical Earth, according to the `WGS84`_ ellipsoid.
            - :python:`"WGS84"`
 
-   .. autoattribute:: material
-
-      Get or set the constitutive material of the topography layer, which is
-      `standard rock`_ by default. For example, the following sets the ground
-      composition to water (e.g. to represent an ice cover).
-
-      >>> geometry.material = "Water"
+   .. autoattribute:: materials
 
    .. autoattribute:: ocean
 
@@ -104,6 +91,21 @@ Python interface
       instance, as
 
       >>> geometry.topography = "/path/to/gdem/"
+
+   .. autoattribute:: topography_density
+
+      Get or set the density of the topography layer, in kg/m\ :sup:`3`. For
+      example, the following sets the ground density to 0.92 g/cm\ :sup:`3`.
+
+      >>> geometry.density = 0.92E+03
+
+   .. autoattribute:: topography_material
+
+      Get or set the constitutive material of the topography layer, which is
+      :python:`"Rock"` by default. For example, the following sets the ground
+      composition to water (e.g. to represent an ice cover).
+
+      >>> geometry.material = "Water"
 
    .. automethod:: from_ecef
 
@@ -254,7 +256,6 @@ Python interface
 
    .. autoattribute:: bremsstrahlung
    .. autoattribute:: dis
-   .. autoattribute:: materials
    .. autoattribute:: pair_production
    .. autoattribute:: pdf
    .. autoattribute:: photonuclear

@@ -64,11 +64,11 @@ impl Simulation {
                     Ok(result)
                 };
                 let geometry_kwargs = extract(
-                    &["geoid", "ocean", "topography", "topography_density", "topography_material"]
+                    &["geoid", "materials", "ocean", "topography", "topography_density",
+                      "topography_material"]
                 )?;
                 let physics_kwargs = extract(
-                    &["bremsstrahlung", "dis", "pair_production", "pdf", "photonuclear",
-                      "materials"]
+                    &["bremsstrahlung", "dis", "pair_production", "pdf", "photonuclear"]
                 )?;
                 let seed = match kwargs.get_item("seed")? {
                     Some(seed) => {
@@ -240,7 +240,7 @@ impl Simulation {
             if physics.modified {
                 unsafe { danton::context_reset(self.context) };
             }
-            physics.apply(py, geometry.topography_material.as_str())?;
+            physics.apply(py, geometry.materials.as_str(), geometry.topography_material.as_str())?;
             (geometry.geoid, geometry.ocean)
         };
         self.recorder.ellipsoid = geoid.into();
