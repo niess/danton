@@ -30,10 +30,10 @@ pub struct Geometry {
     topography: Option<Topography>,
     #[pyo3(get)]
     /// The topography composition.
-    pub material: String,
+    pub topography_material: String,
     #[pyo3(get)]
     /// The topography density.
-    density: Option<f64>,
+    topography_density: Option<f64>,
     #[pyo3(get)]
     /// Flag to enable / disable the ocean.
     pub ocean: bool,
@@ -70,8 +70,8 @@ impl Geometry {
         let geometry = Self {
             geoid: Geoid::default(),
             topography: None,
-            material: "Rock".to_string(),
-            density: None,
+            topography_density: None,
+            topography_material: "Rock".to_string(),
             ocean: true,
             instance: INSTANCES.fetch_add(1, Ordering::SeqCst),
             modified: true,
@@ -86,14 +86,6 @@ impl Geometry {
         }
 
         Ok(geometry.unbind())
-    }
-
-    #[setter]
-    fn set_density(&mut self, value: Option<f64>) {
-        if value != self.density {
-            self.modified = true;
-            self.density = value;
-        }
     }
 
     /// Reference ellipsoid for geodetic coordinates.
@@ -111,14 +103,6 @@ impl Geometry {
     }
 
     #[setter]
-    fn set_material(&mut self, value: String) {
-        if value != self.material {
-            self.modified = true;
-            self.material = value;
-        }
-    }
-
-    #[setter]
     fn set_ocean(&mut self, value: bool) {
         if value != self.ocean {
             self.modified = true;
@@ -131,6 +115,22 @@ impl Geometry {
         if value != self.topography {
             self.modified = true;
             self.topography = value;
+        }
+    }
+
+    #[setter]
+    fn set_topography_density(&mut self, value: Option<f64>) {
+        if value != self.topography_density {
+            self.modified = true;
+            self.topography_density = value;
+        }
+    }
+
+    #[setter]
+    fn set_topography_material(&mut self, value: String) {
+        if value != self.topography_material {
+            self.modified = true;
+            self.topography_material = value;
         }
     }
 
@@ -460,13 +460,13 @@ impl Geometry {
                         None => danton::earth_model(
                             geoid.as_ptr(),
                             null(),
-                            self.density.unwrap_or(0.0),
+                            self.topography_density.unwrap_or(0.0),
                             &mut ocean,
                         ),
                         Some(topography) => danton::earth_model(
                             geoid.as_ptr(),
                             topography.as_ptr(), // Ensures that topography isn't moved.
-                            self.density.unwrap_or(0.0),
+                            self.topography_density.unwrap_or(0.0),
                             &mut ocean,
                         ),
                     }
