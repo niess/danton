@@ -24,6 +24,9 @@ pub struct Simulation {
     /// The Monte Carlo geometry.
     #[pyo3(get, set)]
     geometry: Py<geometry::Geometry>,
+    /// The Monte Carlo materials.
+    #[pyo3(get)]
+    materials: Py<materials::Materials>,
     /// The Monte Carlo physics models.
     #[pyo3(get)]
     physics: Py<physics::Physics>,
@@ -38,6 +41,12 @@ pub struct Simulation {
 
 unsafe impl Send for Simulation {}
 
+#[derive(FromPyObject)]
+enum MaterialsArg<'py> {
+    Materials(Bound<'py, materials::Materials>),
+    String(String),
+}
+
 #[pymethods]
 impl Simulation {
     #[pyo3(signature=(**kwargs))]
@@ -46,8 +55,8 @@ impl Simulation {
         py: Python<'py>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Py<Self>> {
-        let (geometry_kwargs, physics_kwargs, seed, index) = match kwargs {
-            None => (None, None, None, None),
+        let (geometry_kwargs, physics_kwargs, seed, index, materials) = match kwargs {
+            None => (None, None, None, None, None),
             Some(kwargs) => {
                 let extract = |fields: &[&str]| -> PyResult<Option<Bound<'py, PyDict>>> {
                     let mut result = None;
@@ -64,8 +73,7 @@ impl Simulation {
                     Ok(result)
                 };
                 let geometry_kwargs = extract(
-                    &["geoid", "materials", "ocean", "topography", "topography_density",
-                      "topography_material"]
+                    &["geoid", "ocean", "topography", "topography_density", "topography_material"]
                 )?;
                 let physics_kwargs = extract(
                     &["bremsstrahlung", "dis", "pair_production", "pdf", "photonuclear"]
@@ -81,6 +89,7 @@ impl Simulation {
                                     .why(&why)
                                     .to_err()
                             })?;
+                        kwargs.del_item("seed")?;
                         Some(seed)
                     },
                     None => None,
@@ -96,15 +105,35 @@ impl Simulation {
                                     .why(&why)
                                     .to_err()
                             })?;
+                        kwargs.del_item("index")?;
                         Some(index)
                     },
                     None => None,
                 };
-                (geometry_kwargs, physics_kwargs, seed, index)
+                let materials = match kwargs.get_item("materials")? {
+                    Some(materials) => {
+                        let materials: String = materials.extract()
+                            .map_err(|_| {
+                                let tp = materials.get_type();
+                                let why = format!("expected a 'string', found a '{:?}'", tp);
+                                Error::new(TypeError)
+                                    .what("materials")
+                                    .why(&why)
+                                    .to_err()
+                            })?;
+                        kwargs.del_item("materials")?;
+                        Some(materials)
+                    },
+                    None => None,
+                };
+                (geometry_kwargs, physics_kwargs, seed, index, materials)
             },
         };
 
         let geometry = geometry::Geometry::new(py, geometry_kwargs.as_ref())?;
+        let materials = Py::new(py,
+            materials::Materials::new(py, materials.as_ref().map(|x| x.as_str()))?
+        )?;
         let physics = physics::Physics::new(py, physics_kwargs.as_ref())?;
         let random = Py::new(py, random::Random::new(seed, index)?)?;
         let mut recorder = recorder::Recorder::new();
@@ -120,7 +149,7 @@ impl Simulation {
             context
         };
         let simulation = Self {
-            geometry, physics, random, context, recorder, primaries, stepper: None
+            geometry, materials, physics, random, context, recorder, primaries, stepper: None
         };
         let simulation = Bound::new(py, simulation)?;
 
@@ -132,6 +161,23 @@ impl Simulation {
         }
 
         Ok(simulation.unbind())
+    }
+
+    #[setter]
+    fn set_materials(&mut self, py: Python, materials: Option<MaterialsArg>) -> PyResult<()> {
+        let materials = materials
+            .unwrap_or(MaterialsArg::String(materials::DEFAULT_MATERIALS.to_string()));
+        match materials {
+            MaterialsArg::String(materials) => {
+                self.materials = Py::new(py,
+                    materials::Materials::new(py, Some(materials.as_str()))?
+                )?;
+            },
+            MaterialsArg::Materials(materials) => {
+                self.materials = materials.unbind();
+            },
+        }
+        Ok(())
     }
 
     /// Flag to control the sampling of tau decays.
@@ -237,10 +283,10 @@ impl Simulation {
             let mut geometry = self.geometry.bind(py).borrow_mut();
             geometry.apply()?;
             let mut physics = self.physics.bind(py).borrow_mut();
-            if physics.modified {
+            let materials = self.materials.bind(py).borrow();
+            if physics.apply(py, &materials, geometry.topography_material.as_str())? {
                 unsafe { danton::context_reset(self.context) };
             }
-            physics.apply(py, geometry.materials.as_str(), geometry.topography_material.as_str())?;
             (geometry.geoid, geometry.ocean)
         };
         self.recorder.ellipsoid = geoid.into();

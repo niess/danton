@@ -302,7 +302,7 @@ static struct {
         int flat_topography;
         double density;
         int sea;
-} earth = { EARTH_PREM, NULL, NULL, 0., 0, 2.65E+03, 1 };
+} earth = { EARTH_PREM, NULL, NULL, 0., 0, 0., 1 };
 
 /* API function for accessing the turtle topography stack. */
 void * danton_get_topography(void) { return earth.stack; }
@@ -1786,7 +1786,7 @@ int danton_earth_model(const char * reference, const char * topography,
         }
 
         /* Parse the topography density. */
-        if (density > 0.) earth.density = density;
+        earth.density = density;
 
         /* Set the sea flag. */
         if (sea != NULL) earth.sea = *sea;

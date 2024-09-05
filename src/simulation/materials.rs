@@ -1,5 +1,6 @@
 use crate::utils::cache;
 use crate::utils::convert::ToToml;
+use crate::utils::error::Error;
 use crate::utils::error::ErrorKind::{self, KeyError, ValueError};
 use crate::utils::io::{ConfigFormat, Toml};
 use pyo3::prelude::*;
@@ -7,12 +8,14 @@ use pyo3::sync::GILOnceCell;
 use regex::Regex;
 use ::std::borrow::Cow;
 use ::std::collections::HashMap;
+use ::std::ffi::OsStr;
 use ::std::path::Path;
+use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 
 // ===============================================================================================
 //
-// Materials interface initialisation.
+// Materials interface.
 //
 // ===============================================================================================
 
@@ -31,6 +34,123 @@ pub fn initialise(py: Python) -> PyResult<()> {
     Ok(())
 }
 
+static INSTANCES: AtomicUsize = AtomicUsize::new(0);
+
+#[pyclass(frozen, module="danton")]
+pub struct Materials {
+    #[pyo3(get)]
+    /// A name identifying the materials set.
+    pub tag: String,
+
+    pub data: MaterialsData,
+    pub instance: usize,
+}
+
+#[pymethods]
+impl Materials {
+    #[new]
+    pub fn new(py: Python, arg: Option<&str>) -> PyResult<Self> {
+        let arg = arg.unwrap_or(DEFAULT_MATERIALS);
+        let path = Path::new(arg);
+        let get_tag = || -> PyResult<&str> {
+            path
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .ok_or_else(|| {
+                    let stem = path.file_stem()
+                        .and_then(|stem| Some(stem.to_string_lossy()))
+                        .unwrap_or(path.to_string_lossy());
+                    let why = format!("invalid tag '{}'", stem);
+                    Error::new(ValueError)
+                        .what("materials")
+                        .why(&why)
+                        .to_err()
+                })
+        };
+
+        let (tag, data) = match path.extension().and_then(OsStr::to_str) {
+            None => match path.parent().filter(|parent| *parent != Path::new("")) {
+                // Value should be a valid materials tag.
+                Some(_) => {
+                    let why = format!("invalid tag '{}'", arg);
+                    let err = Error::new(ValueError)
+                        .what("materials")
+                        .why(&why);
+                    return Err(err.to_err())
+                },
+                None => {
+                    let tag = get_tag()?;
+                    let cached = cache::path()?
+                        .join(format!("materials/{}.toml", tag));
+                    if cached.try_exists().unwrap_or(false) {
+                        let data = MaterialsData::from_file(py, cached)?;
+                        (tag.to_string(), data)
+                    } else {
+                        let why = format!("unknown tag '{}'", tag);
+                        let err = Error::new(ValueError)
+                            .what("materials")
+                            .why(&why);
+                        return Err(err.to_err())
+                    }
+                },
+            },
+            Some("toml") => { // Value should be a materials definition file.
+                let tag = get_tag()?;
+                if tag == DEFAULT_MATERIALS {
+                    let why = format!("cannot modify '{}'", DEFAULT_MATERIALS);
+                    let err = Error::new(ValueError)
+                        .what("materials")
+                        .why(&why);
+                    return Err(err.to_err())
+                }
+
+                let data = {
+                    let mut data = MaterialsData::from_file(py, path)?;
+                    let mut default_data: Option<MaterialsData> = None;
+                    for material in ["Air", "Rock", "Water"] {
+                        data.0.entry(material.to_string()).or_insert_with(|| {
+                            let default_data = default_data.get_or_insert_with(|| {
+                                let path = Path::new(crate::PREFIX.get(py).unwrap())
+                                    .join(format!(
+                                        "data/materials/{}.toml",
+                                        DEFAULT_MATERIALS
+                                    ));
+                                MaterialsData::from_file(py, path).unwrap()
+                            });
+                            default_data.0[material].clone()
+                        });
+                    }
+                    data
+                };
+                data.sync(py, tag)?;
+                (tag.to_string(), data)
+            },
+            _ => {
+                let why = format!("invalid file format '{}'", path.display());
+                let err = Error::new(ValueError)
+                    .what("materials")
+                    .why(&why);
+                return Err(err.to_err())
+            },
+        };
+
+        let instance = INSTANCES.fetch_add(1, Ordering::SeqCst);
+        let materials = Self { tag, data, instance };
+        Ok(materials)
+    }
+
+    fn __getitem__(&self, py: Python, name: &str) -> PyResult<PyObject> {
+        let material = self.data.0.get(name)
+            .ok_or_else(|| {
+                let why = format!("unknown material '{}'", name);
+                Error::new(KeyError)
+                    .what("material")
+                    .why(&why)
+                    .to_err()
+            })?;
+        Ok(material.to_object(py))
+    }
+}
 
 // ===============================================================================================
 //
@@ -227,7 +347,7 @@ impl PartialEq for Component {
     }
 }
 
-type Error = (ErrorKind, String);
+type ErrorData = (ErrorKind, String);
 
 impl Material {
     #[allow(non_snake_case)]
@@ -243,7 +363,7 @@ impl Material {
         others: &MaterialsData,
         #[allow(non_snake_case)]
         I: Option<f64>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ErrorData> {
         let table = ELEMENTS.get(py).unwrap();
         let mut weights = HashMap::<&'static str, f64>::new();
         let mut sum = 0.0;
@@ -308,7 +428,7 @@ impl Material {
         composition: &[Component], // Beware: mole fractions.
         #[allow(non_snake_case)]
         I: Option<f64>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ErrorData> {
         let table = ELEMENTS.get(py).unwrap();
         let n = composition.len();
         let mut mass = 0.0;
@@ -342,7 +462,7 @@ impl Material {
         formula: &str,
         #[allow(non_snake_case)]
         I: Option<f64>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ErrorData> {
         let table = ELEMENTS.get(py).unwrap();
         let re = Regex::new(r"([A-Z][a-z]?)([0-9]*)").unwrap();
         let mut composition = Vec::<Component>::new();

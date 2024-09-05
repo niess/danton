@@ -68,8 +68,6 @@ Python interface
            - An elliptical Earth, according to the `WGS84`_ ellipsoid.
            - :python:`"WGS84"`
 
-   .. autoattribute:: materials
-
    .. autoattribute:: ocean
 
       By default, the Earth is covered by a 3 km deep ocean, according to the
@@ -238,6 +236,25 @@ Python interface
 
 ----
 
+.. autoclass:: danton.Materials
+
+   This class provides an interface to a set of Monte Carlo materials, which may
+   be configured from a Materials Description File (MDF), in `TOML`_ format.
+
+   .. method:: __new__(arg=None, \)
+
+      Load a set of Monte Carlo materials.
+
+      >>> materials = danton.Materials("examples/rocks.toml")
+
+   .. autoattribute:: tag
+
+   .. method:: __getitem__(name, \)
+
+      Return the properties of a material given its *name*.
+
+----
+
 .. autoclass:: danton.ParticlesGenerator
 
    .. automethod:: direction
@@ -399,4 +416,5 @@ Python interface
 .. _SRTMGL1: https://lpdaac.usgs.gov/products/srtmgl1v003/
 .. _standard rock: https://pdg.lbl.gov/2024/AtomicNuclearProperties/HTML/standard_rock.html
 .. _StructuredArray: https://numpy.org/doc/stable/user/basics.rec.html
+.. _TOML: https://toml.io/en/
 .. _WGS84: https://en.wikipedia.org/wiki/World_Geodetic_System#WGS84

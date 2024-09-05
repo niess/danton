@@ -1,6 +1,6 @@
 use console::style;
 use crate::bindings::{alouette, danton, ent, pumas};
-use crate::simulation::materials::{DEFAULT_MATERIALS, MaterialsData};
+use crate::simulation::materials::{DEFAULT_MATERIALS, Materials, MaterialsData};
 use crate::utils::cache;
 use crate::utils::convert::{Bremsstrahlung, Dis, Mdf, PairProduction, Pdf, Photonuclear};
 use crate::utils::error::{ctrlc_catched, Error};
@@ -36,6 +36,7 @@ pub struct Physics {
 
     physics: danton::Physics,
     material_index: danton::MaterialIndex,
+    materials_instance: Option<usize>,
     pub modified: bool,
 }
 
@@ -56,11 +57,12 @@ impl Physics {
         let pdf = None;
         let physics = danton::Physics { ent: null_mut(), pumas: null_mut() };
         let material_index = danton::MaterialIndex::default();
+        let materials_instance = None;
         let modified = false;
 
         let physics = Self {
             bremsstrahlung, pair_production, photonuclear, dis, pdf, physics,
-            material_index, modified,
+            material_index, materials_instance, modified,
         };
         let physics = Bound::new(py, physics)?;
 
@@ -125,14 +127,20 @@ impl Physics {
     pub fn apply(
         &mut self,
         py: Python,
-        materials: &str,
+        materials: &Materials,
         topography_material: &str
-    ) -> PyResult<()> {
-        if self.physics.ent.is_null() || self.modified {
+    ) -> PyResult<bool> {
+        let modified = if self.physics.ent.is_null() || self.modified ||
+            (self.materials_instance != Some(materials.instance)) {
+
             self.destroy_physics();
-            self.create_physics(py, materials)?;
+            self.create_physics(py, &materials.tag)?;
+            self.materials_instance = Some(materials.instance);
             self.modified = false;
-        }
+            true
+        } else {
+            false
+        };
 
         self.material_index.topography = match topography_material {
             "Air" => self.material_index.air,
@@ -165,7 +173,7 @@ impl Physics {
         // Apply materials.
         unsafe { danton::materials_set() };
 
-        Ok(())
+        Ok(modified)
     }
 
     fn check_alouette(rc: c_uint) -> PyResult<()> {
