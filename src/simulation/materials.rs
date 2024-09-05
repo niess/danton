@@ -25,12 +25,6 @@ pub fn initialise(py: Python) -> PyResult<()> {
     // Initialise atomic elements data.
     ElementsTable::initialise(py);
 
-    // Synchronize default materials.
-    let path = Path::new(crate::PREFIX.get(py).unwrap())
-        .join(format!("data/materials/{}.toml", DEFAULT_MATERIALS));
-    let data = MaterialsData::from_file(py, path)?;
-    let _unused = data.sync(py, DEFAULT_MATERIALS)?;
-
     Ok(())
 }
 
@@ -38,10 +32,7 @@ static INSTANCES: AtomicUsize = AtomicUsize::new(0);
 
 #[pyclass(frozen, module="danton")]
 pub struct Materials {
-    #[pyo3(get)]
-    /// A name identifying the materials set.
     pub tag: String,
-
     pub data: MaterialsData,
     pub instance: usize,
 }
@@ -49,54 +40,33 @@ pub struct Materials {
 #[pymethods]
 impl Materials {
     #[new]
-    pub fn new(py: Python, arg: Option<&str>) -> PyResult<Self> {
-        let arg = arg.unwrap_or(DEFAULT_MATERIALS);
-        let path = Path::new(arg);
-        let get_tag = || -> PyResult<&str> {
-            path
-                .file_stem()
-                .and_then(OsStr::to_str)
-                .ok_or_else(|| {
-                    let stem = path.file_stem()
-                        .and_then(|stem| Some(stem.to_string_lossy()))
-                        .unwrap_or(path.to_string_lossy());
-                    let why = format!("invalid tag '{}'", stem);
-                    Error::new(ValueError)
-                        .what("materials")
-                        .why(&why)
-                        .to_err()
-                })
+    pub fn new(py: Python, path: Option<&str>) -> PyResult<Self> {
+        let is_default = path.is_none();
+        let path = match path {
+            Some(path) => Cow::Borrowed(Path::new(path)),
+            None => {
+                let path = Path::new(crate::PREFIX.get(py).unwrap())
+                    .join(format!("data/materials/{}.toml", DEFAULT_MATERIALS));
+                Cow::Owned(path)
+            },
         };
 
         let (tag, data) = match path.extension().and_then(OsStr::to_str) {
-            None => match path.parent().filter(|parent| *parent != Path::new("")) {
-                // Value should be a valid materials tag.
-                Some(_) => {
-                    let why = format!("invalid tag '{}'", arg);
-                    let err = Error::new(ValueError)
-                        .what("materials")
-                        .why(&why);
-                    return Err(err.to_err())
-                },
-                None => {
-                    let tag = get_tag()?;
-                    let cached = cache::path()?
-                        .join(format!("materials/{}.toml", tag));
-                    if cached.try_exists().unwrap_or(false) {
-                        let data = MaterialsData::from_file(py, cached)?;
-                        (tag.to_string(), data)
-                    } else {
-                        let why = format!("unknown tag '{}'", tag);
-                        let err = Error::new(ValueError)
+            Some("toml") => {
+                let tag = path
+                    .file_stem()
+                    .and_then(OsStr::to_str)
+                    .ok_or_else(|| {
+                        let stem = path.file_stem()
+                            .and_then(|stem| Some(stem.to_string_lossy()))
+                            .unwrap_or(path.to_string_lossy());
+                        let why = format!("invalid tag '{}'", stem);
+                        Error::new(ValueError)
                             .what("materials")
-                            .why(&why);
-                        return Err(err.to_err())
-                    }
-                },
-            },
-            Some("toml") => { // Value should be a materials definition file.
-                let tag = get_tag()?;
-                if tag == DEFAULT_MATERIALS {
+                            .why(&why)
+                            .to_err()
+                    })?;
+                if (tag == DEFAULT_MATERIALS) && !is_default {
                     let why = format!("cannot modify '{}'", DEFAULT_MATERIALS);
                     let err = Error::new(ValueError)
                         .what("materials")
@@ -105,7 +75,7 @@ impl Materials {
                 }
 
                 let data = {
-                    let mut data = MaterialsData::from_file(py, path)?;
+                    let mut data = MaterialsData::from_file(py, &path)?;
                     let mut default_data: Option<MaterialsData> = None;
                     for material in ["Air", "Rock", "Water"] {
                         data.0.entry(material.to_string()).or_insert_with(|| {

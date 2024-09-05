@@ -238,16 +238,17 @@ Python interface
 
 .. autoclass:: danton.Materials
 
-   This class provides an interface to a set of Monte Carlo materials, which may
-   be configured from a Materials Description File (MDF), in `TOML`_ format.
+   This class provides an interface to a set of Monte Carlo materials, which are
+   specified by a Materials Description File (MDF), in `TOML`_ format.
 
    .. method:: __new__(arg=None, \)
 
-      Load a set of Monte Carlo materials.
+      Load a set of Monte Carlo materials from a MDF. For instance,
 
       >>> materials = danton.Materials("examples/rocks.toml")
 
-   .. autoattribute:: tag
+      See the section relative to :doc:`materials <materials>` for more
+      information.
 
    .. method:: __getitem__(name, \)
 

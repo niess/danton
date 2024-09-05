@@ -10,7 +10,7 @@
 
 Danton is a Python package designed specifically for the sampling of tau decays
 from ultra-high energy neutrinos interacting with the Earth's surface. It is
-capable of running in forward or backward Monte Carlo, and can be also be
+capable of running in forward or backward Monte Carlo, and can also be
 configured to sample tau fluxes instead of decay densities, or to sample
 transmitted neutrino fluxes.
 
