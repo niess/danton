@@ -9,10 +9,12 @@ Python interface
    .. autoattribute:: latitude
    .. autoattribute:: longitude
    .. autoattribute:: size
-   .. autoattribute:: surface
+   .. autoattribute:: surface_area
+   .. autoattribute:: volume
 
    .. automethod:: from_local
    .. automethod:: inside
+   .. automethod:: projected_area
    .. automethod:: to_local
 
 ----
@@ -252,6 +254,7 @@ Python interface
 
    .. autoattribute:: bremsstrahlung
    .. autoattribute:: dis
+   .. autoattribute:: materials
    .. autoattribute:: pair_production
    .. autoattribute:: pdf
    .. autoattribute:: photonuclear
@@ -328,6 +331,10 @@ Python interface
       is returned, containing the sampled primaries, as well as the tau creation
       vertices, and the tau decay products (as
       :external:py:class:`numpy.ndarray`, each).
+
+----
+
+.. autofunction:: danton.compute
 
 ----
 

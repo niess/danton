@@ -91,7 +91,7 @@ impl GeoBox {
 
     /// Box surface area, in square-metres.
     #[getter]
-    pub fn get_surface(&self) -> f64 {
+    pub fn get_surface_area(&self) -> f64 {
         2.0 * (self.size[0] * (self.size[1] + self.size[2]) + self.size[1] * self.size[2])
     }
 
@@ -380,7 +380,7 @@ impl GeoBox {
 
     /// Compute the projected surface area, in square-metres.
     #[pyo3(signature=(array=None, /, **kwargs))]
-    fn projected_surface<'py>(
+    fn projected_area<'py>(
         &self,
         py: Python<'py>,
         array: Option<&Bound<'py, PyAny>>,

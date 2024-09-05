@@ -46,7 +46,7 @@ particles = simulation.particles() \
     .target(box) \
     .generate(1000)
 
-area = box.projected_surface(azimuth=azimuth, elevation=elevation)
+area = box.projected_area(azimuth=azimuth, elevation=elevation)
 print(f"generation area = {area * 1E-06:.3f} km^2")
 
 # Run the Monte Carlo simulation.
