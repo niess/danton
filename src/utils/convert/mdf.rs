@@ -68,8 +68,8 @@ impl ToXml for AtomicElement {
             "<element name=\"{}\" Z=\"{}\" A=\"{}\" I=\"{}\" />",
             key,
             self.Z,
-            self.A,
-            self.I,
+            self.A, // g/mol
+            self.I, // eV.
         )
     }
 }
@@ -81,13 +81,13 @@ impl ToXml for Material {
             Some(mee) => format!(
                 "<material name=\"{}\" density=\"{}\" I=\"{}\">",
                 key,
-                self.density,
-                mee,
+                self.density * 1E-03, // g/cm3.
+                mee * 1E+09, // eV
             ),
             None => format!(
                 "<material name=\"{}\" density=\"{}\">",
                 key,
-                self.density,
+                self.density * 1E-03, // g/cm3.
             ),
         };
         lines.push(header);
