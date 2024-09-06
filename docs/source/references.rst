@@ -32,8 +32,8 @@ References
    Phys. Commun. 247 (2020) 106952,
    `doi:10.1016/j.cpc.2019.106952 <https://doi.org/10.1016/j.cpc.2019.106952>`_.
 
-.. [Abraham22] Roshan Mammen Abraham et al., J. Phys. G: Nucl. Part. Phys. 49
-   (2022) 110501,
+.. [Abraham22] R. Abraham et al., J. Phys. G: Nucl. Part. Phys. 49 (2022)
+   110501,
    `doi:10.1088/1361-6471/ac89d2 <https://doi.org/10.1088/1361-6471/ac89d2>`_.
 
 .. [Niess22] V. Niess, Comput. Phys. Commun. 279 (2022) 108438,
