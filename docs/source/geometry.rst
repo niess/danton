@@ -50,7 +50,7 @@ defined w.r.t. the `WGS84`_ ellipsoid.
 Topography
 ----------
 
-Optionally, the Earth surface can be modelled by a Global Digital Elevation
+The Earth surface can be modelled according to a Global Digital Elevation
 Model (GDEM), the like e.g. `SRTMGL1`_. Alternativelly, a constant topography
 elevation, all over the Earth, can be specified as well.
 
@@ -73,7 +73,7 @@ Atmosphere
 Danton considers that the Earth atmopshere follows the U.S. Standard (`USSA`_)
 density profile (using Corsika's parameterisation), with a uniform composition.
 As for the Earth interior, the atmosphere is divided in layers, which are scaled
-according to the `geoid`_.
+to the `geoid`_.
 
 .. topic:: Outer space
 

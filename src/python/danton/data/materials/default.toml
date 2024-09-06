@@ -1,12 +1,17 @@
-[Rock]
-density = 2.65E+03 # kg/m3
-composition = "Rk" # Fictitious Rockium.
-                   # See: https://pdg.lbl.gov/2024/AtomicNuclearProperties/standardrock.html.
+# Default materials used by Danton.
 
+# Standard rock.
+# See: https://pdg.lbl.gov/2024/AtomicNuclearProperties/standardrock.html.
+[Rock]
+density = 2.65E+03 # kg/m3.
+composition = "Rk" # Fictitious Rockium atom.
+
+# Pure water but with PREM density (i.e. salted water).
 [Water]
-density = 1.02E+03 # PREM density (salted water), in kg/m3.
+density = 1.02E+03 # kg/m3.
 composition = "H2O"
 
+# Dry air at sea level atmospheric pressure (mass composition).
 [Air]
-density = 1.205    # Dry air at sea level atmospheric pressure, in kg/m3.
+density = 1.205 # kg/m3.
 composition = { C = 0.000124, N = 0.755267, O = 0.231781, Ar = 0.012827 }

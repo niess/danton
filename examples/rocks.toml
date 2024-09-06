@@ -1,7 +1,7 @@
 [Limestone]
-density = 2.71E+03 # kg / m3
+density = 2.71E+03 # kg/m3.
 composition = "CaCO3" # Composition as a chemical formula.
 
 [Sandstone]
-density = 2.6E+03 # kg / m3
+density = 2.6E+03 # kg/m3.
 composition = { SiO2 = 0.94, Al2O3 = 0.06 } # Using mass fractions.

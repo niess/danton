@@ -44,4 +44,5 @@ Documentation
 
    geometry
    materials
+   coordinates
    interface
