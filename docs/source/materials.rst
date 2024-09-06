@@ -20,8 +20,8 @@ a Materials Definition File (MDF) in `TOML`_ format, as following.
     layers are made of :python:`"Air"` (with a varying density).
 
 
-Customising materials
----------------------
+Custom materials
+----------------
 
 Custom materials sets can be used by providing your own MDF, where the sections
 title correspond to the materials names (capitalised, by convention). Each
