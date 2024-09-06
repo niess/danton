@@ -45,4 +45,6 @@ Documentation
    geometry
    materials
    coordinates
+   physics
    interface
+   references
