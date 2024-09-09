@@ -17,7 +17,7 @@ plt.style.use(PREFIX / "paper.mplstyle")
 
 
 def plot(args):
-    """Plot the Monte Carlo flux results."""
+    """Plot the Monte Carlo decays results."""
 
     data = []
     for path in args.path:
@@ -30,10 +30,28 @@ def plot(args):
         energy = Histogram.new(data[i], "energy")
         energy.errorbar(fmt=f"{clr}o")
     plt.xlabel("energy (GeV)")
-    plt.ylabel("flux (GeV$^-1$)")
-    plt.ylim(1E-23, 1E-11)
+    plt.ylabel("pdf (GeV$^-1$)")
     plt.xscale("log")
     plt.yscale("log")
+
+    plt.figure()
+    for i, path in enumerate(args.path):
+        clr = "k" if "backward" in path else "r"
+        energy = Histogram.new(data[i], "elevation")
+        energy.errorbar(fmt=f"{clr}o")
+    plt.xlabel("elevation (deg)")
+    plt.ylabel("pdf (deg$^-1$)")
+    plt.yscale("log")
+
+    plt.figure()
+    for i, path in enumerate(args.path):
+        clr = "k" if "backward" in path else "r"
+        energy = Histogram.new(data[i], "altitude")
+        energy.errorbar(fmt=f"{clr}o")
+    plt.xlabel("altitude (m)")
+    plt.ylabel("pdf (m$^-1$)")
+    plt.yscale("log")
+
     plt.show()
 
 
