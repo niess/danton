@@ -44,17 +44,14 @@ def run(args):
         secondaries = particles[primaries["event"]]
         secondaries["weight"] = primary_flux(primaries["energy"]) * \
             primaries["weight"]
+        random_index = primaries["random_index"]
     else:
         secondaries = result.secondaries
         sel = (secondaries["pid"] == 15) & (secondaries["energy"] >= emin)
         secondaries = secondaries[sel]
         primaries = particles[secondaries["event"]]
         secondaries["weight"] *= primary_flux(primaries["energy"])
-
-    w = secondaries["weight"]
-    mu = sum(w) / n
-    sigma = numpy.sqrt((sum(w**2) / n - mu**2) / n)
-    print(f"{mu:.3E} +- {sigma:.3E}")
+        random_index = secondaries["random_index"]
 
     data = {
         "mode": args.mode,
@@ -63,10 +60,18 @@ def run(args):
         "altitude": args.altitude,
         "energy_min": emin,
         "energy_max": emax,
-        "secondaries": secondaries
+        "secondaries": secondaries,
+        "seed": simulation.random.seed,
+        "random_index": random_index
     }
 
-    outfile = f"flux-{args.mode}-{args.elevation:.3f}-{args.altitude:.0E}.pkl.gz"
+    tag = "_".join([
+        f"{args.mode}",
+        f"{args.elevation:.3f}",
+        f"{args.altitude:.0E}",
+        f"{simulation.random.seed:0X}"
+    ])
+    outfile = f"flux-{tag}.pkl.gz"
     if args.output_directory is None:
         path = PREFIX / "data"
     else:

@@ -55,6 +55,7 @@ def run(args):
         secondaries = particles[primaries["event"]]
         secondaries["weight"] = primary_flux(primaries["energy"]) * \
             primaries["weight"]
+        random_index = primaries["random_index"]
     else:
         secondaries = result.secondaries
         sel = (secondaries["pid"] == 15) & (secondaries["energy"] >= emin) & \
@@ -64,6 +65,7 @@ def run(args):
         secondaries = secondaries[sel]
         primaries = particles[secondaries["event"]]
         secondaries["weight"] *= primary_flux(primaries["energy"])
+        random_index = secondaries["random_index"]
 
     data = {
         "mode": args.mode,
@@ -73,10 +75,19 @@ def run(args):
         "height": args.height,
         "energy_min": emin,
         "energy_max": emax,
-        "secondaries": secondaries
+        "secondaries": secondaries,
+        "seed": simulation.random.seed,
+        "random_index": random_index
     }
 
-    outfile = f"decays-{args.mode}-{args.elevation:.3f}-{args.width:.0E}-{args.height:.0E}.pkl.gz"
+    tag = "_".join([
+        f"{args.mode}",
+        f"{args.elevation:.3f}",
+        f"{args.width:.0E}",
+        f"{args.height:.0E}",
+        f"{simulation.random.seed:0X}"
+    ])
+    outfile = f"decays-{tag}.pkl.gz"
     if args.output_directory is None:
         path = PREFIX / "data"
     else:
