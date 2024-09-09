@@ -13,3 +13,6 @@ Cargo.lock
 
 # Ignore PUMAS dumps.
 *.pumas
+
+# Ignore test data.
+tests/data
