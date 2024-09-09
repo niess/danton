@@ -47,6 +47,19 @@ respective likelihoods.
 Target point
 ------------
 
+Danton assumes that primary neutrinos always originate from the top of the
+atmosphere. Therefore, in the forward Monte Carlo case, as a conveniency, the
+input position actually defines a target point for the incoming neutrino, not
+necessarily its injection point. Before running the Monte Carlo, the neutrino is
+first relocated to the top of the atmosphere by extrapolating its track
+backwards from the target point.
+
+.. note::
+
+   The relocation of primary neutrinos is purely geometrical. Therefore,
+   simulated neutrinos might not intersect their target point, if the
+   longitudinal approximation is disabled.
+
 
 Point estimate
 --------------
@@ -74,7 +87,7 @@ incoming neutrinos over the top of the :ref:`atmosphere <geometry:Atmosphere>`
 backward case).
 
 In order to facilitate these generation procedures, Danton provides a
-:py:class:`ParticlesGenerator <danton.ParticlesGenerator>` object, which can be
+:py:class:`ParticlesGenerator <danton.ParticlesGenerator>` object, which is
 instanciated using the :py:func:`particles <danton.Simulation.particles>` method
 of the :py:class:`simulation <danton.Simulation>`. The particles generator is
 configured using a `builder`_ pattern, and then triggered with the
@@ -91,11 +104,23 @@ spanning -1 to 1 |nbsp| deg of elevation values.
 
 .. topic:: Generation weight
 
-   By default, ...
+   By default, the generated particles are weighted by the inverse of their
+   likelihood (i.e. :math:`\omega = 1 / \text{pdf}(\text{S})`, for state
+   :math:`\text{S}`). This is consistent with the backward Monte Carlo workflow.
+   Set to :python:`False` the :python:`weight` argument of the
+   :py:func:`particles <danton.Simulation.particles>` method in order to disable
+   weighting. Note that the weighting can also be enabled or disabled at the
+   level of individual :py:class:`generator <danton.ParticlesGenerator>`
+   methods.
 
 .. topic:: Sample size
 
-   By default, ...
+   Depending on its configuration, the :py:class:`generator
+   <danton.ParticlesGenerator>` might rely on rejection sampling methods,
+   resulting in the Monte Carlo samples size being actually larger than the
+   number of returned particles (N). In such cases, in addition to the selected
+   particles, the :py:func:`generate <danton.ParticlesGenerator.generate>`
+   method also returns the actual samples size as second argument.
 
 
 Local box
@@ -104,12 +129,12 @@ Local box
 The :py:class:`Box <danton.Box>` object let us define a region of interest using
 a bounding-box. Besides, it also allows us to use :ref:`local coordinates
 <coordinates:Local coordinates>` instead of :ref:`geographic
-<coordinates:Geographic coordinates>` ones. This :py:class:`Box <danton.Box>`
-region can then be set as a target for a :py:class:`ParticlesGenerator
-<danton.ParticlesGenerator>`, in the forward case typically. In the backward
-case, the box interior can be used to specify potential decay points for the
-generator.
-
+<coordinates:Geographic coordinates>` ones. The :py:class:`Box <danton.Box>`
+region can then be set as a :py:func:`target <danton.ParticlesGenerator.target>`
+for a :py:class:`generator <danton.ParticlesGenerator>`, typically in the case
+of a forward Monte Carlo. In the backward case, one might instead configure the
+:py:class:`generator <danton.ParticlesGenerator>` to sample decays
+:py:func:`inside <danton.ParticlesGenerator.inside>` the box.
 
 
 Monte Carlo history
