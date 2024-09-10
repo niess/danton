@@ -36,6 +36,7 @@ def merge(args):
             for k in ("secondaries", "random_index"):
                 data[k] = np.append(data[k], d[k])
             data["seed"] += n * [d["seed"]]
+            data["cpu"] += d["cpu"]
 
     outfile = args.files[0].parent / f"{tag}.pkl.gz"
     with gzip.open(outfile, "wb") as f:

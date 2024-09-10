@@ -5,6 +5,7 @@ import gzip
 import numpy
 from pathlib import Path
 import pickle
+import psutil
 
 
 PREFIX = Path(__file__).parent
@@ -28,6 +29,14 @@ def run(args):
 
     pid = 15 if args.mode == "backward" else 16
 
+    process = psutil.Process()
+
+    def get_cpu():
+        t = process.cpu_times()
+        return t.user + t.system
+
+    cpu = get_cpu()
+
     particles = simulation.particles(weight=True) \
         .pid(pid)                                 \
         .powerlaw(emin, emax, exponent=-1)        \
@@ -36,6 +45,7 @@ def run(args):
         .generate(n)
 
     result = simulation.run(particles)
+    cpu = get_cpu() - cpu
 
     if args.mode == "backward":
         primaries = result.primaries
@@ -62,7 +72,8 @@ def run(args):
         "energy_max": emax,
         "secondaries": secondaries,
         "seed": simulation.random.seed,
-        "random_index": random_index
+        "random_index": random_index,
+        "cpu": cpu
     }
 
     tag = "_".join([
