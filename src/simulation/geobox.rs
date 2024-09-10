@@ -394,11 +394,10 @@ impl GeoBox {
         let surfaces = PyArray::<f64>::empty(py, &direction.shape())?;
 
         let size = direction.size();
-        let surface_area = projection.surface_area();
         for i in 0..size {
             let horizontal = direction.get(i)?;
             let projection = ProjectedBox::new(&self, &horizontal);
-            surfaces.set(i, surface_area)?;
+            surfaces.set(i, projection.surface_area())?;
         }
 
         Ok(surfaces.unbind(py))
