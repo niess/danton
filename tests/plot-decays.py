@@ -37,8 +37,8 @@ def plot(args):
     plt.figure()
     for i, path in enumerate(args.path):
         clr = "k" if "backward" in path else "r"
-        energy = Histogram.new(data[i], "elevation")
-        energy.errorbar(fmt=f"{clr}o")
+        elevation = Histogram.new(data[i], "elevation")
+        elevation.errorbar(fmt=f"{clr}o")
     plt.xlabel("elevation (deg)")
     plt.ylabel("rate (deg$^{-1}$)")
     plt.yscale("log")
@@ -46,8 +46,8 @@ def plot(args):
     plt.figure()
     for i, path in enumerate(args.path):
         clr = "k" if "backward" in path else "r"
-        energy = Histogram.new(data[i], "altitude")
-        energy.errorbar(fmt=f"{clr}o")
+        altitude = Histogram.new(data[i], "altitude")
+        altitude.errorbar(fmt=f"{clr}o")
     plt.xlabel("altitude (m)")
     plt.ylabel("rate (m$^{-1}$)")
     plt.yscale("log")

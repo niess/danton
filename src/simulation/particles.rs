@@ -674,7 +674,7 @@ impl ParticlesGenerator {
         random: &mut Random,
         particle: &mut Particle
     ) -> (bool, bool, bool) {
-        let (r, u, geodetic, horizontal) = bg.generate_onto(random);
+        let (r, u, geodetic, mut horizontal) = bg.generate_onto(random);
 
         match self.direction {
             Direction::SolidAngle { azimuth, elevation, .. } => {
@@ -696,9 +696,11 @@ impl ParticlesGenerator {
                 ];
 
                 let geodetic2 = bg.frame().to_geodetic(&r2);
-                let horizontal2 = bg.frame().to_horizontal(&u, &geodetic2);
+                let mut horizontal2 = bg.frame().to_horizontal(&u, &geodetic2);
 
                 // Check the azimuth and elevation values (inclusively).
+                horizontal.wrap();
+                horizontal2.wrap();
                 let az0 = horizontal.azimuth.min(horizontal2.azimuth);
                 let az1 = horizontal.azimuth.max(horizontal2.azimuth);
                 let el0 = horizontal.elevation.min(horizontal2.elevation);

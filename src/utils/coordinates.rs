@@ -183,6 +183,15 @@ impl HorizontalCoordinates {
         let cp = phi.cos();
         [[-sp, cp, 0. ], [-ct * cp, -ct * sp, st], [st * cp, st * sp, ct]]
     }
+
+    pub fn wrap(&mut self) {
+        while self.azimuth < -180.0 {
+            self.azimuth += 360.0;
+        }
+        while self.azimuth > 180.0 {
+            self.azimuth -= 360.0;
+        }
+    }
 }
 
 // ===============================================================================================
