@@ -4,7 +4,7 @@ Geometry description
 Earth structure
 ---------------
 
-Danton Model's the Earth interior structure according to the Preliminary
+Danton models the Earth's interior structure according to the Preliminary
 Reference Earth Model (`PREM`_). That is, the Earth is composed of concentric
 layers, ranging from the very core to the surface, with varying bulk densities
 depending on the depth.
@@ -18,11 +18,9 @@ depending on the depth.
 
 .. topic:: Composition
 
-   The PREM originates from seismic data. It does not specify the Earth's
-   composition, but only seismic related profiles (the like, bulk density).
-   Thus, Danton currently assumes a uniform composition corresponding to
-   `standard rock`_, except for the optional ocean layer, for which pure water
-   is assumed (but with PREM's / salted water density).
+   The `PREM`_ is derived from seismic data and does not specify the composition
+   of the Earth. Thus, Danton assumes a uniform composition aligned with
+   `standard rock`_, with the exception of the optional ocean layer.
 
 
 Earth shape
@@ -34,9 +32,9 @@ Danton model's the sea level according to a `geoid`_. Three models are supported
 
 The default is to consider a spherical `geoid`_ of radius 6371 |nbsp| km,
 according to the `PREM`_. As a refinement, the `geoid`_ can instead be modelled
-by an ellispoid, the `WGS84`_ one namely. An additional level of accuracy is
-provided by the `EGM96`_ model (also included in Danton), whose undulations are
-defined w.r.t. the `WGS84`_ ellipsoid.
+by an ellispoid, specifically the `WGS84`_ ellipsoid. An additional level of
+accuracy is provided by the `EGM96`_ model (also included in Danton), whose
+undulations are defined with reference to the `WGS84`_ ellipsoid.
 
 .. topic:: Scaling
 
@@ -50,9 +48,9 @@ defined w.r.t. the `WGS84`_ ellipsoid.
 Topography
 ----------
 
-The Earth surface can be modelled according to a Global Digital Elevation
-Model (GDEM), the like e.g. `SRTMGL1`_. Alternativelly, a constant topography
-elevation, all over the Earth, can be specified as well.
+The Earth's surface can be modelled according to a Global Digital Elevation
+Model (GDEM), such as `SRTMGL1`_. Alternatively, a constant topography elevation
+can be specified for the entire Earth.
 
 .. important::
 
@@ -61,24 +59,25 @@ elevation, all over the Earth, can be specified as well.
 
 .. topic:: Oceanic regions
 
-   When specifying a topographic model, the `PREM`_ ocean layer is removed.
-   However, negative topography elevations (e.g. from bathymetry data) indicate
-   oceanic regions, ranging from the negative topography elevation values up to
-   :math:`z=0`\, which corresponds to the geoid.
+   In the event that a topographic model is being specified, the `PREM`_ ocean
+   layer is removed. However, negative topography elevations (e.g. from
+   bathymetry data) indicate oceanic regions, ranging from the negative
+   topography elevation values up to :math:`z=0`\, which corresponds to the
+   `geoid`_.
 
 
 Atmosphere
 ----------
 
-Danton considers that the Earth atmopshere follows the U.S. Standard (`USSA`_)
-density profile (using Corsika's parameterisation), with a uniform composition.
-As for the Earth interior, the atmosphere is divided in layers, which are scaled
-to the `geoid`_.
+Danton considers that the Earth's atmosphere adheres to the U.S. Standard
+Atmosphere (`USSA`_) density profile (utilising Corsika's parameterization),
+assuming a uniform composition. As for the Earth's interior, the atmosphere is
+partitioned into layers, which are scaled to the `geoid`_.
 
 .. topic:: Outer space
 
    The Monte Carlo geometry extends up to an altitude of 100 |nbsp| km
-   (unscaled), which is considered by Danton to be the boundary with the outer
+   (unscaled), which is considered by Danton to be the boundary with outer
    space.
 
 
