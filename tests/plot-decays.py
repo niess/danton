@@ -30,7 +30,7 @@ def plot(args):
         energy = Histogram.new(data[i], "energy")
         energy.errorbar(fmt=f"{clr}o")
     plt.xlabel("energy (GeV)")
-    plt.ylabel("pdf (GeV$^-1$)")
+    plt.ylabel("rate (GeV$^{-1}$)")
     plt.xscale("log")
     plt.yscale("log")
 
@@ -40,7 +40,7 @@ def plot(args):
         energy = Histogram.new(data[i], "elevation")
         energy.errorbar(fmt=f"{clr}o")
     plt.xlabel("elevation (deg)")
-    plt.ylabel("pdf (deg$^-1$)")
+    plt.ylabel("rate (deg$^{-1}$)")
     plt.yscale("log")
 
     plt.figure()
@@ -49,7 +49,7 @@ def plot(args):
         energy = Histogram.new(data[i], "altitude")
         energy.errorbar(fmt=f"{clr}o")
     plt.xlabel("altitude (m)")
-    plt.ylabel("pdf (m$^-1$)")
+    plt.ylabel("rate (m$^{-1}$)")
     plt.yscale("log")
 
     plt.show()

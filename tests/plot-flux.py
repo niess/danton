@@ -30,7 +30,7 @@ def plot(args):
         energy = Histogram.new(data[i], "energy")
         energy.errorbar(fmt=f"{clr}o")
     plt.xlabel("energy (GeV)")
-    plt.ylabel("flux (GeV$^-1$)")
+    plt.ylabel("flux (GeV$^{-1}$)")
     plt.ylim(1E-23, 1E-11)
     plt.xscale("log")
     plt.yscale("log")
