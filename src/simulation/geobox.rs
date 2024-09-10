@@ -394,10 +394,11 @@ impl GeoBox {
         let surfaces = PyArray::<f64>::empty(py, &direction.shape())?;
 
         let size = direction.size();
+        let surface_area = projection.surface_area();
         for i in 0..size {
             let horizontal = direction.get(i)?;
             let projection = ProjectedBox::new(&self, &horizontal);
-            surfaces.set(i, projection.surface())?;
+            surfaces.set(i, surface_area)?;
         }
 
         Ok(surfaces.unbind(py))
@@ -504,7 +505,7 @@ impl BoxGenerator {
                 size[0] * size[1],
                 size[0] * size[1],
             ];
-            for i in 1..5 {
+            for i in 1..sides.len() {
                 sides[i] += sides[i - 1];
             }
             sides
@@ -575,8 +576,8 @@ impl BoxGenerator {
     }
 
     #[inline]
-    pub fn surface(&self) -> f64 {
-        self.cumulated_surface[5]
+    pub fn surface_area(&self) -> f64 {
+        *self.cumulated_surface.last().unwrap()
     }
 
     #[inline]
@@ -677,7 +678,7 @@ impl ProjectedBox {
             area(&k1, &k2),
             area(&k2, &k0),
         ];
-        for i in 1..3 {
+        for i in 1..cumulated_surface.len() {
             cumulated_surface[i] += cumulated_surface[i - 1];
         }
 
@@ -687,8 +688,8 @@ impl ProjectedBox {
     }
 
     #[inline]
-    pub fn surface(&self) -> f64 {
-        self.cumulated_surface[2]
+    pub fn surface_area(&self) -> f64 {
+        *self.cumulated_surface.last().unwrap()
     }
 
     pub fn generate_inside(

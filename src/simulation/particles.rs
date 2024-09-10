@@ -538,8 +538,9 @@ impl ParticlesGenerator {
         elevation: Option<[f64; 2]>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
-        let azimuth = azimuth.map(|[a, b]| if a <= b { [ a, b ] } else { [ b, a ] });
-        let elevation = elevation.map(|[a, b]| if a <= b { [ a, b ] } else { [ b, a ] });
+        let ascending = |[a, b]: [f64; 2]| if a <= b { [ a, b ] } else { [ b, a ] };
+        let azimuth = azimuth.map(ascending);
+        let elevation = elevation.map(ascending);
         let sin_elevation = match elevation {
             None => [-1.0, 1.0],
             Some([el0, el1]) => {
@@ -720,7 +721,7 @@ impl ParticlesGenerator {
         particle.elevation = horizontal.elevation;
 
         if self.weight_position {
-            particle.weight *= bg.surface() * Self::PI;
+            particle.weight *= bg.surface_area() * Self::PI;
         }
         (true, false, true)
     }
@@ -740,7 +741,7 @@ impl ParticlesGenerator {
         particle.elevation = horizontal.elevation;
 
         if self.weight_position {
-            particle.weight *= pb.surface();
+            particle.weight *= pb.surface_area();
         }
         (true, false, true)
     }
