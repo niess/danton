@@ -31,6 +31,9 @@ def merge(args):
         if data is None:
             data = d
             data["seed"] = n * [data["seed"]]
+        elif d["version"] != data["version"]:
+            e, f = data["version"], d["version"]
+            raise ValueError(f"bad version (expected '{d}', found '{f}')")
         else:
             data["events"] += d["events"]
             for k in ("secondaries", "random_index"):

@@ -73,7 +73,8 @@ def run(args):
         "secondaries": secondaries,
         "seed": simulation.random.seed,
         "random_index": random_index,
-        "cpu": cpu
+        "cpu": cpu,
+        "version": danton.VERSION
     }
 
     tag = "_".join([
