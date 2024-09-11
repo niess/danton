@@ -5,7 +5,7 @@ Bibliography
 
 ----
 
-This section contains a list of academic `references`_ related to Danton. When
+This section contains a list of academic references related to Danton. When
 citing Danton, please use [NM18]_.
 
 

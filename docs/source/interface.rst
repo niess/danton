@@ -3,9 +3,39 @@ Python interface
 
 .. autoclass:: danton.Box
 
+   This class defines a bounding box for an area of interest in the Monte Carlo
+   geometry. It also allows for transformation between :ref:`geographic
+   <coordinates:Geographic coordinates>` and :ref:`local <coordinates:Local
+   coordinates>` coordinates.
+
+   .. method:: __new__(size=None, **kwargs)
+
+      Create a new bounding-box.
+
+      The *size* argument defines the dimensions of the box along the local x, y
+      and z axes. It can be a :py:class:`float` (cube), a size two array (square
+      base) or a size three array. For examples, the following creates a 1
+      |nbsp| km high box with a 10x10 |nbsp| km\ :sup:`2` base.
+
+      >>> box = danton.Box([1E+04, 1E+03], latitude=45, longitude=3)
+
+      Refer to the attributes below for the possible values of the optional
+      *kwargs*.
+
    .. autoattribute:: altitude
+
+      The altitude is expressed in m, w.r.t. the `ellipsoid`_ (see the
+      :doc:`coordinates` section).
+
    .. autoattribute:: declination
+
+      The declination angle is expressed in deg, w.r.t. the geographic north
+      (see the :ref:`coordinates:Local coordinates` section).
+
    .. autoattribute:: ellipsoid
+
+      See :numref:`tab-geoid` below for possible values.
+
    .. autoattribute:: latitude
    .. autoattribute:: longitude
    .. autoattribute:: size
@@ -13,9 +43,70 @@ Python interface
    .. autoattribute:: volume
 
    .. automethod:: from_local
+
+      The *position* and *direction* arguments must be arrays-like containing
+      :ref:`local <coordinates:Local coordinates>` Cartesian coordinates in the
+      box frame. For instance,
+
+      >>> coordinates = box.from_local([0, 0, 100])
+
    .. automethod:: inside
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      This method returns a boolean (or a :external:py:class:`ndarray
+      <numpy.ndarray>` of booleans), where :python:`True` value(s) indicate that
+      coordinates are inside the box.
+
+      The *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates (:python:`"latitude"`, :python:`"longitude"`,
+      :python:`"altitude"`).
+
+      Alternativelly, :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates can be specified as *kwargs*. For instance,
+
+      >>> inside = box.inside(latitude=45, longitude=3, altitude=0)
+
    .. automethod:: projected_area
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      The *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates (:python:`"azimuth"`, :python:`"elevation"`).
+
+      Alternativelly, :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates can be specified as *kwargs*. For instance,
+
+      >>> area = box.projected_area(azimuth=30, elevation=45)
+
    .. automethod:: to_local
+
+      .. note::
+
+         The positional *array* argument and keyword only (*kwargs*) arguments
+         are mutually exclusive.
+
+      The *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates (:python:`"latitude"`, :python:`"longitude"`,
+      :python:`"altitude"`, and optionally :python:`"azimuth"`,
+      :python:`"elevation"`).
+
+      Alternativelly, :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates can be specified as *kwargs*. For instance,
+
+      >>> position = box.to_local(latitude=45, longitude=3, altitude=0)
 
 ----
 
@@ -72,7 +163,7 @@ Python interface
 
       By default, the Earth is covered by a 3 km deep ocean, according to the
       `PREM`_. Setting this attribute to :python:`False` overrides the ocean by
-      extending the upper crust layer up to the sea level.
+      extending the upper crust layer.
 
    .. autoattribute:: topography
 
@@ -95,23 +186,23 @@ Python interface
       Get or set the density of the topography layer, in kg/m\ :sup:`3`. For
       example, the following sets the ground density to 0.92 g/cm\ :sup:`3`.
 
-      >>> geometry.density = 0.92E+03
+      >>> geometry.density = 0.92E+03 # kg/m3
 
    .. autoattribute:: topography_material
 
       Get or set the constitutive material of the topography layer, which is
-      :python:`"Rock"` by default. For example, the following sets the ground
-      composition to water (e.g. to represent an ice cover).
+      :python:`"Rock"` by default. For instance, the following sets the ground
+      composition to water (to represent an ice cover, for example).
 
       >>> geometry.material = "Water"
 
    .. automethod:: from_ecef
 
       The *position* and *direction* arguments must be arrays-like containing
-      cartesian coordinates in Earth-Centered Earth-Fixed (ECEF) frame. For
-      instance,
+      :ref:`geocentric <coordinates:Geocentric coordinates>` Cartesian
+      coordinates in Earth-Centered Earth-Fixed (`ECEF`_) frame. For instance,
 
-      >>> geodetic_position = geometry.from_ecef([6378137, 0, 0])
+      >>> coordinates = geometry.from_ecef([6378137, 0, 0])
 
    .. automethod:: geoid_undulation
 
@@ -120,12 +211,13 @@ Python interface
          The positional *array* argument and keyword only (*kwargs*) arguments
          are mutually exclusive.
 
-      The *array* argument, if specified, must be a structured
-      :external:py:class:`numpy.ndarray` containing geodetic coordinates
+      The *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing :ref:`geographic <coordinates:Geographic coordinates>`
       (:python:`"latitude"`, :python:`"longitude"`).
 
-      Alternativelly, geodetic coordinates can be specified as *kwargs*. For
-      instance,
+      Alternativelly, :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates can be specified as *kwargs*. For instance,
 
       >>> undulation = geometry.geoid_undulation(latitude=45, longitude=3)
 
@@ -146,15 +238,17 @@ Python interface
          The positional *array* argument and keyword only (*kwargs*) arguments
          are mutually exclusive.
 
-      The *array* argument, if specified, must be a structured
-      :external:py:class:`numpy.ndarray` containing geodetic coordinates
-      (:python:`"latitude"`, :python:`"longitude"`, :python:`"altitude"`), and
-      optionally horizontal ones (:python:`"azimuth"`, :python:`"elevation"`).
+      The *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates (:python:`"latitude"`, :python:`"longitude"`,
+      :python:`"altitude"`, and optionally :python:`"azimuth"`,
+      :python:`"elevation"`).
 
-      Alternativelly, geodetic (and horizontal) coordinates can be specified as
-      *kwargs*. For instance,
+      Alternativelly, :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates can be specified as *kwargs*. For instance,
 
-      >>> ecef_position = geometry.to_ecef(latitude=45, longitude=3, altitude=0)
+      >>> position = geometry.to_ecef(latitude=45, longitude=3, altitude=0)
 
    .. automethod:: topography_elevation
 
@@ -163,12 +257,13 @@ Python interface
          The positional *array* argument and keyword only (*kwargs*) arguments
          are mutually exclusive.
 
-      The *array* argument, if specified, must be a structured
-      :external:py:class:`numpy.ndarray` containing geodetic coordinates
-      (:python:`"latitude"`, :python:`"longitude"`).
+      The *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates (:python:`"latitude"`, :python:`"longitude"`).
 
-      Alternativelly, geodetic coordinates can be specified as *kwargs*. For
-      instance,
+      Alternativelly, :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates can be specified as *kwargs*. For instance,
 
       >>> z = geometry.topography_elevation(latitude=45, longitude=3)
 
@@ -183,10 +278,11 @@ Python interface
          The positional *array* argument and keyword only (*kwargs*) arguments
          are mutually exclusive.
 
-      The *array* argument, if specified, must be a structured
-      :external:py:class:`numpy.ndarray` containing start position
-      (:python:`"latitude"`, :python:`"longitude"`, :python:`"altitude"`) and
-      tracing direction (:python:`"azimuth"`, :python:`"elevation"`).
+      The *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing start position (:python:`"latitude"`, :python:`"longitude"`,
+      :python:`"altitude"`) and tracing direction (:python:`"azimuth"`,
+      :python:`"elevation"`).
 
       Alternativelly, position and direction can be specified as *kwargs*. For
       instance,
@@ -208,19 +304,20 @@ Python interface
 
    .. automethod:: translate
 
-      Translate geodetic coordinates by *distance* (in m) along a straight line.
-      If a negative distance is provided, then the translation direction is
-      reversed.
+      Translate :ref:`geographic <coordinates:Geographic coordinates>`
+      coordinates by *distance* (in m) along a straight line. If a negative
+      distance is provided, then the translation direction is reversed.
 
       .. note::
 
          The positional *array* argument and keyword only (*kwargs*) arguments
          are mutually exclusive.
 
-      The positional *array* argument, if specified, must be a structured
-      :external:py:class:`numpy.ndarray` containing the initial position
-      (:python:`"latitude"`, :python:`"longitude"`, :python:`"altitude"`) and
-      the translation direction (:python:`"azimuth"`, :python:`"elevation"`).
+      The positional *array* argument, if specified, must be a `structured
+      <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
+      containing the initial position (:python:`"latitude"`,
+      :python:`"longitude"`, :python:`"altitude"`) and the translation direction
+      (:python:`"azimuth"`, :python:`"elevation"`).
 
       Alternativelly, the initial position and the translation direction can be
       specified as *kwargs*. For instance,
@@ -239,16 +336,16 @@ Python interface
 .. autoclass:: danton.Materials
 
    This class provides an interface to a set of Monte Carlo materials, which are
-   specified by a Materials Description File (MDF), in `TOML`_ format.
+   specified by a Materials Description File (MDF), in `TOML`_ format. Refer to
+   the :doc:`materials` section for further details.
 
-   .. method:: __new__(arg=None, \)
+   .. method:: __new__(path=None, \)
 
       Load a set of Monte Carlo materials from a MDF. For instance,
 
       >>> materials = danton.Materials("examples/rocks.toml")
 
-      See the section relative to :doc:`materials <materials>` for more
-      information.
+      If *path* is :python:`None`, Danton's default materials are loaded.
 
    .. method:: __getitem__(name, \)
 
@@ -258,15 +355,105 @@ Python interface
 
 .. autoclass:: danton.ParticlesGenerator
 
+   This class provides a utility for the generation of Monte Carlo particles
+   from configurable distributions. This tool is typically used to seed the
+   Monte Carlo simulation with an initial set of particles.
+
+   Once initialised, the generator can be further configured using the methods
+   detailed below (i.e. following a `builder`_ pattern). The
+   :py:func:`generate` method then triggers the actual sampling of Monte Carlo
+   particles. As an example, the following generates N particles uniformly
+   within a solid angle (spanning elevation values between -5 and +5 |nbsp|
+   deg), and with a :math:`1/E^2` power-law energy distribution (between 1
+   |nbsp| PeV and 1 |nbsp| EeV).
+
+   >>> particles = generator                    \
+   ...     .solid_angle(elevation=[-5, 5])      \
+   ...     .powerlaw(1E+06, 1E+12, exponent=-2) \
+   ...     .generate(N)
+
+   .. method:: __new__(*, geometry=None, random=None, weight=True)
+
+      Create a new particles generator.
+
+      The *weight* argument specifies whether the particles should be weighted
+      by the inverse of their generation likelihoods (:math:`\omega = 1 /
+      \text{pdf}(\text{S})`, for a Monte Carlo state :math:`\text{S}`) or not.
+      Note that this can be overridden by individual distributions (using the
+      :python:`weight` flag of other methods).
+
    .. automethod:: direction
    .. automethod:: energy
+
    .. automethod:: generate
+
+      The *shape* argument defines the number of particles requested (as a
+      :external:py:class:`ndarray <numpy.ndarray>` shape).
+
+      The outcome of this method is dependent on the generator configuration. If
+      rejection sampling techniques are employed, then the actual sample size is
+      returned along with the selected particles. Otherwise, only the generated
+      particles are returned.
+
    .. automethod:: inside
+
+      .. note:: This method utilises rejection sampling techniques.
+
+      This method is best used in conjunction with a backward simulation, as it
+      generates potential tau decay vertices within the specified *box* volume,
+      contingent on being located inside the :ref:`atmosphere
+      <geometry:Atmosphere>`.
+
+      By default, the candidate vertices are selected based on their likelihood
+      of originating from the ground (including any topography), according to
+      the tau lifetime. It is possible to disable this selection by setting the
+      *limit* argument to :python:`False`.
+
+      When setting the *limit* argument to a :py:class:`float`, the provided
+      value controls the maximum distance (in multiples of the tau decay length)
+      of candidate vertices to the ground. The default limit is 3 times the tau
+      decay length (i.e., :python:`limit=3`).
+
    .. automethod:: pid
+
+      Monte Carlo particles are indentified by their Particle ID (PID), which
+      follows the Particle Data Group (`PDG <PdgScheme_>`_) numbering scheme.
+
    .. automethod:: position
+
    .. automethod:: powerlaw
+
+      The *energy_min* and *energy_max* arguments define the support of the
+      power-law, as an interval.
+
+      The default setting is a :math:`1 / E` power-lawx, corresponding to
+      :python:`exponent=-1`. Note that setting the exponent value to zero
+      results in a uniform distribution being used.
+
    .. automethod:: solid_angle
+
+      The default settings is to consider the entire solid angle. The optional
+      *azimuth* and *elevation* arguments may be used to restrict the solid
+      angle by specifying an interval of acceptable angular values, in deg.
+
    .. automethod:: target
+
+      This method is best used in conjunction with a forward simulation, as it
+      generates :ref:`target points <montecarlo:Target point>` over the surface
+      of the specified *box*.
+
+      The generation method is dependent on the direction configuration. If the
+      direction is :py:func:`fixed <direction>` (the azimuth and elevation
+      values referring to the box origin), then all generated particles are
+      colinear. Otherwise, the particles are ingoing on the box, with a cosine
+      angular distribution (corresponding to an isotropic flux entering the
+      box).
+
+      .. note::
+
+         In the event that the :py:func:`solid angle <solid_angle>` of incoming
+         particles is restricted, then a rejection sampling method is employed.
+
 
 ----
 
@@ -349,7 +536,7 @@ Python interface
       no steps recording), a :external:py:class:`NamedTuple <typing.NamedTuple>`
       is returned, containing the sampled primaries, as well as the tau creation
       vertices, and the tau decay products (as
-      :external:py:class:`numpy.ndarray`, each).
+      :external:py:class:`ndarray <numpy.ndarray>`, each).
 
 ----
 
@@ -359,15 +546,16 @@ Python interface
 
 .. autofunction:: danton.particles
 
-   This function returns a `structured numpy array <StructuredArray_>`_ with the
-   given *shape*. Particles are initialised with default properties, if
-   not overriden by specifying *kwargs*. For instance, the following creates an
-   array of 100 particles (taus, by default) with an energy of
-   1 EeV, starting from the Equator (by default), and going to the North.
+   This function returns a `structured <StructuredArray_>`_
+   :external:py:class:`ndarray <numpy.ndarray>`  with the given *shape*.
+   Particles are initialised with default properties, if not overriden by
+   specifying *kwargs*. For instance, the following creates an array of 100
+   particles (taus, by default) with an energy of 1 EeV, starting from the
+   Equator (by default), and going to the North.
 
    >>> particles = danton.particles(100, energy=1E+09)
 
-   The data structure (:external:py:class:`numpy.dtype`) of a particle
+   The data structure (:external:py:class:`dtype <numpy.dtype>`) of a particle
    is the following (the corresponding physical units are also indicated).
 
    .. list-table:: Particles array structure.
@@ -411,7 +599,11 @@ Python interface
 .. 
 .. ============================================================================
 
+.. _builder: https://en.wikipedia.org/wiki/Builder_pattern
+.. _ECEF: https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
 .. _EGM96: https://cddis.nasa.gov/926/egm96/egm96.html
+.. _ellipsoid: https://en.wikipedia.org/wiki/Earth_ellipsoid
+.. _geoid: https://en.wikipedia.org/wiki/Geoid
 .. _PREM: https://en.wikipedia.org/wiki/Preliminary_reference_Earth_model
 .. _PdgScheme: https://pdg.lbl.gov/2007/reviews/montecarlorpp.pdf
 .. _SRTMGL1: https://lpdaac.usgs.gov/products/srtmgl1v003/

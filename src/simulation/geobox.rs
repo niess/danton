@@ -16,7 +16,7 @@ use pyo3::types::{PyDict, PyTuple};
 
 #[pyclass(name="Box", module="danton")]
 pub struct GeoBox {
-    /// Reference ellipsoid for geodetic coordinates.
+    /// Reference ellipsoid for geographic coordinates.
     #[pyo3(get, set)]
     pub ellipsoid: Ellipsoid,
     /// Latitude coordinate of box centre, in deg.
@@ -25,11 +25,11 @@ pub struct GeoBox {
     /// Longitude coordinate of box centre, in deg.
     #[pyo3(get, set)]
     longitude: f64,
-    /// Altitude coordinate of box centre, in m (w.r.t. the ellipsoid).
+    /// Altitude coordinate of box centre, in m.
     #[pyo3(get, set)]
     altitude: f64,
     pub size: [f64; 3],
-    /// Box inclination, in deg, w.r.t the North.
+    /// Box declination angle, in deg.
     #[pyo3(get, set)]
     declination: f64,
 }
@@ -101,7 +101,7 @@ impl GeoBox {
         self.size[0] * self.size[1] * self.size[2]
     }
 
-    /// Convert local cartesian coordinates to geodetic ones.
+    /// Convert local cartesian coordinates to geographic ones.
     fn from_local(
         &self,
         py: Python,
@@ -261,7 +261,7 @@ impl GeoBox {
         Ok(result)
     }
 
-    /// Check if elements are inside the box.
+    /// Check if coordinates are inside the box.
     #[pyo3(signature=(array=None, /, **kwargs))]
     fn inside<'py>(
         &self,
@@ -294,7 +294,7 @@ impl GeoBox {
         Ok(inside.into_py(py))
     }
 
-    /// Convert geodetic coordinates to local cartesian ones.
+    /// Convert geographic coordinates to local cartesian ones.
     #[pyo3(signature=(array=None, /, **kwargs))]
     fn to_local<'py>(
         &self,

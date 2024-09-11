@@ -283,6 +283,7 @@ impl From<Limit> for Option<f64> {
 impl ParticlesGenerator {
     const PI: f64 = ::std::f64::consts::PI;
 
+    #[pyo3(signature=(*, geometry=None, random=None, weight=None))]
     #[new]
     pub fn new<'py>(
         py: Python<'py>,
@@ -312,7 +313,7 @@ impl ParticlesGenerator {
         Ok(generator)
     }
 
-    /// Set Monte Carlo particles direction.
+    /// Fix the Monte Carlo particles direction.
     fn direction<'py>(
         slf: Bound<'py, Self>,
         azimuth: Option<f64>,
@@ -325,7 +326,8 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Set Monte Carlo particles energy.
+    /// Fix the Monte Carlo particles energy.
+    #[pyo3(signature=(value, /))]
     fn energy<'py>(
         slf: Bound<'py, Self>,
         value: f64,
@@ -335,7 +337,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Generate Monte Carlo particles according to current selection(s).
+    /// Generate Monte Carlo particles according to the current settings.
     #[pyo3(signature=(shape=None, /))]
     fn generate<'py>(&self, py: Python<'py>, shape: Option<ShapeArg>) -> PyResult<PyObject> {
         // Check configuration.
@@ -468,7 +470,8 @@ impl ParticlesGenerator {
         Ok(result)
     }
 
-    /// Select Monte Carlo particles inside a box.
+    /// Set particles positions to be distributed inside a box volume.
+    #[pyo3(signature=(r#box, /, *, limit=None, weight=None))]
     fn inside<'py>(
         slf: Bound<'py, Self>,
         r#box: &Bound<'py, GeoBox>,
@@ -484,7 +487,8 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Set Monte Carlo particles type.
+    /// Fix the Monte Carlo particles type.
+    #[pyo3(signature=(value, /))]
     fn pid<'py>(
         slf: Bound<'py, Self>,
         value: c_int,
@@ -494,7 +498,7 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Set Monte Carlo particles position.
+    /// Fix the Monte Carlo particles position.
     fn position<'py>(
         slf: Bound<'py, Self>,
         latitude: Option<f64>,
@@ -509,7 +513,8 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Select particles energy according to a power-law.
+    /// Set particles energy to follow a power-law.
+    #[pyo3(signature=(energy_min, energy_max, /, *, exponent=None, weight=None))]
     fn powerlaw<'py>(
         slf: Bound<'py, Self>,
         energy_min: f64,
@@ -531,7 +536,8 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Select particles direction uniformly over a solid-angle.
+    /// Set particles direction to be distributed over a solid-angle.
+    #[pyo3(signature=(azimuth=None, elevation=None, *, weight=None))]
     fn solid_angle<'py>(
         slf: Bound<'py, Self>,
         azimuth: Option<[f64; 2]>,
@@ -569,7 +575,8 @@ impl ParticlesGenerator {
         Ok(slf)
     }
 
-    /// Select Monte Carlo particles targeting a box volume.
+    /// Set particles to target a box volume.
+    #[pyo3(signature=(r#box, /, *, weight=None))]
     fn target<'py>(
         slf: Bound<'py, Self>,
         r#box: Bound<'py, GeoBox>,

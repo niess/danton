@@ -88,7 +88,7 @@ impl Geometry {
         Ok(geometry.unbind())
     }
 
-    /// Reference ellipsoid for geodetic coordinates.
+    /// Reference ellipsoid for coordinates systems.
     #[getter]
     fn get_ellipsoid(&self) -> Ellipsoid {
         self.geoid.into()
@@ -134,7 +134,7 @@ impl Geometry {
         }
     }
 
-    /// Convert ECEF coordinates to geodetic ones.
+    /// Convert ECEF coordinates to geographic ones.
     fn from_ecef(
         &self,
         py: Python,
@@ -260,7 +260,7 @@ impl Geometry {
         }
     }
 
-    /// Return the medium at geodetic coordinates.
+    /// Return the medium at geographic coordinates.
     #[pyo3(signature=(array=None, /, *, resolve=None, **kwargs))]
     fn locate<'py>(
         &mut self,
@@ -289,7 +289,7 @@ impl Geometry {
         Ok(media.into_py(py))
     }
 
-    /// Convert geodetic coordinates to ECEF ones.
+    /// Convert geographic coordinates to ECEF ones.
     #[pyo3(signature=(array=None, /, **kwargs))]
     fn to_ecef<'py>(
         &self,
@@ -370,7 +370,7 @@ impl Geometry {
         Ok(traces.into_py(py))
     }
 
-    /// Translate geodetic coordinates.
+    /// Translate geographic coordinates.
     #[pyo3(signature=(distance, array=None, /, *, copy=None, **kwargs))]
     fn translate<'py>(
         &mut self,
