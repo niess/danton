@@ -509,11 +509,17 @@ Python interface
            - Leading Order computation using the selected :py:attr:`PDFs <pdf>`
              (as in R. Gandhi et al., Astropart.Phys.5:81-110 (1996)).
 
+      .. note::
+
+         Selecting a predefined DIS model defines the corresponding
+         :py:attr:`PDF <pdf>` model (see :numref:`tab-pdf`), if not explicitly
+         overridden.
+
       .. topic:: Custom cross-sections
 
-         Alternatively to predefined models, one might specify a path to a text
-         file containing cross-section values in *exactly* the following format
-         (:download:`BGR18.txt <interface/BGR18.txt>`).
+         Alternatively to the predefined models, one might specify a path to a
+         text file containing cross-section values in *exactly* the following
+         format (:download:`BGR18.txt <interface/BGR18.txt>`).
 
    .. autoattribute:: pair_production
 
@@ -537,6 +543,35 @@ Python interface
            - [SSR19]_.
 
    .. autoattribute:: pdf
+
+      The possible values of predefined PDF models are summarised in
+      :numref:`tab-pdf` below, the default being :python:`None` (i.e., the
+      :py:attr:`PDF <pdf>` are set according to the :py:attr:`DIS <dis>` model).
+
+      .. _tab-pdf:
+
+      .. list-table:: Available PDF models.
+         :width: 75%
+         :widths: auto
+         :header-rows: 1
+
+         * - PDF Model
+           - DIS Model
+           - Reference
+         * - :python:`"CT14nlo"`
+           - :python:`"LO"`.
+           - `CT14nlo.info <https://lhapdfsets.web.cern.ch/current/CT14nlo/CT14nlo.info>`_\ .
+         * - :python:`"HERAPDF15NLO"`
+           - :python:`"CMS11"`.
+           - `HERAPDF15NLO_EIG.info <https://lhapdfsets.web.cern.ch/current/HERAPDF15NLO_EIG/HERAPDF15NLO_EIG.info>`_\ .
+         * - :python:`"NNPDF31sx"`
+           - :python:`"BGR18"`.
+           - [BGR18]_, see also `here <https://data.nnpdf.science/BGR18/>`_\ .
+
+      .. topic:: Custom PDFs
+
+         Alternatively to the predefined PDFs, one might specify a path to a
+         text file containing PDF values in Les Houches Accord (`LHA`_) format.
 
    .. autoattribute:: photonuclear
 
@@ -703,6 +738,7 @@ Python interface
 .. _EGM96: https://cddis.nasa.gov/926/egm96/egm96.html
 .. _ellipsoid: https://en.wikipedia.org/wiki/Earth_ellipsoid
 .. _geoid: https://en.wikipedia.org/wiki/Geoid
+.. _LHA: https://en.wikipedia.org/wiki/Les_Houches_Accords
 .. _Kokoulin: https://doi.org/10.1016/S0920-5632(98)00475-7
 .. _PREM: https://en.wikipedia.org/wiki/Preliminary_reference_Earth_model
 .. _PdgScheme: https://pdg.lbl.gov/2007/reviews/montecarlorpp.pdf
