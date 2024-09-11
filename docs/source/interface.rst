@@ -39,8 +39,18 @@ Python interface
    .. autoattribute:: latitude
    .. autoattribute:: longitude
    .. autoattribute:: size
+
    .. autoattribute:: surface_area
+
+      .. note::
+
+         This attribute is read-only. It is defined by the box :py:attr:`size`.
+
    .. autoattribute:: volume
+
+      .. note::
+
+         This attribute is read-only. It is defined by the box :py:attr:`size`.
 
    .. automethod:: from_local
 
@@ -649,12 +659,24 @@ Python interface
    This class provides an interface to a Danton Monte Carlo simulation, which
    may be configured through attributes.
 
-   .. method:: __new__()
+   .. method:: __new__(**kwargs)
 
       Create a new simulation interface, configured by default for the backward
-      sampling of tau decays. For instance,
+      sampling of tau decays. For instance
 
       >>> simulation = danton.Simulation()
+
+      Optional *kwargs* may be provided in order to override the default
+      simulation attributes described below. For your convenience, the *kwargs*
+      may also be used to specify Monte Carlo :py:class:`Geometry`,
+      :py:class:`Physics` or :py:class:`Random` attributes. For instance, the
+      following creates a new simulation interface using the `EGM96`_ geoid and
+      a specific random :py:attr:`seed`.
+
+      >>> simulation = danton.Simulation(
+      ...     geoid = "EGM96",
+      ...     seed = 123456789
+      ... )
 
    .. autoattribute:: geometry
 
@@ -663,6 +685,9 @@ Python interface
       ellipsoid.
 
       >>> simulation.geometry.geoid = "WGS84"
+
+      Refer to the :doc:`geometry` section for further information on the Monte
+      Carlo geometry.
 
    .. autoattribute:: longitudinal
 
@@ -674,10 +699,28 @@ Python interface
    .. autoattribute:: mode
 
       Must be one of :python:`"backward"` (default), :python:`"forward"` or
-      :python:`"grammage"`.
+      :python:`"grammage"`. Refer to the :doc:`montecarlo` section for further
+      information.
 
    .. autoattribute:: physics
+
+      Get, modify, or set the Monte Carlo :py:class:`Physics`. For instance,
+      the following changes the DIS interaction model to [BGR18]_.
+
+      >>> simulation.physics.dis = "BGR18"
+
+      Refer to the :doc:`physics` section for further information on the Monte
+      Carlo physics.
+
    .. autoattribute:: random
+
+      Get, modify, or set the Monte Carlo :py:class:`Random` stream. For
+      instance, the following changes the :py:attr:`seed`.
+
+      >>> simulation.random.seed = 123456789
+
+      Refer to the :ref:`montecarlo:Monte Carlo history` section for further
+      information.
 
    .. autoattribute:: record_steps
 
@@ -693,7 +736,20 @@ Python interface
       (w.r.t. the reference ellipsoid).
 
    .. automethod:: box
+
+      Refer to the :py:class:`Box` :py:func:`constructor <danton.Box.__new__>`
+      for further details on arguments.
+
+      .. note::
+
+         The :py:class:`Box` :py:attr:`ellipsoid <danton.Box.ellipsoid>`
+         attribute is set according to the simulation :py:attr:`geometry
+         <danton.Simulation.geometry>`.
+
    .. automethod:: particles
+
+      The returned :py:class:`ParticlesGenerator` object is configured according
+      to the simulation settings.
 
    .. automethod:: run
 
@@ -706,9 +762,27 @@ Python interface
       vertices, and the tau decay products (as
       :external:py:class:`ndarray <numpy.ndarray>`, each).
 
+      Refer to the :doc:`montecarlo` section for further information.
+
 ----
 
 .. autofunction:: danton.compute
+
+   This function pre-computes material tables, and caches the result (under
+   :python:`danton.DEFAULT_CACHE` or :bash:`$DANTON_CACHE` if defined).
+
+   The positional arguments (`*args`) are paths to Material Description
+   Files (MDFs), while the keyword arguments may specify :py:class:`physics
+   <danton.Physics>` settings. Without any argument the default materials and
+   physics tables are pre-computed.
+
+   Refer to the :doc:`physics` section for further information.
+
+   .. note::
+
+      Material tables are automatically pre-computed, on need, when no cached
+      data are found. This function allows users to manually perform this
+      pre-computation, whenever needed.
 
 ----
 

@@ -247,7 +247,7 @@ impl Simulation {
         }
     }
 
-    /// Create a local box.
+    /// Create a bounding-box.
     #[pyo3(name="r#box", signature=(size=None, *, latitude=None, longitude=None, altitude=None, declination=None))]
     fn geobox(
         &self,
@@ -262,7 +262,7 @@ impl Simulation {
         geobox::GeoBox::new(size, latitude, longitude, altitude, declination, ellipsoid)
     }
 
-    /// Generate Monte Carlo particles.
+    /// Create a Monte Carlo particles generator.
     fn particles(
         &self,
         py: Python,
