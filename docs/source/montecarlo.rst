@@ -22,8 +22,8 @@ respective likelihoods.
    <danton.Simulation>` to :python:`"forward"`.
 
    Backward sampling can enhance CPU efficiency by orders of magnitude in
-   certain use cases (see, e.g., [Niess18b]_). However, this approach is more
-   more intricate, given that nature progresses forwards.
+   certain use cases (see, e.g., [NM18]_). However, this approach is more more
+   intricate, given that nature progresses forwards.
 
 .. topic:: Decays or fluxes
 
