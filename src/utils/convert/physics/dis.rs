@@ -18,7 +18,7 @@ pub enum Dis {
 pub enum DisModel {
     BGR18,
     #[default]
-    CSMS,
+    CMS11,
     LO,
 }
 
@@ -30,9 +30,9 @@ impl Dis {
                     let prefix = Path::new(crate::PREFIX.get(py).unwrap());
                     Some(prefix.join(format!("data/cs/BGR18.txt")))
                 },
-                DisModel::CSMS => {
+                DisModel::CMS11 => {
                     let prefix = Path::new(crate::PREFIX.get(py).unwrap());
-                    Some(prefix.join(format!("data/cs/CSMS.txt")))
+                    Some(prefix.join(format!("data/cs/CMS11.txt")))
                 },
                 DisModel::LO => None,
             },

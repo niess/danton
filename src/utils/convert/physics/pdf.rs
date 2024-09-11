@@ -48,7 +48,7 @@ impl Pdf {
             None => match dis {
                 Dis::Model(model) => match model {
                     DisModel::BGR18 => Pdf::Model(PdfModel::NNPDF31sx).to_c_string(py),
-                    DisModel::CSMS => Pdf::Model(PdfModel::HERAPDF15NLO).to_c_string(py),
+                    DisModel::CMS11 => Pdf::Model(PdfModel::HERAPDF15NLO).to_c_string(py),
                     DisModel::LO => Pdf::Model(PdfModel::CT14nlo).to_c_string(py),
                 },
                 Dis::Path(_) => Pdf::Model(PdfModel::CT14nlo).to_c_string(py),

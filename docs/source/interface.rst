@@ -459,11 +459,109 @@ Python interface
 
 .. autoclass:: danton.Physics
 
+   This class provides an interface to the Monte Carlo physics, which may be
+   configured through attributes. See the :doc:`physics` section for further
+   details.
+
    .. autoattribute:: bremsstrahlung
+
+      The possible values of bremsstralung models are summarised in
+      :numref:`tab-bremsstrahlung` below, the default setting being
+      :python:`"SSR"`.
+
+      .. _tab-bremsstrahlung:
+
+      .. list-table:: Available bremsstrahlung models.
+         :width: 75%
+         :widths: auto
+         :header-rows: 1
+
+         * - Model
+           - Reference
+         * - :python:`"ABB"`
+           - Andreev, Bezrukov and Bugaev, Physics of Atomic Nuclei 57 (1994)
+             2066.
+         * - :python:`"KKP"`
+           - Kelner, Kokoulin and Petrukhin, Moscow Engineering Physics Inst.,
+             Moscow, 1995.
+         * - :python:`"SSR"`
+           - [SSR19]_.
+
    .. autoattribute:: dis
+
+      The possible values of predefined cross-section models are summarised in
+      :numref:`tab-dis` below, the default setting being :python:`"CMS11"`.
+
+      .. _tab-dis:
+
+      .. list-table:: Available DIS models.
+         :width: 75%
+         :widths: auto
+         :header-rows: 1
+
+         * - Model
+           - Reference
+         * - :python:`"BGR18"`
+           - [BGR18]_.
+         * - :python:`"CMS11"`
+           - [CMS11]_.
+         * - :python:`"LO"`
+           - Leading Order computation using the selected :py:attr:`PDFs <pdf>`
+             (as in R. Gandhi et al., Astropart.Phys.5:81-110 (1996)).
+
+      .. topic:: Custom cross-sections
+
+         Alternatively to predefined models, one might specify a path to a text
+         file containing cross-section values in *exactly* the following format
+         (:download:`BGR18.txt <interface/BGR18.txt>`).
+
    .. autoattribute:: pair_production
+
+      The possible values of pair-production models are summarised in
+      :numref:`tab-pair-production` below, the default setting being
+      :python:`"SSR"`.
+
+      .. _tab-pair-production:
+
+      .. list-table:: Available pair-production models.
+         :width: 75%
+         :widths: auto
+         :header-rows: 1
+
+         * - Model
+           - Reference
+         * - :python:`"KKP"`
+           - Kelner, Kokoulin and Petrukhin, Soviet Journal of Nuclear Physics 7
+             (1968) 237.
+         * - :python:`"SSR"`
+           - [SSR19]_.
+
    .. autoattribute:: pdf
+
    .. autoattribute:: photonuclear
+
+      The possible values of photonuclear interaction models are summarised in
+      :numref:`tab-photonuclear` below, the default setting being
+      :python:`"DRSS"`.
+
+      .. _tab-photonuclear:
+
+      .. list-table:: Available photonuclear interaction models.
+         :width: 75%
+         :widths: auto
+         :header-rows: 1
+
+         * - Model
+           - Reference
+         * - :python:`"BBKS"`
+           - Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635, with improved
+             photon-nucleon cross-section according to `Kokoulin`_ and hard
+             component from `Bugaev and Shlepin`_.
+         * - :python:`"BM"`
+           - Butkevich and Mikheyev, Soviet Journal of Experimental and
+             Theoretical Physics 95 (2002) 11.
+         * - :python:`"DRSS"`
+           - Dutta, Reno, Sarcevic and Seckel, Phys.Rev. D63 (2001) 094020.
 
 ----
 
@@ -600,10 +698,12 @@ Python interface
 .. ============================================================================
 
 .. _builder: https://en.wikipedia.org/wiki/Builder_pattern
+.. _Bugaev and Shlepin: https://doi.org/10.1103/PhysRevD.67.034027
 .. _ECEF: https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
 .. _EGM96: https://cddis.nasa.gov/926/egm96/egm96.html
 .. _ellipsoid: https://en.wikipedia.org/wiki/Earth_ellipsoid
 .. _geoid: https://en.wikipedia.org/wiki/Geoid
+.. _Kokoulin: https://doi.org/10.1016/S0920-5632(98)00475-7
 .. _PREM: https://en.wikipedia.org/wiki/Preliminary_reference_Earth_model
 .. _PdgScheme: https://pdg.lbl.gov/2007/reviews/montecarlorpp.pdf
 .. _SRTMGL1: https://lpdaac.usgs.gov/products/srtmgl1v003/
