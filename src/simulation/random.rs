@@ -22,10 +22,10 @@ use ::std::ptr::null_mut;
 #[pyclass(module = "danton")]
 pub struct Random {
     rng: Pcg64Mcg,
-    /// Prng stream index.
+    /// PRNG stream index.
     #[pyo3(get)]
     pub index: u128,
-    /// Prng initial seed.
+    /// PRNG initial seed.
     #[pyo3(get)]
     seed: u128,
 }

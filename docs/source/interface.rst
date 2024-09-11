@@ -463,6 +463,13 @@ Python interface
    configured through attributes. See the :doc:`physics` section for further
    details.
 
+   .. method:: __new__(**kwargs)
+
+      Create a new instance of Physics.
+
+      Refer to the attributes below for the possible values of the optional
+      *kwargs*.
+
    .. autoattribute:: bremsstrahlung
 
       The possible values of bremsstralung models are summarised in
@@ -602,10 +609,38 @@ Python interface
 
 .. autoclass:: danton.Random
 
+   This class provides an interface to the Monte Carlo Pseudo Random Numbers
+   Generator (`PRNG`_). Refer to section :ref:`montecarlo:Monte Carlo history`
+   for further details.
+
+   .. note::
+
+      The PRNG :py:attr:`index` and :py:attr:`seed` are 128-bit unsigned
+      integers. However, since :external:py:class:`ndarrays <numpy.ndarray>` do
+      not support this format, an alternative representation is available as a
+      size-two array of 64-bit unsigned integers.
+
+   .. method:: __new__(**kwargs)
+
+      Create a new PRNG stream.
+
+      Refer to the attributes below for the possible values of the optional
+      *kwargs*.
+
    .. autoattribute:: index
+
    .. autoattribute:: seed
 
+     .. note::
+
+        Modifying the PRNG :py:attr:`seed` resets the stream :py:attr:`index` to
+        zero.
+
    .. automethod:: uniform01
+
+      The optional *shape* argument defines the number of numbers generated
+      (as a :external:py:class:`ndarray <numpy.ndarray>` shape). The default
+      setting is to generate a single number.
 
 ----
 
@@ -742,6 +777,7 @@ Python interface
 .. _Kokoulin: https://doi.org/10.1016/S0920-5632(98)00475-7
 .. _PREM: https://en.wikipedia.org/wiki/Preliminary_reference_Earth_model
 .. _PdgScheme: https://pdg.lbl.gov/2007/reviews/montecarlorpp.pdf
+.. _PRNG: https://en.wikipedia.org/wiki/Pseudorandom_number_generator
 .. _SRTMGL1: https://lpdaac.usgs.gov/products/srtmgl1v003/
 .. _standard rock: https://pdg.lbl.gov/2024/AtomicNuclearProperties/HTML/standard_rock.html
 .. _StructuredArray: https://numpy.org/doc/stable/user/basics.rec.html
