@@ -358,7 +358,7 @@ impl Physics {
     }
 
     pub fn initialise() -> PyResult<()> {
-        let rc = unsafe { alouette::initialise(null_mut()) };
+        let rc = unsafe { alouette::initialise(null_mut(), null_mut()) };
         Self::check_alouette(rc)
     }
 

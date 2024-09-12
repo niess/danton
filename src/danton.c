@@ -1500,19 +1500,17 @@ static int transport_backward(
                         if (lock != NULL) lock();
                         alouette_current_context = context;
                         struct alouette_products products;
-                        int mother;
-                        double bias;
                         if (state->pid > 0) {
-                                mother = ENT_PID_TAU;
-                                bias = -1;
+                                alouette_undecay_mother = ENT_PID_TAU;
+                                alouette_undecay_bias = -1;
                         } else {
-                                mother = ENT_PID_TAU_BAR;
-                                bias = 1.;
+                                alouette_undecay_mother = ENT_PID_TAU_BAR;
+                                alouette_undecay_bias = 1.;
                         }
+                        alouette_undecay_scheme = ALOUETTE_UNDECAY_ENERGY;
                         for (trials = 0; trials < 20; trials++) {
-                                if (alouette_undecay(0, state->pid, mother,
-                                    momentum, &polarisation_cb, bias,
-                                    &products)
+                                if (alouette_undecay(0, state->pid,
+                                    momentum, &polarisation_cb, &products)
                                     == ALOUETTE_RETURN_SUCCESS)
                                         break;
                         }
@@ -2073,6 +2071,13 @@ DANTON_API void danton_context_reset(struct danton_context * context)
         pumas_context_destroy(&context_->pumas);
 }
 
+/* Hook for Alouette / TAUOLA PRNG. */
+static struct simulation_context * current_context = NULL;
+
+static float alouette_uniform01(void) {
+        return random_uniform01(current_context);
+}
+
 /* Run a DANTON simulation. */
 int danton_context_run(
     struct danton_context * context, long events, long requested)
@@ -2082,6 +2087,10 @@ int danton_context_run(
             (struct simulation_context *)context;
         struct danton_sampler * sampler = context->sampler;
         struct event_sampler * sampler_ = (struct event_sampler *)sampler;
+
+        /* Forward PRNG to Alouette. */
+        current_context = context_;
+        alouette_random = alouette_uniform01;
 
         /* Check and configure the context according to the API.
          */

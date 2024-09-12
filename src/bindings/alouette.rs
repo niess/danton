@@ -11,5 +11,5 @@ pub const TAUOLA_ERROR: c_uint = 3;
 #[link(name = "danton-c")]
 extern "C" {
     #[link_name="alouette_initialise"]
-    pub fn initialise(xk0dec: *mut f64) -> c_uint;
+    pub fn initialise(seed: *mut usize, xk0dec: *mut f64) -> c_uint;
 }
