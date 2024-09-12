@@ -2,6 +2,7 @@ use crate::bindings::danton;
 use crate::simulation::geobox::{GeoBox, BoxGenerator, ProjectedBox};
 use crate::simulation::geometry::{Geometry, Mode, Tracer};
 use crate::simulation::random::Random;
+use crate::simulation::recorder::Primary;
 use crate::utils::coordinates::HorizontalCoordinates;
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, ValueError};
@@ -380,7 +381,7 @@ impl ParticlesGenerator {
             Some(shape) => shape.into(),
             None => Vec::new(),
         };
-        let array = PyArray::<Particle>::zeros(py, &shape)?;
+        let array = PyArray::<Primary>::zeros(py, &shape)?;
         let particles = unsafe { array.slice_mut()? };
 
         // Bind geometry etc.
@@ -410,7 +411,14 @@ impl ParticlesGenerator {
 
         // Loop over events.
         let mut trials: usize = 0;
-        for particle in particles.iter_mut() {
+        for (event, primary) in particles.iter_mut().enumerate() {
+            primary.event = event;
+            primary.random_index = [
+                (random.index >> 64) as u64,
+                random.index as u64
+            ];
+
+            let particle = &mut primary.particle;
             particle.pid = match self.pid {
                 None => match self.position {
                     Position::Target { .. } => 16,

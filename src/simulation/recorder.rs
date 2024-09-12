@@ -33,9 +33,9 @@ struct GrammagesExport (Export<f64>);
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Primary {
-    event: usize,
-    particle: Particle,
-    random_index: [u64; 2],
+    pub event: usize,
+    pub particle: Particle,
+    pub random_index: [u64; 2],
 }
 
 #[derive(AsMut, AsRef, From)]
