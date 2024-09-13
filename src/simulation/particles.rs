@@ -486,7 +486,7 @@ impl ParticlesGenerator {
         limit: Option<Limit>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
-        let limit: Option<f64> = limit.and_then(|v| v.into());
+        let limit: Option<f64> = limit.and_then(|v| v.into()); // XXX Should default to True.
         let mut generator = slf.borrow_mut();
         if let Some(weight) = weight {
             generator.weight_position = weight;
