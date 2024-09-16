@@ -480,13 +480,16 @@ impl ParticlesGenerator {
 
     /// Set particles positions to be distributed inside a box volume.
     #[pyo3(signature=(r#box, /, *, limit=None, weight=None))]
+    #[pyo3(text_signature="(box, /, *, limit=True, weight=None)")]
     fn inside<'py>(
         slf: Bound<'py, Self>,
         r#box: &Bound<'py, GeoBox>,
         limit: Option<Limit>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
-        let limit: Option<f64> = limit.and_then(|v| v.into()); // XXX Should default to True.
+        let limit: Option<f64> = limit
+            .unwrap_or_else(|| Limit::Bool(true))
+            .into();
         let mut generator = slf.borrow_mut();
         if let Some(weight) = weight {
             generator.weight_position = weight;
