@@ -12,7 +12,7 @@ PREFIX = Path(__file__).parent
 
 
 def run(args):
-    """Run a flux simulation."""
+    """Run a tau decays simulation."""
 
     simulation = danton.Simulation(
         mode = args.mode,
@@ -41,19 +41,33 @@ def run(args):
     cpu = get_cpu()
 
     if args.mode == "backward":
-        particles, size = simulation.particles(weight=True)           \
-            .pid(15)                                                  \
-            .powerlaw(emin, emax, exponent=-1)                        \
-            .inside(box)                                              \
-            .solid_angle(elevation=[-args.elevation, args.elevation]) \
-            .generate(n)
+        generator = simulation.particles(weight=True) \
+            .pid(15)                                  \
+            .inside(box)
     else:
-        particles, size = simulation.particles(weight=True)           \
-            .pid(16)                                                  \
-            .powerlaw(emin, emax, exponent=-1)                        \
-            .target(box)                                              \
-            .solid_angle(elevation=[-args.elevation, args.elevation]) \
-            .generate(n)
+        generator = simulation.particles(weight=True) \
+            .pid(16)                                  \
+            .target(box)
+
+    generator.powerlaw(emin, emax, exponent=-1)
+
+    if args.fix_direction:
+        _, ecef_direction = simulation.geometry.to_ecef(
+            latitude = box.latitude,
+            longitude = box.longitude,
+            altitude = box.altitude,
+            azimuth = 0,
+            elevation = args.elevation
+        )
+        generator.direction(ecef_direction)
+    else:
+        generator.solid_angle(elevation=[-args.elevation, args.elevation]) \
+
+    if args.mode == "backward" or not args.fix_direction:
+        particles, size = generator.generate(n)
+    else:
+        particles = generator.generate(n)
+        size = particles.size
 
     result = simulation.run(particles)
     cpu = get_cpu() - cpu
@@ -69,9 +83,11 @@ def run(args):
     else:
         secondaries = result.secondaries
         sel = (secondaries["pid"] == 15) & (secondaries["energy"] >= emin) & \
-            (secondaries["elevation"] >= -args.elevation) & \
-            (secondaries["elevation"] <= args.elevation) & \
             box.inside(secondaries)
+        if not args.fix_direction:
+            sel &= \
+                (secondaries["elevation"] >= -args.elevation) & \
+                (secondaries["elevation"] <= args.elevation)
         secondaries = secondaries[sel]
         primaries = particles[secondaries["event"]]
         secondaries["weight"] *= primary_flux(primaries["energy"])
@@ -79,6 +95,7 @@ def run(args):
 
     data = {
         "mode": args.mode,
+        "fix_direction": args.fix_direction,
         "events": size,
         "elevation": args.elevation,
         "width": args.width,
@@ -92,9 +109,10 @@ def run(args):
         "version": danton.VERSION
     }
 
+    fix = "F" if args.fix_direction else ""
     tag = "_".join([
         f"{args.mode}",
-        f"{args.elevation:.3f}",
+        f"{args.elevation:.3f}{fix}",
         f"{args.width:.0E}",
         f"{args.height:.0E}",
         f"{simulation.random.seed:0X}"
@@ -112,7 +130,7 @@ def run(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run a flux simulation")
+    parser = argparse.ArgumentParser(description="Run a tau decays simulation")
     parser.add_argument("-m", "--mode",
         help = "Monte Carlo mode",
         choices = ["backward", "forward"],
@@ -134,9 +152,13 @@ if __name__ == "__main__":
         default = 1E+04
     )
     parser.add_argument("-e", "--elevation",
-        help = "Elevation half-width, in deg",
+        help = "Elevation angle or half-width, in deg",
         type = float,
         default = 5
+    )
+    parser.add_argument("-f", "--fix-direction",
+        help = "Fix the particles direction",
+        action = 'store_true'
     )
     parser.add_argument("--energy_min",
         help = "Minimum energy, in GeV",
