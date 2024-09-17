@@ -90,7 +90,7 @@ impl Geometry {
 
     /// Reference ellipsoid for coordinates systems.
     #[getter]
-    fn get_ellipsoid(&self) -> Ellipsoid {
+    pub fn get_ellipsoid(&self) -> Ellipsoid {
         self.geoid.into()
     }
 

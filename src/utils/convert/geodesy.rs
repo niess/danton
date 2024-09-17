@@ -92,6 +92,12 @@ impl From<Geoid> for Ellipsoid {
     }
 }
 
+impl std::fmt::Display for Ellipsoid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.to_str())
+    }
+}
+
 
 // ===============================================================================================
 //

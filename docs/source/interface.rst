@@ -86,8 +86,8 @@ Python interface
 
       .. note::
 
-         The positional *array* argument and keyword only (*kwargs*) arguments
-         are mutually exclusive.
+         The positional *array* argument and keyword only (*direction*,
+         *kwargs*) arguments are mutually exclusive.
 
       The *array* argument, if specified, must be a `structured
       <StructuredArray_>`_ :external:py:class:`ndarray <numpy.ndarray>`
@@ -98,6 +98,12 @@ Python interface
       coordinates can be specified as *kwargs*. For instance,
 
       >>> area = box.projected_area(azimuth=30, elevation=45)
+
+      :ref:`Geocentric <coordinates:Geocentric coordinates>` coordinates can
+      also be provided, in-lieu of :ref:`geographic <coordinates:Geographic
+      coordinates>` ones, with the *direction* argument. For example,
+
+      >>> area = box.projected_area(direction=[0, 0, 1])
 
    .. automethod:: to_local
 
@@ -393,6 +399,11 @@ Python interface
       :python:`weight` flag of other methods).
 
    .. automethod:: direction
+
+      The direction may be specified using :ref:`geographic
+      <coordinates:Geographic coordinates>` coordinates (*azimuth*, *elevation*)
+      or :ref:`geocentric <coordinates:Geocentric coordinates>` ones (*ecef*).
+
    .. automethod:: energy
 
    .. automethod:: generate

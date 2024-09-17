@@ -3,7 +3,8 @@ use crate::simulation::geobox::{GeoBox, BoxGenerator, ProjectedBox};
 use crate::simulation::geometry::{Geometry, Mode, Tracer};
 use crate::simulation::random::Random;
 use crate::simulation::recorder::Primary;
-use crate::utils::coordinates::HorizontalCoordinates;
+use crate::utils::convert::Ellipsoid;
+use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, ValueError};
 use crate::utils::numpy::{Dtype, PyArray, ShapeArg};
@@ -238,6 +239,7 @@ pub struct ParticlesGenerator {
 
 #[derive(Default)]
 enum Direction {
+    Ecef([f64;3]),
     #[default]
     None,
     Point { azimuth: f64, elevation: f64 },
@@ -315,15 +317,25 @@ impl ParticlesGenerator {
     }
 
     /// Fix the Monte Carlo particles direction.
+    #[pyo3(signature=(ecef=None, /, *, azimuth=None, elevation=None))]
     fn direction<'py>(
         slf: Bound<'py, Self>,
+        ecef: Option<[f64; 3]>,
         azimuth: Option<f64>,
         elevation: Option<f64>,
     ) -> PyResult<Bound<'py, Self>> {
-        let azimuth = azimuth.unwrap_or(0.0);
-        let elevation = elevation.unwrap_or(0.0);
+        let direction = match ecef {
+            None => {
+                let azimuth = azimuth.unwrap_or(0.0);
+                let elevation = elevation.unwrap_or(0.0);
+                Direction::Point { azimuth, elevation }
+            },
+            Some(ecef) => {
+                Direction::Ecef(ecef)
+            },
+        };
         let mut generator = slf.borrow_mut();
-        generator.direction = Direction::Point { azimuth, elevation };
+        generator.direction = direction;
         Ok(slf)
     }
 
@@ -368,6 +380,7 @@ impl ParticlesGenerator {
                     return Err(err.to_err())
                 }
                 match self.direction {
+                    Direction::Ecef(_) => false,
                     Direction::None => false,
                     Direction::Point { .. } => false,
                     Direction::SolidAngle { .. } => true,
@@ -386,6 +399,7 @@ impl ParticlesGenerator {
 
         // Bind geometry etc.
         let mut geometry = self.geometry.bind(py).borrow_mut();
+        let ellipsoid = geometry.get_ellipsoid();
         let tracer = Tracer::new(&mut geometry, Mode::Merge)?;
         let mut random = self.random.bind(py).borrow_mut();
 
@@ -395,9 +409,22 @@ impl ParticlesGenerator {
                 let bg = BoxGenerator::new(&geobox.bind(py).borrow());
                 (Some(bg), None)
             },
-            Position::Target { geobox } => match self.direction {
+            Position::Target { geobox } => match &self.direction {
+                Direction::Ecef(ecef) => {
+                    let geobox = geobox.bind(py).borrow();
+                    let direction = HorizontalCoordinates::from_ecef(
+                        ecef,
+                        geobox.ellipsoid,
+                        &geobox.origin(),
+                    );
+                    let pb = ProjectedBox::new(&geobox, &direction);
+                    (None, Some(pb))
+                },
                 Direction::Point { azimuth, elevation } => {
-                    let direction = HorizontalCoordinates { azimuth, elevation };
+                    let direction = HorizontalCoordinates {
+                        azimuth: *azimuth,
+                        elevation: *elevation
+                    };
                     let pb = ProjectedBox::new(&geobox.bind(py).borrow(), &direction);
                     (None, Some(pb))
                 },
@@ -436,7 +463,7 @@ impl ParticlesGenerator {
 
                 let (direction, energy, position) = match self.position {
                     Position::Inside { .. } => self.generate_inside(
-                        bg.as_ref().unwrap(), &tracer, &mut random, particle
+                        bg.as_ref().unwrap(), &tracer, ellipsoid, &mut random, particle
                     ),
                     Position::None => (false, false, true),
                     Position::Point { latitude, longitude, altitude } => {
@@ -455,7 +482,7 @@ impl ParticlesGenerator {
                 }
 
                 if !direction {
-                    self.generate_direction(&mut random, particle);
+                    self.generate_direction(&mut random, ellipsoid, particle);
                 }
 
                 if !energy {
@@ -487,12 +514,22 @@ impl ParticlesGenerator {
         limit: Option<Limit>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
+        let py = r#box.py();
         let limit: Option<f64> = limit
             .unwrap_or_else(|| Limit::Bool(true))
             .into();
         let mut generator = slf.borrow_mut();
         if let Some(weight) = weight {
             generator.weight_position = weight;
+        }
+        let expected = generator.geometry.bind(py).borrow().get_ellipsoid();
+        let found = r#box.borrow().ellipsoid;
+        if found != expected {
+            let why = format!("expected '{}', found '{}'", expected, found);
+            let err = Error::new(ValueError)
+                .what("box ellispoid")
+                .why(&why);
+            return Err(err.into())
         }
         generator.position = Position::Inside { geobox: r#box.clone().unbind(), limit };
         Ok(slf)
@@ -593,7 +630,17 @@ impl ParticlesGenerator {
         r#box: Bound<'py, GeoBox>,
         weight: Option<bool>,
     ) -> PyResult<Bound<'py, Self>> {
+        let py = r#box.py();
         let mut generator = slf.borrow_mut();
+        let expected = generator.geometry.bind(py).borrow().get_ellipsoid();
+        let found = r#box.borrow().ellipsoid;
+        if found != expected {
+            let why = format!("expected '{}', found '{}'", expected, found);
+            let err = Error::new(ValueError)
+                .what("box ellispoid")
+                .why(&why);
+            return Err(err.into())
+        }
         if let Some(weight) = weight {
             generator.weight_position = weight;
         }
@@ -605,8 +652,18 @@ impl ParticlesGenerator {
 impl ParticlesGenerator {
     const RAD: f64 = std::f64::consts::PI / 180.0;
 
-    fn generate_direction(&self, random: &mut Random, particle: &mut Particle) {
-        let (azimuth, elevation, weight) = self.direction.generate(random);
+    fn generate_direction(
+        &self,
+        random: &mut Random,
+        ellipsoid: Ellipsoid,
+        particle: &mut Particle,
+    ) {
+        let position = GeodeticCoordinates {
+            latitude: particle.latitude,
+            longitude: particle.longitude,
+            altitude: particle.altitude,
+        };
+        let (azimuth, elevation, weight) = self.direction.generate(random, ellipsoid, &position);
         particle.azimuth = azimuth;
         particle.elevation = elevation;
         if self.weight_direction {
@@ -626,6 +683,7 @@ impl ParticlesGenerator {
         &self,
         bg: &BoxGenerator,
         tracer: &Tracer,
+        ellipsoid: Ellipsoid,
         random: &mut Random,
         particle: &mut Particle
     ) -> (bool, bool, bool) {
@@ -642,7 +700,9 @@ impl ParticlesGenerator {
         let mut is_direction = false;
         let mut is_energy = false;
         if let Some(limit) = limit {
-            let (azimuth, elevation, d_weight) = self.direction.generate(random);
+            let (azimuth, elevation, d_weight) = self.direction.generate(
+                random, ellipsoid, &geodetic
+            );
             let (energy, e_weight) = self.energy.generate(random);
 
             // Check the path length along the track origin.
@@ -695,6 +755,7 @@ impl ParticlesGenerator {
         let (r, u, geodetic, mut horizontal) = bg.generate_onto(random);
 
         match self.direction {
+            Direction::Ecef(_) => unreachable!(),
             Direction::SolidAngle { azimuth, elevation, .. } => {
                 // Find the second (outgoing) intersection (using the local frame).
                 // Ref: https://iquilezles.org/articles/intersectors/ (axis-aligned box).
@@ -788,8 +849,17 @@ impl Direction {
     const DEG: f64 = 180.0 / std::f64::consts::PI;
     const RAD: f64 = std::f64::consts::PI / 180.0;
 
-    fn generate(&self, random: &mut Random) -> (f64, f64, f64) {
+    fn generate(
+        &self,
+        random: &mut Random,
+        ellipsoid: Ellipsoid,
+        position: &GeodeticCoordinates,
+    ) -> (f64, f64, f64) {
         match self {
+            Self::Ecef(ecef) => {
+                let direction = HorizontalCoordinates::from_ecef(ecef, ellipsoid, position);
+                (direction.azimuth, direction.elevation, 1.0)
+            },
             Self::None => (0.0, 0.0, 1.0),
             Self::Point { azimuth, elevation } => (*azimuth, *elevation, 1.0),
             Self::SolidAngle { .. } => self.generate_solid_angle(random),

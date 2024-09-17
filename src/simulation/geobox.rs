@@ -3,7 +3,7 @@ use crate::utils::convert::{Array, Ellipsoid};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates, HorizontalsExport};
 use crate::utils::error::Error;
-use crate::utils::error::ErrorKind::ValueError;
+use crate::utils::error::ErrorKind::TypeError;
 use crate::utils::export::Export;
 use crate::utils::extract::{Direction, Position, select_coordinates, select_direction,
     select_position};
@@ -142,7 +142,7 @@ impl GeoBox {
                         size,
                         direction.unwrap().size(),
                     );
-                    let err = Error::new(ValueError)
+                    let err = Error::new(TypeError)
                         .what("direction")
                         .why(&why);
                     return Err(err.to_err())
@@ -163,7 +163,7 @@ impl GeoBox {
                     "expected a shape [.., 3] array, found a shape {:?} array",
                     shape,
                 );
-                let err = Error::new(ValueError)
+                let err = Error::new(TypeError)
                     .what(what)
                     .why(&why);
                 Err(err.to_err())
@@ -379,13 +379,50 @@ impl GeoBox {
     }
 
     /// Compute the projected surface area, in square-metres.
-    #[pyo3(signature=(array=None, /, **kwargs))]
+    #[pyo3(signature=(array=None, /, *, direction=None, **kwargs))]
     fn projected_area<'py>(
         &self,
         py: Python<'py>,
         array: Option<&Bound<'py, PyAny>>,
+        direction: Option<Array<f64>>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyObject> {
+        if let Some(direction) = direction {
+            if array.is_some() || kwargs.is_some() {
+                let err = Error::new(TypeError)
+                    .what("arguments")
+                    .why("cannot mix geocentric 'direction' with other arguments");
+                return Err(err.into())
+            }
+            let direction = direction.resolve();
+            let shape = direction.shape();
+            if *shape.last().unwrap_or(&0) != 3 {
+                let why = format!(
+                    "expected a shape [.., 3] array, found a shape {:?} array",
+                    shape,
+                );
+                let err = Error::new(TypeError)
+                    .what("direction")
+                    .why(&why);
+                return Err(err.into())
+            }
+            let surfaces = PyArray::<f64>::empty(py, &shape[0..shape.len()-1])?;
+            let size = direction.size() / 3;
+            let origin = self.origin();
+            for i in 0..size {
+                let u = [
+                    direction.get(3 * i)?,
+                    direction.get(3 * i + 1)?,
+                    direction.get(3 * i + 2)?,
+                ];
+                let horizontal = HorizontalCoordinates::from_ecef(&u, self.ellipsoid, &origin);
+                let projection = ProjectedBox::new(&self, &horizontal);
+                surfaces.set(i, projection.surface_area())?;
+            }
+
+            return Ok(surfaces.unbind(py))
+        }
+
         let direction = match select_direction(array, kwargs)? {
             Some(any) => Direction::new(any)?,
             None => return Ok(py.None()),

@@ -27,26 +27,14 @@ box = simulation.box(
     size = [1E+05, 1E+05, 1E+04]
 )
 
-# Convert the ECEF direction of incoming neutrinos to horizontal coordinates at
-# the box centre.
-ecef_position = simulation.geometry.to_ecef(
-    latitude = latitude,
-    longitude = longitude,
-    altitude = altitude
-)
-coordinates = simulation.geometry.from_ecef(ecef_position, ecef_direction)
-azimuth, elevation = coordinates["azimuth"], coordinates["elevation"]
-
-print(f"azimuth = {azimuth:.2f} deg, elevation = {elevation:.2f} deg")
-
 # Generate a bunch of neutrinos targeting the box.
 particles = simulation.particles() \
     .energy(energy) \
-    .direction(azimuth=azimuth, elevation=elevation) \
+    .direction(ecef_direction) \
     .target(box) \
     .generate(1000)
 
-area = box.projected_area(azimuth=azimuth, elevation=elevation)
+area = box.projected_area(direction=ecef_direction)
 print(f"generation area = {area * 1E-06:.3f} km^2")
 
 # Run the Monte Carlo simulation.
