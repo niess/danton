@@ -420,9 +420,17 @@ Python interface
       *limit* argument to :python:`False`.
 
       When setting the *limit* argument to a :py:class:`float`, the provided
-      value controls the maximum distance (in multiples of the tau decay length)
-      of candidate vertices to the ground. The default limit is 3 times the tau
-      decay length (i.e., :python:`limit=3`).
+      value controls the distance to the ground (in multiples of the tau decay
+      length) over which the selection operates, as
+
+      .. math::
+
+         p = e^{-x}, \quad x = \min{\left\{\frac{d}{\lambda}, x_\ell\right\}},
+
+      where :math:`p` is the selection probability, :math:`d` the distance to
+      the ground, :math:`\lambda` the decay length, and :math:`x_\ell` the limit
+      value. The default limit is 3 times the tau decay length (i.e.,
+      :python:`limit=3`).
 
    .. automethod:: pid
 
