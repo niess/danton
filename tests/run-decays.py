@@ -18,7 +18,7 @@ def run(args):
         mode = args.mode,
         tau_decays = True,
         longitudinal = True,
-        geoid = "PREM"
+        geoid = "PREM81"
     )
 
     n = args.number_of_events

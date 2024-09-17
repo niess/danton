@@ -61,7 +61,7 @@ impl Stepper {
             base,
             event: 0,
             mode: Mode::Backward,
-            ellipsoid: Ellipsoid::Prem,
+            ellipsoid: Ellipsoid::Prem81,
             ocean: true,
             steps: None,
         };

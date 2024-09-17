@@ -168,9 +168,9 @@ Python interface
          * - :python:`"EGM96"`
            - An undulated Earth, according to the `EGM96`_ model.
            - :python:`"WGS84"`
-         * - :python:`"PREM"`
+         * - :python:`"PREM81"`
            - A spherical Earth, according to the `PREM`_ model.
-           - :python:`"PREM"`
+           - :python:`"PREM81"`
          * - :python:`"WGS84"`
            - An elliptical Earth, according to the `WGS84`_ ellipsoid.
            - :python:`"WGS84"`

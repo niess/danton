@@ -1,6 +1,7 @@
 use crate::utils::convert::Convert;
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
+use ::std::ffi::CString;
 
 
 // ===============================================================================================
@@ -14,7 +15,7 @@ use pyo3::prelude::*;
 pub enum Geoid {
     Egm96,
     #[default]
-    Prem,
+    Prem81,
     Wgs84,
 }
 
@@ -43,6 +44,19 @@ impl From<Geoid> for &'static str {
     }
 }
 
+impl From<Geoid> for CString {
+    fn from(value: Geoid) -> Self {
+        let geoid = match value {
+            Geoid::Prem81 => "PREM",
+            _ => {
+                let geoid: &str = value.into();
+                geoid
+            },
+        };
+        CString::new(geoid).unwrap()
+    }
+}
+
 
 // ===============================================================================================
 //
@@ -54,7 +68,7 @@ impl From<Geoid> for &'static str {
 #[enum_variants_strings_transform(transform="upper_case")]
 pub enum Ellipsoid {
     #[default]
-    Prem,
+    Prem81,
     Wgs84,
 }
 
@@ -86,7 +100,7 @@ impl From<Ellipsoid> for &'static str {
 impl From<Geoid> for Ellipsoid {
     fn from(value: Geoid) -> Self {
         match value {
-            Geoid::Prem => Ellipsoid::Prem,
+            Geoid::Prem81 => Ellipsoid::Prem81,
             Geoid::Egm96 | Geoid::Wgs84 => Ellipsoid::Wgs84,
         }
     }

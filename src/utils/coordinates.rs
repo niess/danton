@@ -22,7 +22,7 @@ pub struct GeodeticCoordinates {
 impl GeodeticCoordinates {
     pub fn from_ecef(position: &[f64; 3], ellipsoid: Ellipsoid) -> Self {
         match ellipsoid {
-            Ellipsoid::Prem => {
+            Ellipsoid::Prem81 => {
                 const DEG: f64 = 180.0 / ::std::f64::consts::PI;
                 let r = position;
                 let rho2 = r[0] * r[0] + r[1] * r[1];
@@ -53,7 +53,7 @@ impl GeodeticCoordinates {
 
     pub fn to_ecef(&self, ellipsoid: Ellipsoid) -> [f64; 3] {
         match ellipsoid {
-            Ellipsoid::Prem => {
+            Ellipsoid::Prem81 => {
                 const RAD: f64 = ::std::f64::consts::PI / 180.0;
                 let r = danton::PREM_EARTH_RADIUS + self.altitude;
                 let theta = (90.0 - self.latitude) * RAD;
@@ -106,7 +106,7 @@ impl HorizontalCoordinates {
         origin: &GeodeticCoordinates
     ) -> Self {
         match ellipsoid {
-            Ellipsoid::Prem => {
+            Ellipsoid::Prem81 => {
                 #[allow(non_snake_case)]
                 let R = Self::rotation(origin);
                 let u = direction;
@@ -145,7 +145,7 @@ impl HorizontalCoordinates {
         origin: &GeodeticCoordinates
     ) -> [f64; 3] {
         match ellipsoid {
-            Ellipsoid::Prem => {
+            Ellipsoid::Prem81 => {
                 #[allow(non_snake_case)]
                 let R = Self::rotation(origin);
                 let theta = (90.0 - self.elevation) * Self::RAD;

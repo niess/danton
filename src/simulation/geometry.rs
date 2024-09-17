@@ -446,8 +446,7 @@ impl Geometry {
     pub fn apply(&mut self) -> PyResult<()> {
         let previous = CURRENT.swap(self.instance, Ordering::SeqCst);
         if (previous != self.instance) || self.modified {
-            let geoid: &str = self.geoid.into();
-            let geoid = CString::new(geoid)?;
+            let geoid: CString = self.geoid.into();
             let topography = self.topography.as_ref().map(|topography| match topography {
                 Topography::Dem(path) => CString::new(path.as_str()),
                 Topography::Flat(z) => CString::new(format!("flat://{:.6}", z)),

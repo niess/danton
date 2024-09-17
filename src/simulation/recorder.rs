@@ -93,7 +93,7 @@ impl Recorder {
             weight: 1.0,
             mode: Mode::Backward,
             decay: true,
-            ellipsoid: Ellipsoid::Prem,
+            ellipsoid: Ellipsoid::Prem81,
             grammages: None,
             primaries: None,
             secondaries: None,

@@ -11,7 +11,7 @@ simulation.tau_decays = True
 simulation.longitudinal = True
 
 # Set a spherical Earth (using the PREM model).
-simulation.geometry.geoid = "PREM"
+simulation.geometry.geoid = "PREM81"
 
 # Define a local box-area for collecting tau decays.
 box = simulation.box(size=[1E+05, 1E+05, 1E+04])

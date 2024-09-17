@@ -41,7 +41,7 @@ selected `geoid`_.
 
 .. note::
 
-   With the exception of the :python:`"PREM"` ellipsoid (i.e. a spherical
+   With the exception of the :python:`"PREM81"` ellipsoid (i.e. a spherical
    Earth), there is a discrepancy between the geographic (orthometric) and
    geocentric (radial) altitudes.
 
