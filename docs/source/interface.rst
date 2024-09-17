@@ -450,6 +450,11 @@ Python interface
 
    .. automethod:: position
 
+      The position may be specified using :ref:`geographic
+      <coordinates:Geographic coordinates>` coordinates (*latitude*,
+      *longitude*, and *altitude*) or :ref:`geocentric <coordinates:Geocentric
+      coordinates>` ones (*ecef*).
+
    .. automethod:: powerlaw
 
       The *energy_min* and *energy_max* arguments define the support of the

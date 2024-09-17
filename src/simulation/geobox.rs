@@ -391,7 +391,7 @@ impl GeoBox {
             if array.is_some() || kwargs.is_some() {
                 let err = Error::new(TypeError)
                     .what("arguments")
-                    .why("cannot mix geocentric 'direction' with other arguments");
+                    .why("cannot mix geocentric 'direction' with geographic arguments");
                 return Err(err.into())
             }
             let direction = direction.resolve();

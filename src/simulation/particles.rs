@@ -6,7 +6,8 @@ use crate::simulation::recorder::Primary;
 use crate::utils::convert::Ellipsoid;
 use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::{ctrlc_catched, Error};
-use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, ValueError};
+use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, TypeError,
+    ValueError};
 use crate::utils::numpy::{Dtype, PyArray, ShapeArg};
 use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
@@ -256,6 +257,7 @@ enum Energy {
 
 #[derive(Default)]
 enum Position {
+    Ecef([f64; 3]),
     Inside { geobox: Py<GeoBox>, limit: Option<f64> },
     #[default]
     None,
@@ -331,6 +333,18 @@ impl ParticlesGenerator {
                 Direction::Point { azimuth, elevation }
             },
             Some(ecef) => {
+                let check_arg = |name: &str, arg: &Option<f64>| -> PyResult<()> {
+                    if arg.is_some() {
+                        let err = Error::new(TypeError)
+                            .what(name)
+                            .why("cannot mix geocentric and geographic coordinates");
+                        Err(err.into())
+                    } else {
+                        Ok(())
+                    }
+                };
+                check_arg("azimuth", &azimuth)?;
+                check_arg("elevation", &elevation)?;
                 Direction::Ecef(ecef)
             },
         };
@@ -461,15 +475,22 @@ impl ParticlesGenerator {
 
                 particle.weight = 1.0;
 
-                let (direction, energy, position) = match self.position {
+                let (direction, energy, position) = match &self.position {
+                    Position::Ecef(ecef) => {
+                        let geodetic = GeodeticCoordinates::from_ecef(ecef, ellipsoid);
+                        particle.latitude = geodetic.latitude;
+                        particle.longitude = geodetic.longitude;
+                        particle.altitude = geodetic.altitude;
+                        (false, false, true)
+                    },
                     Position::Inside { .. } => self.generate_inside(
                         bg.as_ref().unwrap(), &tracer, ellipsoid, &mut random, particle
                     ),
                     Position::None => (false, false, true),
                     Position::Point { latitude, longitude, altitude } => {
-                        particle.latitude = latitude;
-                        particle.longitude = longitude;
-                        particle.altitude = altitude;
+                        particle.latitude = *latitude;
+                        particle.longitude = *longitude;
+                        particle.altitude = *altitude;
                         (false, false, true)
                     },
                     Position::Target { .. } => match bg.as_ref() {
@@ -547,17 +568,40 @@ impl ParticlesGenerator {
     }
 
     /// Fix the Monte Carlo particles position.
+    #[pyo3(signature=(ecef=None, /, *, latitude=None, longitude=None, altitude=None))]
     fn position<'py>(
         slf: Bound<'py, Self>,
+        ecef: Option<[f64; 3]>,
         latitude: Option<f64>,
         longitude: Option<f64>,
         altitude: Option<f64>,
     ) -> PyResult<Bound<'py, Self>> {
-        let latitude = latitude.unwrap_or(0.0);
-        let longitude = longitude.unwrap_or(0.0);
-        let altitude = altitude.unwrap_or(0.0);
+        let position = match ecef {
+            None => {
+                let latitude = latitude.unwrap_or(0.0);
+                let longitude = longitude.unwrap_or(0.0);
+                let altitude = altitude.unwrap_or(0.0);
+                Position::Point { latitude, longitude, altitude }
+            },
+            Some(ecef) => {
+                let check_arg = |name: &str, arg: &Option<f64>| -> PyResult<()> {
+                    if arg.is_some() {
+                        let err = Error::new(TypeError)
+                            .what(name)
+                            .why("cannot mix geocentric and geographic coordinates");
+                        Err(err.into())
+                    } else {
+                        Ok(())
+                    }
+                };
+                check_arg("latitude", &latitude)?;
+                check_arg("longitude", &longitude)?;
+                check_arg("altitude", &altitude)?;
+                Position::Ecef(ecef)
+            },
+        };
         let mut generator = slf.borrow_mut();
-        generator.position = Position::Point { latitude, longitude, altitude };
+        generator.position = position;
         Ok(slf)
     }
 
