@@ -31,9 +31,9 @@ def merge(args):
         if data is None:
             data = d
             data["seed"] = n * [data["seed"]]
-        elif d["version"] != data["version"]:
+        elif (not args.ignore_version) and (d["version"] != data["version"]):
             e, f = data["version"], d["version"]
-            raise ValueError(f"bad version (expected '{d}', found '{f}')")
+            raise ValueError(f"bad version (expected '{e}', found '{f}')")
         else:
             data["events"] += d["events"]
             for k in ("secondaries", "random_index"):
@@ -52,6 +52,10 @@ if __name__ == "__main__":
         help = "Input file(s)",
         nargs = "+",
         type = lambda x: Path(x)
+    )
+    parser.add_argument("-i", "--ignore-version",
+        help = "Ignore version differences",
+        action = "store_true"
     )
 
     args = parser.parse_args()
