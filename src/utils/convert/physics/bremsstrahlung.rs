@@ -1,15 +1,23 @@
 use crate::utils::convert::Convert;
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
+use ::std::ffi::CString;
 
 
 #[derive(Clone, Copy, Default, EnumVariantsStrings, PartialEq)]
 #[enum_variants_strings_transform(transform="none")]
 pub enum Bremsstrahlung {
-    ABB,
-    KKP,
+    ABB94,
+    KKP95,
     #[default]
-    SSR,
+    SSR19,
+}
+
+impl Bremsstrahlung {
+    pub fn as_pumas(&self) -> &str {
+        let value = self.to_str();
+        &value[0..value.len()-2]
+    }
 }
 
 impl Convert for Bremsstrahlung {
@@ -34,5 +42,11 @@ impl IntoPy<PyObject> for Bremsstrahlung {
 impl From<Bremsstrahlung> for &'static str {
     fn from(value: Bremsstrahlung) -> Self {
         value.to_str()
+    }
+}
+
+impl From<Bremsstrahlung> for CString {
+    fn from(value: Bremsstrahlung) -> Self {
+        CString::new(value.as_pumas()).unwrap()
     }
 }

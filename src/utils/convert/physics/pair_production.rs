@@ -1,14 +1,22 @@
 use crate::utils::convert::Convert;
 use enum_variants_strings::EnumVariantsStrings;
 use pyo3::prelude::*;
+use ::std::ffi::CString;
 
 
 #[derive(Clone, Copy, Default, EnumVariantsStrings, PartialEq)]
 #[enum_variants_strings_transform(transform="none")]
 pub enum PairProduction {
-    KKP,
+    KKP68,
     #[default]
-    SSR,
+    SSR19,
+}
+
+impl PairProduction {
+    pub fn as_pumas(&self) -> &str {
+        let value = self.to_str();
+        &value[0..value.len()-2]
+    }
 }
 
 impl Convert for PairProduction {
@@ -33,5 +41,11 @@ impl IntoPy<PyObject> for PairProduction {
 impl From<PairProduction> for &'static str {
     fn from(value: PairProduction) -> Self {
         value.to_str()
+    }
+}
+
+impl From<PairProduction> for CString {
+    fn from(value: PairProduction) -> Self {
+        CString::new(value.as_pumas()).unwrap()
     }
 }

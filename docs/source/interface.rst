@@ -513,7 +513,7 @@ Python interface
 
       The possible values of bremsstralung models are summarised in
       :numref:`tab-bremsstrahlung` below, the default setting being
-      :python:`"SSR"`.
+      :python:`"SSR19"`.
 
       .. _tab-bremsstrahlung:
 
@@ -524,14 +524,14 @@ Python interface
 
          * - Model
            - Reference
-         * - :python:`"ABB"`
+         * - :python:`"ABB94"`
            - Andreev, Bezrukov and Bugaev, Physics of Atomic Nuclei 57 (1994)
              2066.
-         * - :python:`"KKP"`
+         * - :python:`"KKP95"`
            - Kelner, Kokoulin and Petrukhin, Moscow Engineering Physics Inst.,
              Moscow, 1995.
-         * - :python:`"SSR"`
-           - [SSR19]_.
+         * - :python:`"SSR19"`
+           - `PROPOSAL`_\ 's implementation of [SSR19]_.
 
    .. autoattribute:: dis
 
@@ -548,11 +548,11 @@ Python interface
          * - Model
            - Reference
          * - :python:`"BGR18"`
-           - [BGR18]_.
+           - Next-to-Next Leading Order (NNLO) computation from [BGR18]_.
          * - :python:`"CMS11"`
-           - [CMS11]_.
+           - Next-to-Leading Order (NLO) computation from [CMS11]_.
          * - :python:`"LO"`
-           - Leading Order computation using the selected :py:attr:`PDFs <pdf>`
+           - Leading Order (LO) computation using the selected :py:attr:`PDFs <pdf>`
              (as in R. Gandhi et al., Astropart.Phys.5:81-110 (1996)).
 
       .. note::
@@ -571,7 +571,7 @@ Python interface
 
       The possible values of pair-production models are summarised in
       :numref:`tab-pair-production` below, the default setting being
-      :python:`"SSR"`.
+      :python:`"SSR19"`.
 
       .. _tab-pair-production:
 
@@ -582,11 +582,11 @@ Python interface
 
          * - Model
            - Reference
-         * - :python:`"KKP"`
+         * - :python:`"KKP68"`
            - Kelner, Kokoulin and Petrukhin, Soviet Journal of Nuclear Physics 7
              (1968) 237.
-         * - :python:`"SSR"`
-           - [SSR19]_.
+         * - :python:`"SSR19"`
+           - `PROPOSAL`_\ 's implementation of [SSR19]_.
 
    .. autoattribute:: pdf
 
@@ -623,7 +623,7 @@ Python interface
 
       The possible values of photonuclear interaction models are summarised in
       :numref:`tab-photonuclear` below, the default setting being
-      :python:`"DRSS"`.
+      :python:`"DRSS01"`.
 
       .. _tab-photonuclear:
 
@@ -634,14 +634,14 @@ Python interface
 
          * - Model
            - Reference
-         * - :python:`"BBKS"`
+         * - :python:`"BBKS03"`
            - Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635, with improved
              photon-nucleon cross-section according to `Kokoulin`_ and hard
              component from `Bugaev and Shlepin`_.
-         * - :python:`"BM"`
+         * - :python:`"BM02"`
            - Butkevich and Mikheyev, Soviet Journal of Experimental and
              Theoretical Physics 95 (2002) 11.
-         * - :python:`"DRSS"`
+         * - :python:`"DRSS01"`
            - Dutta, Reno, Sarcevic and Seckel, Phys.Rev. D63 (2001) 094020.
 
 ----
@@ -881,6 +881,7 @@ Python interface
 .. _PREM: https://en.wikipedia.org/wiki/Preliminary_reference_Earth_model
 .. _PdgScheme: https://pdg.lbl.gov/2007/reviews/montecarlorpp.pdf
 .. _PRNG: https://en.wikipedia.org/wiki/Pseudorandom_number_generator
+.. _PROPOSAL: https://github.com/tudo-astroparticlephysics/PROPOSAL
 .. _SRTMGL1: https://lpdaac.usgs.gov/products/srtmgl1v003/
 .. _standard rock: https://pdg.lbl.gov/2024/AtomicNuclearProperties/HTML/standard_rock.html
 .. _StructuredArray: https://numpy.org/doc/stable/user/basics.rec.html

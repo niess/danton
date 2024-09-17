@@ -296,9 +296,9 @@ impl Physics {
         Mdf::new(py, &description)
             .dump(&mdf_path)?;
 
-        let c_bremsstrahlung = CString::new::<&str>(self.bremsstrahlung.into())?;
-        let c_pair_production = CString::new::<&str>(self.pair_production.into())?;
-        let c_photonuclear = CString::new::<&str>(self.photonuclear.into())?;
+        let c_bremsstrahlung: CString = self.bremsstrahlung.into();
+        let c_pair_production: CString = self.pair_production.into();
+        let c_photonuclear: CString = self.photonuclear.into();
         let mut settings = pumas::PhysicsSettings {
             cutoff: 0.0,
             elastic_ratio: 0.0,
@@ -410,9 +410,9 @@ impl Physics {
             }
         };
         if  check_particle() &&
-            check_process(pumas::BREMSSTRAHLUNG, self.bremsstrahlung.into()) &&
-            check_process(pumas::PAIR_PRODUCTION, self.pair_production.into()) &&
-            check_process(pumas::PHOTONUCLEAR, self.photonuclear.into()) {
+            check_process(pumas::BREMSSTRAHLUNG, self.bremsstrahlung.as_pumas()) &&
+            check_process(pumas::PAIR_PRODUCTION, self.pair_production.as_pumas()) &&
+            check_process(pumas::PHOTONUCLEAR, self.photonuclear.as_pumas()) {
             Some(physics)
         } else {
             unsafe { pumas::physics_destroy(&mut physics) };
