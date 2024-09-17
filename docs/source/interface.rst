@@ -289,6 +289,11 @@ Python interface
 
    .. automethod:: trace
 
+      .. topic:: Algorithm
+
+         The ray tracing is performed using the `Turtle`_ library, with the
+         algorithm outlined in [NBCM20]_.
+
       .. note::
 
          The positional *array* argument and keyword only (*kwargs*) arguments
@@ -880,4 +885,5 @@ Python interface
 .. _standard rock: https://pdg.lbl.gov/2024/AtomicNuclearProperties/HTML/standard_rock.html
 .. _StructuredArray: https://numpy.org/doc/stable/user/basics.rec.html
 .. _TOML: https://toml.io/en/
+.. _Turtle: https://github.com/niess/turtle
 .. _WGS84: https://en.wikipedia.org/wiki/World_Geodetic_System#WGS84
