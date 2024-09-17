@@ -24,33 +24,44 @@ def plot(args):
         with gzip.open(path, "rb") as f:
             data.append(pickle.load(f))
 
+    def draw(path, histogram):
+        """Draw an histogram."""
+
+        backward = "backward" in path
+        label = "backward" if backward else "forward"
+        clr = "k" if backward else "r"
+        if args.mode == "plot" or (args.mode == "mixed" and backward):
+            histogram.plot(f"{clr}-", label=label)
+        else:
+            histogram.errorbar(fmt=f"{clr}o", label=label)
+
     plt.figure()
     for i, path in enumerate(args.path):
-        clr = "k" if "backward" in path else "r"
         energy = Histogram.new(data[i], "energy")
-        energy.errorbar(fmt=f"{clr}o")
+        draw(path, energy)
     plt.xlabel("energy (GeV)")
     plt.ylabel("rate (GeV$^{-1}$)")
     plt.xscale("log")
     plt.yscale("log")
+    plt.legend()
 
     plt.figure()
     for i, path in enumerate(args.path):
-        clr = "k" if "backward" in path else "r"
         elevation = Histogram.new(data[i], "elevation")
-        elevation.errorbar(fmt=f"{clr}o")
+        draw(path, elevation)
     plt.xlabel("elevation (deg)")
     plt.ylabel("rate (deg$^{-1}$)")
     plt.yscale("log")
+    plt.legend()
 
     plt.figure()
     for i, path in enumerate(args.path):
-        clr = "k" if "backward" in path else "r"
         altitude = Histogram.new(data[i], "altitude")
-        altitude.errorbar(fmt=f"{clr}o")
+        draw(path, altitude)
     plt.xlabel("altitude (m)")
     plt.ylabel("rate (m$^{-1}$)")
     plt.yscale("log")
+    plt.legend()
 
     plt.show()
 
@@ -60,6 +71,11 @@ if __name__ == "__main__":
     parser.add_argument("path",
         help = "Input simulation results",
         nargs = "+"
+    )
+    parser.add_argument("-m", "--mode",
+        help = "Plot mode",
+        choices = ["errorbar", "mixed", "plot"],
+        default = "errorbar"
     )
 
     args = parser.parse_args()

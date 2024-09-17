@@ -56,3 +56,8 @@ class Histogram(NamedTuple):
         """Draw the histogram using errorbars."""
 
         plt.errorbar(self.x, self.y, xerr=self.xerr, yerr=self.yerr, **kwargs)
+
+    def plot(self, *args, **kwargs):
+        """Draw a plot of the histogram."""
+
+        plt.plot(self.x, self.y, *args, **kwargs)
