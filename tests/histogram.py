@@ -47,7 +47,7 @@ class Histogram(NamedTuple):
         y, _ = np.histogram(samples, edges, weights=weights)
         yerr, _ = np.histogram(samples, edges, weights=weights**2)
         y /= (n * widths)
-        yerr = np.sqrt((yerr / n - y**2) / n) / widths
+        yerr = np.sqrt(np.maximum(yerr / n - y**2, 0.0) / n) / widths
 
         return cls(x, y, xerr, yerr)
 
