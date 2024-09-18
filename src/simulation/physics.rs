@@ -241,7 +241,6 @@ impl Physics {
             None => self.create_pumas(py, materials)?,
             Some(pumas) => pumas,
         };
-        let mut material_index = danton::MaterialIndex::default();
         unsafe {
             if *danton::tau_mass <= 0.0 {
                 Self::check_pumas(
@@ -257,24 +256,24 @@ impl Physics {
                 pumas::physics_material_index(
                     pumas,
                     CString::new("Air")?.as_ptr(),
-                    &mut material_index.air,
+                    &mut self.material_index.air,
                 )
             )?;
             Self::check_pumas(
                 pumas::physics_material_index(
                     pumas,
                     CString::new("Rock")?.as_ptr(),
-                    &mut material_index.rock,
+                    &mut self.material_index.rock,
                 )
             )?;
-            material_index.topography = material_index.rock;
             Self::check_pumas(
                 pumas::physics_material_index(
                     pumas,
                     CString::new("Water")?.as_ptr(),
-                    &mut material_index.water,
+                    &mut self.material_index.water,
                 )
             )?;
+            self.material_index.topography = -1;
         }
 
         let ent = self.create_ent(py)?;

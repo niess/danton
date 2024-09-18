@@ -300,7 +300,8 @@ static struct {
         struct turtle_map * undulations;
         double z0;
         int flat_topography;
-        double density;
+        double density; /* Bulk density, if any. */
+        double default_density; /* The material default density. */
         int sea;
 } earth = { EARTH_PREM, NULL, NULL, 0., 0, 0., 1 };
 
@@ -312,7 +313,8 @@ static double density_topography(
     struct ent_medium * medium, struct ent_state * state, double * density)
 {
         struct generic_state * s = (struct generic_state *)state;
-        *density = s->density = earth.density;
+        *density = s->density = (earth.density > 0.0) ?
+            earth.density : earth.default_density;
         return 0.;
 }
 
@@ -322,7 +324,8 @@ static double locals_topography(struct pumas_medium * medium,
 {
         memset(locals->magnet, 0x0, sizeof(locals->magnet));
         struct generic_state * s = (struct generic_state *)state;
-        s->density = locals->density = earth.density;
+        s->density = locals->density = (earth.density > 0.0) ?
+            earth.density : earth.default_density;
         return 0.;
 }
 
@@ -647,12 +650,13 @@ static struct pumas_medium media_pumas[] = { { 0, &locals_pem0 },
 static struct pumas_medium topography_pumas = { 0, &locals_topography };
 
 /* Convert material data from PUMAS to ENT */
-static void convert_material(int material, double * Z_ptr, double * A_ptr)
+static void convert_material(
+    int material, double * Z_ptr, double * A_ptr, double * density_ptr)
 {
         /* Get atomic elements from PUMAS */
         int n;
         pumas_physics_material_properties(physics.pumas, material, &n,
-            NULL, NULL, NULL, NULL);
+            density_ptr, NULL, NULL, NULL);
         int components[n];
         double fractions[n];
         pumas_physics_material_properties(physics.pumas, material, NULL,
@@ -712,10 +716,10 @@ DANTON_API void danton_materials_set()
         for (i = 0, m = media_ent; i < N_LAYERS; i++, m++) {
                 /* Get atomic elements from PUMAS */
                 int material = media_pumas[i].material;
-                convert_material(material, &m->Z, &m->A);
+                convert_material(material, &m->Z, &m->A, NULL);
         }
-        convert_material(
-            material_index.topography, &topography_ent.Z, &topography_ent.A);
+        convert_material(material_index.topography, &topography_ent.Z,
+            &topography_ent.A, &earth.default_density);
 #undef N_LAYERS
 }
 
@@ -1661,6 +1665,11 @@ static int copy_config_string(
         return EXIT_SUCCESS;
 }
 
+static void catch_ent_error(enum ent_return code, ent_function_t caller) {
+        /* This is just for getting the context when debuging. */
+        return;
+}
+
 /* Initialise the DANTON library. */
 int danton_initialise(
     const char * prefix, danton_lock_cb * lock_, danton_lock_cb * unlock_)
@@ -1688,6 +1697,7 @@ int danton_initialise(
         unlock = unlock_;
 
         /* Set the error handlers for PUMAS and TURTLE */
+        ent_error_handler_set(&catch_ent_error);
         pumas_error_handler_set(&catch_pumas_error);
         turtle_error_handler_set(&catch_turtle_error);
 
