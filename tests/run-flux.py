@@ -64,10 +64,7 @@ def run(args):
         random_index = secondaries["random_index"]
 
     data = {
-        "mode": args.mode,
         "events": n,
-        "elevation": args.elevation,
-        "altitude": args.altitude,
         "energy_min": emin,
         "energy_max": emax,
         "secondaries": secondaries,
@@ -76,6 +73,7 @@ def run(args):
         "cpu": cpu,
         "version": danton.VERSION
     }
+    data.update(args.__dict__)
 
     tag = "_".join([
         f"{args.mode}",
@@ -117,12 +115,12 @@ if __name__ == "__main__":
         type = float,
         default = 1
     )
-    parser.add_argument("--energy_min",
+    parser.add_argument("--energy-min",
         help = "Minimum energy, in GeV",
         type = float,
         default = 1E+06
     )
-    parser.add_argument("--energy_max",
+    parser.add_argument("--energy-max",
         help = "Maximum energy, in GeV",
         type = float,
         default = 1E+12

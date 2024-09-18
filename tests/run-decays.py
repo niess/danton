@@ -94,20 +94,14 @@ def run(args):
         random_index = secondaries["random_index"]
 
     data = {
-        "mode": args.mode,
-        "fix_direction": args.fix_direction,
         "events": size,
-        "elevation": args.elevation,
-        "width": args.width,
-        "height": args.height,
-        "energy_min": emin,
-        "energy_max": emax,
         "secondaries": secondaries,
         "seed": simulation.random.seed,
         "random_index": random_index,
         "cpu": cpu,
         "version": danton.VERSION
     }
+    data.update(args.__dict__)
 
     fix = "F" if args.fix_direction else ""
     tag = "_".join([
@@ -160,12 +154,12 @@ if __name__ == "__main__":
         help = "Fix the particles direction",
         action = 'store_true'
     )
-    parser.add_argument("--energy_min",
+    parser.add_argument("--energy-min",
         help = "Minimum energy, in GeV",
         type = float,
         default = 1E+06
     )
-    parser.add_argument("--energy_max",
+    parser.add_argument("--energy-max",
         help = "Maximum energy, in GeV",
         type = float,
         default = 1E+12

@@ -550,7 +550,7 @@ static double medium(const double * position, const double * direction,
         /* Check for any topography. */
 #define MEDIUM_TOPOGRAPHY 100
         if ((i < 8) || (i > 11) ||
-            ((earth.undulations == NULL) && !earth.flat_topography))
+            ((earth.stack == NULL) && !earth.flat_topography))
                 return step;
 
         if (altitude == -DBL_MAX)
