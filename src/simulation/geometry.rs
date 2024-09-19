@@ -1,9 +1,9 @@
-use crate::bindings::danton;
+use crate::bindings::{danton, turtle};
 use crate::utils::convert::{Array, Ellipsoid, Geoid, Medium, Reference};
 use crate::utils::coordinates::{Coordinates, CoordinatesExport, GeodeticCoordinates,
     GeodeticsExport, HorizontalCoordinates};
 use crate::utils::error::{Error, to_result};
-use crate::utils::error::ErrorKind::{NotImplementedError, ValueError};
+use crate::utils::error::ErrorKind::{CLibraryException, IOError, NotImplementedError, ValueError};
 use crate::utils::export::Export;
 use crate::utils::extract::{Direction, Distance, Position, Projection, select_coordinates,
     select_position, select_projection};
@@ -13,7 +13,8 @@ use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 use ::std::ffi::{c_int, CString, c_uint, c_void};
-use ::std::ptr::null;
+use ::std::path::Path;
+use ::std::ptr::{null, null_mut};
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
 
@@ -111,11 +112,65 @@ impl Geometry {
     }
 
     #[setter]
-    fn set_topography(&mut self, value: Option<Topography>) {
+    fn set_topography(&mut self, value: Option<Topography>) -> PyResult<()> {
         if value != self.topography {
+            if let Some(topography) = &value {
+                if let Topography::Dem(topography) = topography {
+                    let path = Path::new(topography);
+                    if path.is_dir() {
+                        let mut stack: *mut turtle::Stack = null_mut();
+                        let path = CString::new(topography.as_bytes())?;
+                        let rc = unsafe {
+                            turtle::stack_create(
+                                &mut stack,
+                                path.as_c_str().as_ptr(),
+                                -1,
+                                None,
+                                None,
+                            )
+                        };
+                        if rc != turtle::SUCCESS {
+                            let why = format!(
+                                "could not load topography from '{}' (rc = {})",
+                                topography,
+                                rc,
+                            );
+                            let err = Error::new(CLibraryException)
+                                .what("topography")
+                                .why(&why)
+                                .to_err();
+                            return Err(err);
+                        }
+                        let shape = unsafe {
+                            let mut shape: [c_int; 2] = [0, 0];
+                            turtle::stack_info(
+                                stack,
+                                &mut shape as *mut c_int,
+                                null_mut(),
+                                null_mut()
+                            );
+                            turtle::stack_destroy(&mut stack);
+                            shape
+                        };
+                        if (shape[0] == 0) || (shape[1] == 0) {
+                            let err = Error::new(ValueError)
+                                .what("topography")
+                                .why("could not find any data tile");
+                            return Err(err.into())
+                        }
+                    } else {
+                        let why = format!("not a directory: '{}'", topography);
+                        let err = Error::new(IOError)
+                            .what("topography")
+                            .why(&why);
+                        return Err(err.into())
+                    }
+                }
+            }
             self.modified = true;
             self.topography = value;
         }
+        Ok(())
     }
 
     #[setter]

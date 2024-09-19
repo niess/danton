@@ -2,8 +2,8 @@ use crate::bindings::danton;
 use pyo3::prelude::*;
 use pyo3::create_exception;
 use pyo3::exceptions::{
-    PyException, PyFileNotFoundError, PyIndexError, PyKeyboardInterrupt, PyKeyError, PyMemoryError,
-    PyNotImplementedError, PySystemError, PyTypeError, PyValueError
+    PyException, PyFileNotFoundError, PyIndexError, PyIOError, PyKeyboardInterrupt, PyKeyError,
+    PyMemoryError, PyNotImplementedError, PySystemError, PyTypeError, PyValueError
 };
 use pyo3::ffi::PyErr_CheckSignals;
 use ::std::ffi::{c_int, CStr};
@@ -29,6 +29,7 @@ pub enum ErrorKind {
     Exception,
     FileNotFoundError,
     IndexError,
+    IOError,
     KeyboardInterrupt,
     KeyError,
     MemoryError,
@@ -108,6 +109,7 @@ impl<'a> From<&Error<'a>> for PyErr {
             ErrorKind::Exception => PyErr::new::<PyException, _>(msg),
             ErrorKind::FileNotFoundError => PyErr::new::<PyFileNotFoundError, _>(msg),
             ErrorKind::IndexError => PyErr::new::<PyIndexError, _>(msg),
+            ErrorKind::IOError => PyErr::new::<PyIOError, _>(msg),
             ErrorKind::KeyboardInterrupt => PyErr::new::<PyKeyboardInterrupt, _>(msg),
             ErrorKind::KeyError => PyErr::new::<PyKeyError, _>(msg),
             ErrorKind::MemoryError => PyErr::new::<PyMemoryError, _>(msg),
