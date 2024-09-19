@@ -21,7 +21,8 @@ def run(args):
         mode = "backward",
         tau_decays = True,
         longitudinal = True,
-        geoid = "WGS84"
+        geoid = "WGS84",
+        ocean = False
     )
 
     if args.topography is not None:
@@ -61,7 +62,7 @@ def run(args):
         )
 
     else:
-        generator.solid_angle(elevation=[-5, 5])
+        generator.solid_angle(elevation=[-10, 10])
 
     secondaries, N = generator.generate(n)
 
@@ -72,17 +73,22 @@ def run(args):
     primaries = primaries[sel]
 
     data = {
-        "events": N, "energy_min": emin, "energy_max": emax,
-        "primaries": primaries
-    }
-    area = Histogram.new(data, "energy", particles="primaries")
-
-    data = {
-        "area": area,
         "seed": simulation.random.seed,
         "version": danton.VERSION
     }
     data.update(args.__dict__)
+
+    if args.all:
+        secondaries = secondaries[primaries["event"]]
+        data["events"] = N
+        data["primaries"] = primaries
+        data["secondaries"] = secondaries
+    else:
+        tmp = {
+            "events": N, "energy_min": emin, "energy_max": emax,
+            "primaries": primaries
+        }
+        data["area"] = Histogram.new(tmp, "energy", particles="primaries")
 
     outfile = f"area-{simulation.random.seed:0X}.pkl.gz"
     if args.output_directory is None:
@@ -97,9 +103,11 @@ def run(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run a tau decays simulation")
+    parser = argparse.ArgumentParser(
+        description = "Run an effective area computation"
+    )
     parser.add_argument("-n", "--number-of-events",
-        help = "Monte Carlo statistics",
+        help = "Requested number of tentative secondaries",
         type = int,
         default = 10000
     )
@@ -177,7 +185,15 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--topography",
         help = "Path to topography data"
     )
-    parser.add_argument("-o", "--output-directory",
+
+    output = parser.add_argument_group("Output",
+        description = "Options controlling the output data."
+    )
+    output.add_argument("-a", "--all",
+        help = "Log Monte Carlo events, instead of a summary histogram.",
+        action = "store_true"
+    )
+    output.add_argument("-o", "--output-directory",
         help = "Output directory"
     )
 
