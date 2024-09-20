@@ -22,7 +22,7 @@ def run(args):
         tau_decays = True,
         longitudinal = True,
         geoid = "WGS84",
-        ocean = False
+        ocean = args.ocean
     )
 
     if args.topography is not None:
@@ -40,7 +40,7 @@ def run(args):
 
     generator = simulation.particles()      \
         .pid(15)                            \
-        .inside(box)                        \
+        .inside(box, limit=args.limit)      \
         .powerlaw(emin, emax, exponent=-1)
 
     if args.direction is not None:
@@ -105,9 +105,14 @@ if __name__ == "__main__":
         description = "Run an effective area computation"
     )
     parser.add_argument("-n", "--number-of-events",
-        help = "Requested number of tentative secondaries",
+        help = "Number of tentative secondaries",
         type = int,
         default = 10000
+    )
+    parser.add_argument("--limit",
+        help = "Use the distance limit preselection",
+        action = argparse.BooleanOptionalAction,
+        default = True
     )
 
     position = parser.add_argument_group("Position",
@@ -180,7 +185,15 @@ if __name__ == "__main__":
         default = 1E+12
     )
 
-    parser.add_argument("-t", "--topography",
+    geometry = parser.add_argument_group("Geometry",
+        description = "Options controlling the Earth geometry."
+    )
+    geometry.add_argument("--ocean",
+        help = "Enable PREM ocean (when no topography)",
+        action = "store_true",
+        default = False
+    )
+    geometry.add_argument("-t", "--topography",
         help = "Path to topography data"
     )
 
