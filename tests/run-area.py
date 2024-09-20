@@ -47,9 +47,7 @@ def run(args):
         assert(args.azimuth is None)
         assert(args.elevation is None)
 
-        generator.direction(
-            -numpy.array(args.direction)
-        )
+        generator.direction(args.direction)
 
     elif (args.azimuth is not None) or (args.elevation is not None):
         assert(args.direction is None)
@@ -57,8 +55,8 @@ def run(args):
         assert(args.elevation is not None)
 
         generator.direction(
-            azimuth = args.azimuth + 180,
-            elevation = -args.elevation
+            azimuth = args.azimuth,
+            elevation = args.elevation
         )
 
     else:
@@ -132,18 +130,18 @@ if __name__ == "__main__":
     )
 
     direction = parser.add_argument_group("Direction",
-        description = "Options controlling the observation direction."
+        description = "Options controlling the direction."
     )
     direction.add_argument("--azimuth",
-        help = "Azimuth angle of the observation direction, in deg",
+        help = "Azimuth angle of the direction, in deg",
         type = float,
     )
     direction.add_argument("--elevation",
-        help = "Elevation angle of the observation direction, in deg",
+        help = "Elevation angle of the direction, in deg",
         type = float,
     )
     direction.add_argument("--direction",
-        help = "Geocentric observation direction (cartesian coordinates)",
+        help = "Geocentric direction (cartesian coordinates)",
         type = float,
         nargs = 3,
         metavar = ("X", "Y", "Z"),
