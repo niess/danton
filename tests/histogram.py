@@ -10,9 +10,10 @@ class Histogram(NamedTuple):
     y: np.ndarray
     xerr: np.ndarray
     yerr: np.ndarray
+    n: int
 
     @classmethod
-    def new(cls, data, attribute, particles="secondaries"):
+    def new(cls, data, attribute, particles="secondaries", raw=False):
         """Create a new histogram from Monte Carlo data."""
 
         n = data["events"]
@@ -46,37 +47,53 @@ class Histogram(NamedTuple):
 
         y, _ = np.histogram(samples, edges, weights=weights)
         yerr, _ = np.histogram(samples, edges, weights=weights**2)
-        y /= (n * widths)
-        yerr = np.sqrt(np.maximum(yerr / n - y**2, 0.0) / n) / widths
+        if not raw:
+            y /= (n * widths)
+            yerr = np.sqrt(np.maximum(yerr / n - y**2, 0.0) / n) / widths
 
-        return cls(x, y, xerr, yerr)
+        return cls(x, y, xerr, yerr, n)
 
 
     @classmethod
-    def sum(cls, histograms):
-        """Weighted sum of histograms."""
+    def sum(cls, histograms, raw=False):
+        """Sum of histograms."""
 
         x = histograms[0].x
         for h in histograms[1:]:
             assert((h.x == x).all())
         xerr = histograms[0].xerr
 
-        y = np.empty(x.size)
-        yerr = np.empty(x.size)
-        for i in range(x.size):
-            w = np.array([
-                1 / h.yerr[i]**2 if h.yerr[i] > 0.0 else 0.0 for h in histograms
-            ])
-            yi = np.array([h.y[i] for h in histograms])
-            tmp = sum(w)
-            if tmp > 0:
-                y[i] = sum(yi * w) / tmp
-                yerr[i] = 1 / np.sqrt(tmp)
-            else:
-                y[i] = 0.0
-                yerr[i] = 0.0
+        if raw:
+            y, yerr, n = 0, 0, 0
+            for h in histograms:
+                y += h.y
+                yerr += h.yerr
+                n += h.n
 
-        return cls(x, y, xerr, yerr)
+            widths = xerr[1,:] - xerr[0,:]
+            y /= (n * widths)
+            yerr = np.sqrt(np.maximum(yerr / n - y**2, 0.0) / n) / widths
+
+        else:
+            y = np.empty(x.size)
+            yerr = np.empty(x.size)
+            for i in range(x.size):
+                w = np.array([
+                    1 / h.yerr[i]**2 if h.yerr[i] > 0.0 else 0.0
+                        for h in histograms
+                ])
+                yi = np.array([h.y[i] for h in histograms])
+                tmp = sum(w)
+                if tmp > 0:
+                    y[i] = sum(yi * w) / tmp
+                    yerr[i] = 1 / np.sqrt(tmp)
+                else:
+                    y[i] = 0.0
+                    yerr[i] = 0.0
+
+            n = sum(h.n for h in histogram)
+
+        return cls(x, y, xerr, yerr, n)
 
 
     def errorbar(self, **kwargs):
@@ -105,4 +122,4 @@ class Histogram(NamedTuple):
         xerr = self.xerr * xscale
         yerr = self.yerr * yscale
 
-        return self.__class__(x, y, xerr, yerr)
+        return self.__class__(x, y, xerr, yerr, self.n)

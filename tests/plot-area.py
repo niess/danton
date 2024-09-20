@@ -29,7 +29,7 @@ def plot(args):
         raise NotImplementedError()
 
     def plot_data(paths, fmt=None, label=None):
-        data = []
+        data, raw = [], None
         for i, path in enumerate(paths):
             with gzip.open(path, "rb") as f:
                 d = pickle.load(f)
@@ -42,10 +42,27 @@ def plot(args):
                     else:
                         unit = args.unit
 
-                data.append(d["area"])
+                try:
+                    area = d["area"]
+                except KeyError:
+                    area = Histogram.new(d, "energy",
+                        particles = "primaries",
+                        raw = True
+                    )
+                    if raw is None:
+                        raw = True
+                    else:
+                        assert(raw is True)
+                else:
+                    if raw is None:
+                        raw = False
+                    else:
+                        assert(raw is False)
+
+                data.append(area)
 
         area = Histogram \
-            .sum(data) \
+            .sum(data, raw=raw) \
             .scaled(yscale=scale)
 
         if fmt is None:
