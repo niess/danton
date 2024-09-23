@@ -263,6 +263,7 @@ impl Simulation {
     }
 
     /// Create a Monte Carlo particles generator.
+    #[pyo3(signature=(*, weight=None))]
     fn particles(
         &self,
         py: Python,
@@ -274,6 +275,7 @@ impl Simulation {
     }
 
     /// Run a Danton Monte Carlo simulation.
+    #[pyo3(signature=(particles, /))]
     fn run<'py>(&mut self, particles: &Bound<'py, PyAny>) -> PyResult<PyObject> {
         // Configure physics, geometry, samplers etc.
         let py = particles.py();

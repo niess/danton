@@ -788,10 +788,96 @@ Python interface
       attributes. For example, in :python:`Backward` mode with tau decays (but
       no steps recording), a :external:py:class:`NamedTuple <typing.NamedTuple>`
       is returned, containing the sampled primaries, as well as the tau creation
-      vertices, and the tau decay products (as
-      :external:py:class:`ndarray <numpy.ndarray>`, each).
+      vertices, and the tau decay products (as structured
+      :external:py:class:`ndarray <numpy.ndarray>`, each). The corresponding
+      data structures are described in :numref:`tab-primary-structure` and 
+      :numref:`tab-decay-structure` below.
 
       Refer to the :doc:`montecarlo` section for further information.
+
+      .. _tab-primary-structure:
+
+      .. list-table:: Primaries, secondaries or vertices array structure.
+         :width: 50%
+         :widths: auto
+         :header-rows: 1
+
+         * - Field
+           - Format
+           - Units
+         * - :python:`"event"`
+           - :python:`"u8"`
+           - 
+         * - :python:`"pid"`
+           - :python:`"i4"`
+           - 
+         * - :python:`"energy"`
+           - :python:`"f8"`
+           - GeV
+         * - :python:`"latitude"`
+           - :python:`"f8"`
+           - deg
+         * - :python:`"longitude"`
+           - :python:`"f8"`
+           - deg
+         * - :python:`"altitude"`
+           - :python:`"f8"`
+           - m
+         * - :python:`"azimuth"`
+           - :python:`"f8"`
+           - deg
+         * - :python:`"elevation"`
+           - :python:`"f8"`
+           - deg
+         * - :python:`"weight"`
+           - :python:`"f8"`
+           - 
+         * - :python:`"random_index"`
+           - :python:`"2u8"`
+           - 
+
+      .. topic:: Event
+
+         The :python:`"event"` field indicates the index in the *particles*
+         array that is provided as input to the :py:class:`run
+         <danton.Simulation.run>` method.
+
+      .. topic:: Random index
+
+         The :python:`"random_index"` field indicates the state of the PRNG
+         (:py:attr:`index <danton.Random.index>`) at the start of the event.
+
+      .. _tab-decay-structure:
+
+      .. list-table:: Decay products array structure.
+         :width: 50%
+         :widths: auto
+         :header-rows: 1
+
+         * - Field
+           - Format
+           - Units
+         * - :python:`"event"`
+           - :python:`"u8"`
+           - 
+         * - :python:`"pid"`
+           - :python:`"i4"`
+           - 
+         * - :python:`"momentum"`
+           - :python:`"f8"`
+           - GeV
+         * - :python:`"theta"`
+           - :python:`"f8"`
+           - deg
+         * - :python:`"phi"`
+           - :python:`"f8"`
+           - deg
+
+      .. topic:: Decay products direction
+
+         The :python:`"theta"` and :python:`"phi"` fields are spherical
+         coordinates w.r.t. the tau direction at decay. That is, :math:`\theta =
+         0` is an aligned decay product.
 
 ----
 
@@ -858,6 +944,9 @@ Python interface
       * - :python:`"elevation"`
         - :python:`"f8"`
         - deg
+      * - :python:`"weight"`
+        - :python:`"f8"`
+        - 
 
    .. topic:: Particle ID
 
