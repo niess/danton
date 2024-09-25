@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyDict, PyTuple};
 use pyo3::sync::GILOnceCell;
 
 
@@ -20,11 +20,18 @@ impl<const N: usize> NamedTuple<N> {
         py: Python<'py>,
         args: impl IntoPy<Py<PyTuple>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let tuple = self.object.get_or_try_init(py, || py.import_bound("collections")
-            .and_then(|m| m.getattr("namedtuple"))
-            .and_then(|m| m.call1((self.name, self.fields)))
-            .map(|m| m.unbind())
-        )?.bind(py);
+        let kwargs = PyTuple::new_bound(py, [("module", "danton")]);
+        let kwargs = PyDict::from_sequence_bound(kwargs.as_any())?;
+        let tuple = self.object.get_or_try_init(py, || {
+            let tag = self.fields.join("_");
+            let name = format!("_{}_{}", self.name, tag);
+            let tp = py.import_bound("collections")
+                .and_then(|m| m.getattr("namedtuple"))
+                .and_then(|m| m.call((name.as_str(), self.fields), Some(&kwargs)))?;
+            py.import_bound("danton")
+                .and_then(|m| m.setattr(name.as_str(), tp.clone()))?;
+            Ok::<_, PyErr>(tp.unbind())
+        })?.bind(py);
         let tuple = tuple.call1(args)?;
         Ok(tuple)
     }
