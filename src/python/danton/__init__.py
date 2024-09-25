@@ -1,4 +1,4 @@
 from .danton import *
 del danton
 
-VERSION = "1.5.3"
+VERSION = "1.5.4"
