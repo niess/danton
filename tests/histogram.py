@@ -70,7 +70,7 @@ class Histogram(NamedTuple):
                 yerr += h.yerr
                 n += h.n
 
-            widths = xerr[1,:] - xerr[0,:]
+            widths = xerr[1,:] + xerr[0,:]
             y /= (n * widths)
             yerr = np.sqrt(np.maximum(yerr / n - y**2, 0.0) / n) / widths
 
@@ -91,7 +91,7 @@ class Histogram(NamedTuple):
                     y[i] = 0.0
                     yerr[i] = 0.0
 
-            n = sum(h.n for h in histogram)
+            n = sum(h.n for h in histograms)
 
         return cls(x, y, xerr, yerr, n)
 
@@ -121,5 +121,15 @@ class Histogram(NamedTuple):
         y = self.y * yscale
         xerr = self.xerr * xscale
         yerr = self.yerr * yscale
+
+        return self.__class__(x, y, xerr, yerr, self.n)
+
+    def to_raw(self):
+        """Convert to raw representation."""
+
+        x, xerr, n = self.x, self.xerr, self.n
+        widths = xerr[1,:] + xerr[0,:]
+        y = self.y * n * widths
+        yerr = ((self.yerr * widths)**2 * n + self.y**2) * n
 
         return self.__class__(x, y, xerr, yerr, self.n)

@@ -29,7 +29,7 @@ def plot(args):
         raise NotImplementedError()
 
     def plot_data(paths, fmt=None, label=None):
-        data, raw = [], None
+        data = []
         for i, path in enumerate(paths):
             with gzip.open(path, "rb") as f:
                 d = pickle.load(f)
@@ -49,20 +49,13 @@ def plot(args):
                         particles = "primaries",
                         raw = True
                     )
-                    if raw is None:
-                        raw = True
-                    else:
-                        assert(raw is True)
                 else:
-                    if raw is None:
-                        raw = False
-                    else:
-                        assert(raw is False)
+                    area = area.to_raw()
 
                 data.append(area)
 
         area = Histogram \
-            .sum(data, raw=raw) \
+            .sum(data, raw=True) \
             .scaled(yscale=scale)
 
         if fmt is None:
