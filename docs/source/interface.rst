@@ -782,15 +782,15 @@ Python interface
 
    .. automethod:: run
 
-      The provided *particles* are transported through the Monte Carlo
-      :py:attr:`geometry`. The returned object depends on the simulation
+      This method returns a :external:py:class:`namespace
+      <types.SimpleNamespace>` object whose content depends on the simulation
       :py:attr:`mode`, :py:attr:`record_steps` and :py:attr:`tau_decays`
       attributes. For example, in :python:`Backward` mode with tau decays (but
-      no steps recording), a :external:py:class:`NamedTuple <typing.NamedTuple>`
-      is returned, containing the sampled primaries, as well as the tau creation
-      vertices, and the tau decay products (as structured
+      no steps recording), the returned :external:py:class:`namespace
+      <types.SimpleNamespace>` contains the sampled primaries, as well as the
+      tau creation vertices, and the tau decay products (as structured
       :external:py:class:`ndarray <numpy.ndarray>`, each). The corresponding
-      data structures are described in :numref:`tab-primary-structure` and 
+      data structures are described in :numref:`tab-primary-structure` and
       :numref:`tab-decay-structure` below.
 
       Refer to the :doc:`montecarlo` section for further information.
