@@ -8,8 +8,8 @@ use crate::utils::export::Export;
 use crate::utils::extract::{Direction, Position, select_coordinates, select_direction,
     select_position};
 use crate::utils::float::f64x3;
+use crate::utils::namespace::Namespace;
 use crate::utils::numpy::PyArray;
-use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
@@ -367,10 +367,11 @@ impl GeoBox {
                 match local_direction {
                     None => position.into_py(py),
                     Some(direction) => {
-                        static RESULT: NamedTuple<2> = NamedTuple::new(
-                            "Result", ["position", "direction"]);
                         let direction: &PyAny = direction;
-                        RESULT.instance(py, (position, direction))?.unbind()
+                        Namespace::new(py, &[
+                            ("position", position),
+                            ("direction", direction),
+                        ])?.unbind()
                     }
                 }
             },

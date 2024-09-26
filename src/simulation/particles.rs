@@ -9,9 +9,8 @@ use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, TypeError,
     ValueError};
 use crate::utils::numpy::{Dtype, PyArray, ShapeArg};
-use crate::utils::tuple::NamedTuple;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyTuple};
 use ::std::ffi::c_int;
 
 
@@ -517,9 +516,10 @@ impl ParticlesGenerator {
         let array: &PyAny = array;
         let array: PyObject = array.into();
         let result = if is_rejection {
-            static RESULT: NamedTuple<2> = NamedTuple::new(
-                "Result", ["particles", "size"]);
-            RESULT.instance(py, (array, trials))?.unbind()
+            PyTuple::new_bound(py, &[
+                array.to_object(py),
+                trials.to_object(py),
+            ]).into_any().unbind()
         } else {
             array
         };

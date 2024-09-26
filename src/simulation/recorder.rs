@@ -3,7 +3,7 @@ use crate::simulation::particles::Particle;
 use crate::utils::convert::{Ellipsoid, Mode};
 use crate::utils::export::Export;
 use crate::utils::float::f64x3;
-use crate::utils::tuple::NamedTuple;
+use crate::utils::namespace::Namespace;
 use derive_more::{AsMut, AsRef, From};
 use pyo3::prelude::*;
 use ::std::ffi::c_int;
@@ -124,9 +124,10 @@ impl Recorder {
             let result = match steps {
                 None => grammages,
                 Some(steps) => {
-                    static RESULT: NamedTuple<2> = NamedTuple::new(
-                        "Result", ["grammages", "steps"]);
-                    RESULT.instance(py, (grammages, steps))?.unbind()
+                    Namespace::new(py, &[
+                        ("grammages", grammages),
+                        ("steps", steps),
+                    ])?.unbind()
                 },
             };
             return Ok(result)
@@ -149,27 +150,35 @@ impl Recorder {
                 if self.decay {
                     match steps {
                         None => {
-                            static RESULT: NamedTuple<3> = NamedTuple::new(
-                                "Result", ["primaries", "products", "vertices"]);
-                            RESULT.instance(py, (primaries, products, vertices))?.unbind()
+                            Namespace::new(py, &[
+                                ("primaries", primaries),
+                                ("products", products),
+                                ("vertices", vertices),
+                            ])?.unbind()
                         },
                         Some(steps) => {
-                            static RESULT: NamedTuple<4> = NamedTuple::new(
-                                "Result", ["primaries", "products", "vertices", "steps"]);
-                            RESULT.instance(py, (primaries, products, vertices, steps))?.unbind()
+                            Namespace::new(py, &[
+                                ("primaries", primaries),
+                                ("products", products),
+                                ("vertices", vertices),
+                                ("steps", steps),
+                            ])?.unbind()
                         },
                     }
                 } else {
                     match steps {
                         None => {
-                            static RESULT: NamedTuple<2> = NamedTuple::new(
-                                "Result", ["primaries", "vertices"]);
-                            RESULT.instance(py, (primaries, vertices))?.unbind()
+                            Namespace::new(py, &[
+                                ("primaries", primaries),
+                                ("vertices", vertices),
+                            ])?.unbind()
                         },
                         Some(steps) => {
-                            static RESULT: NamedTuple<3> = NamedTuple::new(
-                                "Result", ["primaries", "vertices", "steps"]);
-                            RESULT.instance(py, (primaries, vertices, steps))?.unbind()
+                            Namespace::new(py, &[
+                                ("primaries", primaries),
+                                ("vertices", vertices),
+                                ("steps", steps),
+                            ])?.unbind()
                         },
                     }
                 }
@@ -182,27 +191,35 @@ impl Recorder {
                 if self.decay {
                     match steps {
                         None => {
-                            static RESULT: NamedTuple<3> = NamedTuple::new(
-                                "Result", ["secondaries", "products", "vertices"]);
-                            RESULT.instance(py, (secondaries, products, vertices))?.unbind()
+                            Namespace::new(py, &[
+                                ("secondaries", secondaries),
+                                ("products", products),
+                                ("vertices", vertices),
+                            ])?.unbind()
                         },
                         Some(steps) => {
-                            static RESULT: NamedTuple<4> = NamedTuple::new(
-                                "Result", ["secondaries", "products", "vertices", "steps"]);
-                            RESULT.instance(py, (secondaries, products, vertices, steps))?.unbind()
+                            Namespace::new(py, &[
+                                ("secondaries", secondaries),
+                                ("products", products),
+                                ("vertices", vertices),
+                                ("steps", steps),
+                            ])?.unbind()
                         },
                     }
                 } else {
                     match steps {
                         None => {
-                            static RESULT: NamedTuple<2> = NamedTuple::new(
-                                "Result", ["secondaries", "vertices"]);
-                            RESULT.instance(py, (secondaries, vertices))?.unbind()
+                            Namespace::new(py, &[
+                                ("secondaries", secondaries),
+                                ("vertices", vertices),
+                            ])?.unbind()
                         },
                         Some(steps) => {
-                            static RESULT: NamedTuple<3> = NamedTuple::new(
-                                "Result", ["secondaries", "vertices", "steps"]);
-                            RESULT.instance(py, (secondaries, vertices, steps))?.unbind()
+                            Namespace::new(py, &[
+                                ("secondaries", secondaries),
+                                ("vertices", vertices),
+                                ("steps", steps),
+                            ])?.unbind()
                         },
                     }
                 }

@@ -1,7 +1,7 @@
 use crate::simulation::materials::{Component, Material, MaterialsData};
 use crate::utils::error::{Error, ErrorKind};
 use crate::utils::error::ErrorKind::{KeyError, TypeError, ValueError};
-use crate::utils::tuple::NamedTuple;
+use crate::utils::namespace::Namespace;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
@@ -127,7 +127,7 @@ impl<'a, 'py> TryFrom<Context<'a, 'py>> for Material {
 
 // ===============================================================================================
 //
-// Conversion to a NamedTuple.
+// Conversion to a Namespace.
 //
 // ===============================================================================================
 
@@ -136,14 +136,17 @@ impl ToPyObject for Material {
         let composition = PyTuple::new_bound(py, &self.composition);
         match self.I {
             Some(mee) => {
-                static RESULT: NamedTuple<3> = NamedTuple::new(
-                    "Material", ["density", "I", "composition"]);
-                RESULT.instance(py, (self.density, mee, composition)).unwrap().unbind()
+                Namespace::new(py, &[
+                    ("density", self.density.to_object(py)),
+                    ("I", mee.to_object(py)),
+                    ("composition", composition.into_any().unbind()),
+                ]).unwrap().unbind()
             },
             None => {
-                static RESULT: NamedTuple<2> = NamedTuple::new(
-                    "Material", ["density", "composition"]);
-                RESULT.instance(py, (self.density, composition)).unwrap().unbind()
+                Namespace::new(py, &[
+                    ("density", self.density.to_object(py)),
+                    ("composition", composition.into_any().unbind()),
+                ]).unwrap().unbind()
             },
         }
     }
@@ -151,8 +154,9 @@ impl ToPyObject for Material {
 
 impl ToPyObject for Component {
     fn to_object(&self, py: Python) -> PyObject {
-        static RESULT: NamedTuple<2> = NamedTuple::new(
-            "Component", ["name", "weight"]);
-        RESULT.instance(py, (&self.name, self.weight)).unwrap().unbind()
+        Namespace::new(py, &[
+            ("name", self.name.to_object(py)),
+            ("weight", self.weight.to_object(py)),
+        ]).unwrap().unbind()
     }
 }

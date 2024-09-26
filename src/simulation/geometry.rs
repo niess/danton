@@ -9,7 +9,7 @@ use crate::utils::extract::{Direction, Distance, Position, Projection, select_co
     select_position, select_projection};
 use crate::utils::float::f64x3;
 use crate::utils::numpy::PyArray;
-use crate::utils::tuple::NamedTuple;
+use crate::utils::namespace::Namespace;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 use ::std::ffi::{c_int, CString, c_uint, c_void};
@@ -360,9 +360,10 @@ impl Geometry {
         let result = match direction {
             None => position,
             Some(direction) => {
-                static RESULT: NamedTuple<2> = NamedTuple::new(
-                    "Result", ["position", "direction"]);
-                RESULT.instance(py, (position, direction))?.unbind()
+                Namespace::new(py, &[
+                    ("position", position),
+                    ("direction", direction),
+                ])?.unbind()
             }
         };
         Ok(result)

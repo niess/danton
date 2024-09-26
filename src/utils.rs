@@ -6,5 +6,5 @@ pub mod export;
 pub mod extract;
 pub mod float;
 pub mod io;
+pub mod namespace;
 pub mod numpy;
-pub mod tuple;
