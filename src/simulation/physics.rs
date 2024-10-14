@@ -12,7 +12,7 @@ use temp_dir::TempDir;
 use ::std::borrow::Cow;
 use ::std::ffi::{c_char, c_int, CStr, CString, c_uint};
 use ::std::fs::File;
-use ::std::os::fd::AsRawFd;
+use ::std::os::fd::IntoRawFd;
 use ::std::ptr::{null, null_mut};
 
 
@@ -338,7 +338,7 @@ impl Physics {
         if let Ok(file) = File::create(dump_path) {
             unsafe {
                 let stream = libc::fdopen(
-                    file.as_raw_fd(),
+                    file.into_raw_fd(),
                     CStr::from_bytes_with_nul_unchecked(b"wb\0").as_ptr(),
                 );
                 pumas::physics_dump(physics, stream);
@@ -369,7 +369,7 @@ impl Physics {
         let mut physics = null_mut();
         let rc = unsafe {
             let stream = libc::fdopen(
-                file.as_raw_fd(),
+                file.into_raw_fd(),
                 CStr::from_bytes_with_nul_unchecked(b"rb\0").as_ptr(),
             );
             let rc = pumas::physics_load(&mut physics, stream);
