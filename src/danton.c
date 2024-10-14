@@ -1472,6 +1472,16 @@ static int transport_backward(
                 if (context->api.longitudinal)
                         memcpy(state->direction, direction,
                             sizeof(state->direction));
+
+                if (state->energy >= context->energy_cut - FLT_EPSILON) {
+                        if (context->ent.stepping_action != NULL) {
+                                context->ent.stepping_action(
+                                    &context->ent,
+                                    medium,
+                                    state
+                                );
+                        }
+                }
         } else {
                 state = &current->base.ent;
                 tau = &g_state.base.pumas;
@@ -2267,7 +2277,7 @@ int danton_context_run(
                         context_->pumas->random = &random_pumas;
                         context_->pumas->user_data = context_;
                 }
-                context_->pumas->mode.energy_loss = PUMAS_MODE_STRAGGLED;
+                context_->pumas->mode.energy_loss = PUMAS_MODE_MIXED;
                 context_->pumas->mode.decay = PUMAS_MODE_RANDOMISED;
                 context_->pumas->mode.scattering = context->longitudinal ?
                         PUMAS_MODE_DISABLED : PUMAS_MODE_MIXED;
