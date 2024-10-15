@@ -25,7 +25,9 @@ def run(args):
         ocean = args.ocean
     )
 
-    if args.topography is not None:
+    if args.topography is None:
+        simulation.geometry.topography = 0
+    else:
         simulation.geometry.topography = args.topography
 
     n = args.number_of_events
