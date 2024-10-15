@@ -701,11 +701,12 @@ DANTON_API void danton_materials_set()
         topography_pumas.material = material_index.topography;
 
         /* Set the outer PREM layer to rock or water */
-        if ((earth.stack != NULL) || earth.flat_topography ||
-            (earth.sea == 0)) {
+        if (earth.sea == 0) {
+                media_ent[9].density = &density_pem8;
                 media_pumas[9].material = material_index.rock;
                 media_pumas[9].locals = &locals_pem8;
         } else {
+                media_ent[9].density = &density_pem9;
                 media_pumas[9].material = material_index.water;
                 media_pumas[9].locals = &locals_pem9;
         }
