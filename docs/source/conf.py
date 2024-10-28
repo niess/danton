@@ -10,7 +10,7 @@ except ModuleNotFoundError:
 project = "Danton"
 copyright = "Université Clermont Auvergne, CNRS/IN2P3, LPCA"
 author = "Valentin Niess"
-release = "1.5.7"
+release = "1.5.8"
 
 highlight_language = "python3"
 
