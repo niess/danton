@@ -1,4 +1,4 @@
-use crate::utils::numpy::PyArray;
+use crate::utils::numpy::{PyArray, PyArrayMethods};
 use pyo3::prelude::*;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 

@@ -8,7 +8,7 @@ use crate::utils::coordinates::{GeodeticCoordinates, HorizontalCoordinates};
 use crate::utils::error::{ctrlc_catched, Error};
 use crate::utils::error::ErrorKind::{KeyboardInterrupt, KeyError, NotImplementedError, TypeError,
     ValueError};
-use crate::utils::numpy::{Dtype, PyArray, ShapeArg};
+use crate::utils::numpy::{Dtype, PyArray, PyArrayMethods, ShapeArg};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use ::std::ffi::c_int;
@@ -54,7 +54,8 @@ pub fn particles(
         Some(shape) => shape.into(),
         None => Vec::new(),
     };
-    let array: &PyAny = PyArray::<Particle>::zeros(py, &shape)?;
+    let array = PyArray::<Particle>::zeros(py, &shape)?
+        .into_any();
     let mut has_pid = false;
     let mut has_energy = false;
     let mut has_weight = false;
@@ -513,11 +514,10 @@ impl ParticlesGenerator {
         }
 
         // Return result.
-        let array: &PyAny = array;
-        let array: PyObject = array.into();
+        let array = array.into_any().unbind();
         let result = if is_rejection {
             PyTuple::new_bound(py, &[
-                array.to_object(py),
+                array,
                 trials.to_object(py),
             ]).into_any().unbind()
         } else {

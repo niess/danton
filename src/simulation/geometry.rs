@@ -8,7 +8,7 @@ use crate::utils::export::Export;
 use crate::utils::extract::{Direction, Distance, Position, Projection, select_coordinates,
     select_position, select_projection};
 use crate::utils::float::f64x3;
-use crate::utils::numpy::PyArray;
+use crate::utils::numpy::{PyArray, PyArrayMethods};
 use crate::utils::namespace::Namespace;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
@@ -340,8 +340,7 @@ impl Geometry {
             media.set(i, medium.into())?;
         }
 
-        let media: &PyAny = media;
-        Ok(media.into_py(py))
+        Ok(media.into_any().unbind())
     }
 
     /// Convert geographic coordinates to ECEF ones.
@@ -422,8 +421,7 @@ impl Geometry {
             traces.set(i, trace)?;
         }
 
-        let traces: &PyAny = traces;
-        Ok(traces.into_py(py))
+        Ok(traces.into_any().unbind())
     }
 
     /// Translate geographic coordinates.
@@ -466,7 +464,7 @@ impl Geometry {
             let horizontal = HorizontalCoordinates::from_ecef(
                 &u.into(), self.geoid.into(), &geodetic
             );
-            match result {
+            match result.as_ref() {
                 Some(result) => {
                     let coordinates = Coordinates { position: geodetic, direction: horizontal };
                     result.set(i, coordinates)?;
@@ -479,10 +477,7 @@ impl Geometry {
         }
 
         let result = match result {
-            Some(result) => {
-                let result: &PyAny = result;
-                result.into_py(py)
-            },
+            Some(result) => result.into_any().unbind(),
             None => py.None(),
         };
         Ok(result)
@@ -549,7 +544,7 @@ impl Geometry {
             undulations.set(i, undulation)?;
         }
 
-        Ok(undulations.unbind(py))
+        Ok(undulations.into_any().unbind())
     }
 
     fn to_ecef_from_any<'py>(
@@ -570,7 +565,7 @@ impl Geometry {
         };
 
         let ecef_position = PyArray::<f64>::empty(py, &shape3)?;
-        let ecef_direction: Option<&PyArray<f64>> = match direction.as_ref() {
+        let ecef_direction: Option<Bound<PyArray<f64>>> = match direction.as_ref() {
             None => None,
             Some(_) => Some(PyArray::<f64>::empty(py, &shape3)?),
         };
@@ -584,23 +579,20 @@ impl Geometry {
             if let Some(direction) = direction.as_ref() {
                 let horizontal = direction.get(i)?;
                 let u = horizontal.to_ecef(self.geoid.into(), &geodetic);
-                let ecef_direction = ecef_direction.unwrap();
+                let ecef_direction = ecef_direction.as_ref().unwrap();
                 ecef_direction.set(3 * i, u[0])?;
                 ecef_direction.set(3 * i + 1, u[1])?;
                 ecef_direction.set(3 * i + 2, u[2])?;
             }
         }
 
-        let ecef_position = ecef_position.unbind(py);
-
-        let result = {
-            match ecef_direction {
-                None => (ecef_position, None),
-                Some(ecef_direction) => {
-                    let ecef_direction = ecef_direction.unbind(py);
-                    (ecef_position, Some(ecef_direction))
-                },
-            }
+        let ecef_position = ecef_position.into_any().unbind();
+        let result = match ecef_direction {
+            None => (ecef_position, None),
+            Some(ecef_direction) => {
+                let ecef_direction = ecef_direction.into_any().unbind();
+                (ecef_position, Some(ecef_direction))
+             },
         };
 
         Ok(result)
@@ -626,7 +618,7 @@ impl Geometry {
             elevations.set(i, elevation)?;
         }
 
-        Ok(elevations.unbind(py))
+        Ok(elevations.into_any().unbind())
     }
 }
 

@@ -9,7 +9,7 @@ use crate::utils::extract::{Direction, Position, select_coordinates, select_dire
     select_position};
 use crate::utils::float::f64x3;
 use crate::utils::namespace::Namespace;
-use crate::utils::numpy::PyArray;
+use crate::utils::numpy::{PyArray, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
@@ -272,8 +272,8 @@ impl GeoBox {
         let position = match select_position(array, kwargs)? {
             Some(any) => Position::new(any)?,
             None => {
-                let inside: &PyAny = PyArray::<bool>::empty(py, &[0])?;
-                return Ok(inside.into_py(py));
+                let inside = PyArray::<bool>::empty(py, &[0])?;
+                return Ok(inside.into_any().unbind());
             },
         };
         let frame = self.local_frame();
@@ -290,8 +290,7 @@ impl GeoBox {
             inside.set(i, b)?;
         }
 
-        let inside: &PyAny = inside;
-        Ok(inside.into_py(py))
+        Ok(inside.into_any().unbind())
     }
 
     /// Convert geographic coordinates to local cartesian ones.
@@ -322,11 +321,11 @@ impl GeoBox {
             },
         };
 
-        let local_position: Option<&PyArray<f64>> = match position.as_ref() {
+        let local_position: Option<Bound<PyArray<f64>>> = match position.as_ref() {
             None => None,
             Some(_) => Some(PyArray::<f64>::empty(py, &shape3)?),
         };
-        let local_direction: Option<&PyArray<f64>> = match direction.as_ref() {
+        let local_direction: Option<Bound<PyArray<f64>>> = match direction.as_ref() {
             None => None,
             Some(_) => Some(PyArray::<f64>::empty(py, &shape3)?),
         };
@@ -340,7 +339,7 @@ impl GeoBox {
                 Some(position) => {
                     let geodetic = position.get(i)?;
                     let r = frame.from_geodetic(&geodetic);
-                    let local_position = local_position.unwrap();
+                    let local_position = local_position.as_ref().unwrap();
                     local_position.set(3 * i, r[0])?;
                     local_position.set(3 * i + 1, r[1])?;
                     local_position.set(3 * i + 2, r[2])?;
@@ -350,7 +349,7 @@ impl GeoBox {
             if let Some(direction) = &direction {
                 let horizontal = direction.get(i)?;
                 let u = frame.from_horizontal(&horizontal, &geodetic);
-                let local_direction = local_direction.unwrap();
+                let local_direction = local_direction.as_ref().unwrap();
                 local_direction.set(3 * i, u[0])?;
                 local_direction.set(3 * i + 1, u[1])?;
                 local_direction.set(3 * i + 2, u[2])?;
@@ -358,16 +357,13 @@ impl GeoBox {
         }
 
         let result = match local_position {
-            None => {
-                let direction: &PyAny = local_direction.unwrap();
-                direction.into_py(py)
-            },
-            Some(position) => {
-                let position: &PyAny = position;
+            None => local_direction.unwrap().into_any().unbind(),
+            Some(local_position) => {
+                let position = local_position.into_any().unbind();
                 match local_direction {
-                    None => position.into_py(py),
-                    Some(direction) => {
-                        let direction: &PyAny = direction;
+                    None => position,
+                    Some(local_direction) => {
+                        let direction = local_direction.into_any().unbind();
                         Namespace::new(py, &[
                             ("position", position),
                             ("direction", direction),
@@ -421,7 +417,7 @@ impl GeoBox {
                 surfaces.set(i, projection.surface_area())?;
             }
 
-            return Ok(surfaces.unbind(py))
+            return Ok(surfaces.into_any().unbind())
         }
 
         let direction = match select_direction(array, kwargs)? {
@@ -438,7 +434,7 @@ impl GeoBox {
             surfaces.set(i, projection.surface_area())?;
         }
 
-        Ok(surfaces.unbind(py))
+        Ok(surfaces.into_any().unbind())
     }
 }
 
