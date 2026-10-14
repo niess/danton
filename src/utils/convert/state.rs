@@ -17,7 +17,7 @@ impl From<(&danton::State, Ellipsoid)> for Particle {
         let horizontal = HorizontalCoordinates::from_ecef(&state.direction, ellipsoid, &geodetic);
 
         fn tozero(f: f64) -> f64 {
-            if f.abs() <= ::std::f32::EPSILON as f64 {
+            if f.abs() <= f32::EPSILON as f64 {
                 0.0
             } else {
                 f

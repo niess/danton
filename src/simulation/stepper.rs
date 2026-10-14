@@ -1,5 +1,5 @@
 use crate::bindings::danton;
-use crate::simulation::particles::Particle;
+use crate::simulation::particles::{Particle, UnweightedParticle};
 use crate::utils::convert::{Ellipsoid, Medium, Mode};
 use crate::utils::export::Export;
 use derive_more::{AsMut, AsRef, From};
@@ -26,13 +26,7 @@ struct StepsExport (Export<Step>);
 #[derive(Clone, Copy)]
 pub struct Step {
     event: usize,
-    pid: c_int,
-    energy: f64,
-    latitude: f64,
-    longitude: f64,
-    altitude: f64,
-    azimuth: f64,
-    elevation: f64,
+    particle: UnweightedParticle,
     medium: [u8; 16],
 }
 
@@ -40,13 +34,7 @@ impl From<Particle> for Step {
     fn from(value: Particle) -> Self {
         Self {
             event: 0,
-            pid: value.pid,
-            energy: value.energy,
-            latitude: value.latitude,
-            longitude: value.longitude,
-            altitude: value.altitude,
-            azimuth: value.azimuth,
-            elevation: value.elevation,
+            particle: value.into(),
             medium: [0; 16],
         }
     }
@@ -102,14 +90,14 @@ impl Stepper {
                 let mut step: Step = particle.into();
                 step.event = stepper.event;
                 if let Mode::Grammage = stepper.mode {
-                    step.pid = 0;
-                    step.energy = 0.0;
-                    step.elevation = -step.elevation;
-                    if step.elevation.abs() != 90.0 {
-                        if step.azimuth > 0.0 {
-                            step.azimuth -= 180.0;
+                    step.particle.pid = 0;
+                    step.particle.energy = 0.0;
+                    step.particle.elevation = -step.particle.elevation;
+                    if step.particle.elevation.abs() != 90.0 {
+                        if step.particle.azimuth > 0.0 {
+                            step.particle.azimuth -= 180.0;
                         } else {
-                            step.azimuth += 180.0;
+                            step.particle.azimuth += 180.0;
                         }
                     }
                 }

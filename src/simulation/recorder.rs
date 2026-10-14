@@ -1,5 +1,5 @@
 use crate::bindings::danton;
-use crate::simulation::particles::Particle;
+use crate::simulation::particles::{Particle, UnweightedParticle};
 use crate::utils::convert::{Ellipsoid, Mode};
 use crate::utils::export::Export;
 use crate::utils::float::f64x3;
@@ -72,7 +72,7 @@ struct ProductsExport (Export<Product>);
 #[derive(Clone, Copy)]
 pub struct Vertex {
     event: usize,
-    particle: Particle,
+    particle: UnweightedParticle,
     generation: i32,
 }
 
@@ -284,7 +284,7 @@ impl Recorder {
                 let particle: Particle = (state, recorder.ellipsoid).into();
                 Vertex {
                     event: recorder.event,
-                    particle,
+                    particle: particle.into(),
                     generation: event.generation,
                 }
             };

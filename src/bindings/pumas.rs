@@ -54,6 +54,7 @@ pub struct PhysicsSettings {
     pub dry: c_int,
 }
 
+#[allow(non_snake_case)]
 pub type Dcs = Option<
     unsafe extern "C" fn(Z: f64, A: f64, m: f64, K: f64, q: f64) -> f64,
 >;

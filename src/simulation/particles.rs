@@ -27,6 +27,32 @@ pub struct Particle {
     pub weight: f64,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct UnweightedParticle {
+    pub pid: c_int,
+    pub energy: f64,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub altitude: f64,
+    pub azimuth: f64,
+    pub elevation: f64,
+}
+
+impl From<Particle> for UnweightedParticle {
+    fn from(value: Particle) -> Self {
+        Self {
+            pid: value.pid,
+            energy: value.energy,
+            latitude: value.latitude,
+            longitude: value.longitude,
+            altitude: value.altitude,
+            azimuth: value.azimuth,
+            elevation: value.elevation,
+        }
+    }
+}
+
 impl Particle {
     pub fn index(&self) -> PyResult<c_int> {
         let particle_index = unsafe { danton::particle_index(self.pid) };

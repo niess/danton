@@ -282,7 +282,7 @@ impl GeoBox {
         for i in 0..position.size() {
             let geodetic = position.get(i)?;
             let r = frame.from_geodetic(&geodetic);
-            const EPS: f64 = ::std::f32::EPSILON as f64;
+            const EPS: f64 = f32::EPSILON as f64;
             let b =
                 (r[0].abs() <= 0.5 * self.size[0] + EPS) &&
                 (r[1].abs() <= 0.5 * self.size[1] + EPS) &&
